@@ -11,6 +11,7 @@ web/.next/
 web/out/
 web/tsconfig.tsbuildinfo
 web/next-env.d.ts
+web/.env.local
 
 # =====================
 # Content Core 运行时

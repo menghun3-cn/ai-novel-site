@@ -11,11 +11,12 @@ services:
     container_name: novel-web
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "33000:33000"
     environment:
       NODE_ENV: production
       NOVEL_DATA_DIR: /app/data
-      NOVEL_SITE_URL: http://localhost:3000   # 部署后改为实际域名
+      NOVEL_SITE_URL: http://localhost:33000   # 部署后改为实际域名
+      PORT: "33000"
     volumes:
       - ./data:/app/data                                          # SQLite 数据库
       - ./web/public/covers:/app/web/public/covers               # 封面

@@ -38,5 +38,6 @@ COPY web/lib/         ./web/lib/
 # 数据目录
 RUN mkdir -p /app/data /app/web/public/covers
 
-EXPOSE 3000
+ENV PORT=33000
+EXPOSE 33000
 CMD ["npm", "run", "start", "-w", "web"]
