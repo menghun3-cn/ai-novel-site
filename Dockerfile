@@ -1,9 +1,8 @@
 # Novel Web Publisher 运行镜像
-# 多阶段构建:deps → build → production
+# 使用 Debian 版 Node 镜像,better-sqlite3 预编译包直接可用
 
 # ── Stage 1: 依赖安装 ──
-FROM node:22-alpine AS deps
-RUN apk add --no-cache python3 make g++   # better-sqlite3 编译需要
+FROM node:22-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY core/package.json   ./core/
@@ -19,9 +18,10 @@ COPY tsconfig.json ./
 RUN npm run build -w web
 
 # ── Stage 3: 生产镜像 ──
-FROM node:22-alpine
+FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PORT=33000
 
 # 运行时依赖
 COPY --from=deps      /app/node_modules  ./node_modules
@@ -38,6 +38,5 @@ COPY web/lib/         ./web/lib/
 # 数据目录
 RUN mkdir -p /app/data /app/web/public/covers
 
-ENV PORT=33000
 EXPOSE 33000
 CMD ["npm", "run", "start", "-w", "web"]
