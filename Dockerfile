@@ -23,6 +23,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=33000
 
+# 根 package.json(npm 工作区解析需要)
+COPY package.json     ./
 # 运行时依赖
 COPY --from=deps      /app/node_modules  ./node_modules
 # 核心包(查询 + 导入器)
