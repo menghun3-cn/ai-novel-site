@@ -1,0 +1,51 @@
+{
+  "name": "novel-builder",
+  "version": "1.0.0",
+  "description": "MD/TXT 小说目录 → Content Core → Web Publisher / EPUB / BookOrbit",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "core",
+    "importer",
+    "web"
+  ],
+  "bin": {
+    "novel-builder": "dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "dev:web": "npm run dev -w web",
+    "build:web": "npm run build -w web",
+    "start:web": "npm run start -w web",
+    "import:novel": "tsx importer/src/index.ts",
+    "seed:100": "tsx scripts/seed-100.ts",
+    "check:core": "tsx scripts/check-core.ts",
+    "once": "tsx src/index.ts --once",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w core && npm run typecheck -w web",
+    "test": "tsx scripts/verify.ts"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "chokidar": "^4.0.3",
+    "fastify": "^5.2.1",
+    "pino": "^9.6.0",
+    "rehype-stringify": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.1",
+    "unified": "^11.0.5",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^22.13.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

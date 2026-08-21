@@ -1,0 +1,23 @@
+# Novel Builder 配置文件
+# 所有相对路径都相对于项目根目录（运行目录）解析。
+
+library:
+  novelsDir: novels        # 小说源目录（永久事实来源）
+  outputDir: output        # EPUB 构建产物目录
+  bookdockDir: bookdock    # BookOrbit Book Dock 投递目录
+  logsDir: logs            # 日志目录
+
+server:
+  host: 127.0.0.1
+  port: 8320
+
+watch:
+  enabled: true            # 是否启用文件监听
+  debounceMs: 500          # 防抖时间
+  stabilityCheckMs: 2000   # 首次稳定等待时间
+  stabilityIntervalMs: 400 # 两次快照之间的间隔
+
+sync:
+  enabled: true            # 是否自动投递 Book Dock
+  retries: 3               # 同步失败重试次数
+  retryDelayMs: 1000       # 重试间隔

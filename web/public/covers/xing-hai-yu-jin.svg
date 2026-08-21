@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b2a4a" />
+      <stop offset="0.5" stop-color="#0f1a33" />
+      <stop offset="1" stop-color="#050a16" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.5">
+      <stop offset="0" stop-color="#ffd9a0" stop-opacity="0.35" />
+      <stop offset="1" stop-color="#ffd9a0" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="1600" fill="url(#bg)" />
+  <circle cx="600" cy="620" r="420" fill="url(#glow)" />
+  <rect x="70" y="70" width="1060" height="1460" fill="none" stroke="#6b7fa3" stroke-width="3" />
+  <text x="600" y="820" text-anchor="middle" font-family="'Noto Serif CJK SC','SimSun',serif" font-size="130" font-weight="bold" fill="#f5f1e6">星海余烬</text>
+  <line x1="420" y1="880" x2="780" y2="880" stroke="#8a9bbd" stroke-width="2" />
+  <text x="600" y="960" text-anchor="middle" font-family="'Noto Serif CJK SC','SimSun',serif" font-size="56" fill="#aeb8cd">AI文学实验室</text>
+</svg>

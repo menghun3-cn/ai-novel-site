@@ -1,0 +1,9 @@
+# 构建上下文排除：镜像内不需要的数据/产物/依赖（均通过卷挂载或 COPY 单独提供）
+node_modules
+dist
+novels
+output
+bookdock
+logs
+.git
+*.log

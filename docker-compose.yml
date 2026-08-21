@@ -1,0 +1,22 @@
+# Novel Web Publisher 部署编排
+#
+# 用法:
+#   docker compose up -d                # 启动
+#   docker compose exec web sh          # 进入容器
+#   docker compose exec web npm run import:novel -- /app/novels/星海余烬   # 导入小说
+#
+services:
+  web:
+    build: .
+    container_name: novel-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NOVEL_DATA_DIR: /app/data
+      NOVEL_SITE_URL: http://localhost:3000   # 部署后改为实际域名
+    volumes:
+      - ./data:/app/data                                          # SQLite 数据库
+      - ./web/public/covers:/app/web/public/covers               # 封面
+      - ./novels:/app/novels:ro                                   # 小说源(导入时读取)
