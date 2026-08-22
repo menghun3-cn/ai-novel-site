@@ -304,6 +304,28 @@ EPUB 已写入图书目录但 BookOrbit 未入库：确认该目录是否设置�
 **Q3：中文乱码？**
 EPUB 全部使用 UTF-8，章节 XHTML 声明 `charset="utf-8"`；请确保源 `.md/.txt` 文件本身是 UTF-8 编码。
 
+**Q3.1：`npm run pack:deploy` 打包脚本报错或打出的 zip 在 Linux 解压出乱码文件名？**
+打包脚本要求 **PowerShell 7（`pwsh`）**。Windows 自带的 `powershell` 是 5.1（.NET Framework），存在两个坑：按本地 GBK 误读无 BOM 的 UTF-8 脚本；`ZipFile` 写出的 zip 条目名用反斜杠（Linux 解压会生成文件名带 `\` 的坏文件）。npm script 已固定走 `pwsh`；手动执行时请用 `pwsh -File scripts/pack-deploy.ps1`，脚本内置版本守卫（低于 7 直接拒绝并提示）。PowerShell 安装地址：https://aka.ms/powershell
+
+**Q3.2：Docker 构建时 `npm install` 报 ETIMEDOUT？**
+镜像构建需要在容器内安装 npm 依赖（部署包刻意不带 node_modules——`better-sqlite3` 是原生模块，Windows 机器上的二进制在 Linux 容器里不可用）。Dockerfile 已默认全镜像源，服务器零编译：
+- npm 包 → `npmmirror`（`ARG NPM_REGISTRY`）
+- better-sqlite3 预编译 linux-x64 二进制 → npmmirror 二进制镜像（`npm_config_better_sqlite3_binary_host_mirror`），不触发 node-gyp 源码编译
+
+海外环境或走代理时覆盖：
+```bash
+docker compose build \
+  --build-arg NPM_REGISTRY=https://registry.npmjs.org \
+  --build-arg SQLITE_BINARY_MIRROR=   # 留空则回退 GitHub Releases
+```
+依赖清单（package.json / package-lock.json）不变的前提下，重复 `./rebuild.sh` 的 deps 层直接命中 Docker 缓存，秒级完成。
+
+> 注：`rebuild.sh` 与 `data/` 不打进部署 zip。前者是 zip 不保存 Unix 执行位，避免重置服务器上已赋权的脚本（等效命令 `docker compose build && docker compose up -d`）；后者保证**升级解压永不覆盖服务器数据库**。新服务器首次部署后导入小说：
+> ```bash
+> docker compose exec web npm run import:novel -- /app/novels/星海余烬
+> docker compose exec web npm run import:novel -- /app/novels/长风渡
+> ```
+
 **Q4：修改章节后没反应？**
 确认 `watch.enabled: true` 且服务在运行；新章节写入后约 3 秒内（防抖 + 稳定性检查）会自动构建。
 

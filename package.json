@@ -23,6 +23,7 @@
     "import:novel": "tsx importer/src/index.ts",
     "seed:100": "tsx scripts/seed-100.ts",
     "check:core": "tsx scripts/check-core.ts",
+    "pack:deploy": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/pack-deploy.ps1",
     "once": "tsx src/index.ts --once",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
