@@ -1,0 +1,8 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with the project's
+# translation-pairing verifier:
+#   git hash-object 2026-08-23-release-tags-develop-integration-pr-flow.md
+#   git hash-object 2026-08-23-release-tags-develop-integration-pr-flow.zh.md
+2026-08-23-release-tags-develop-integration-pr-flow.md: 11f7f5d11737f88ebfd36f9c62700e6f0e2a741c
+2026-08-23-release-tags-develop-integration-pr-flow.zh.md: 097cd12692eb957a4d6000eb657ef2d79256a2b5

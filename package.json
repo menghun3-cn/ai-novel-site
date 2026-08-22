@@ -28,7 +28,11 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w core && npm run typecheck -w web",
-    "test": "tsx scripts/verify.ts"
+    "test": "tsx scripts/verify.ts",
+    "check:notes": "npm run verify-agent-note-classification && npm run verify-agent-note-format && npm run verify-archived-agent-notes",
+    "verify-agent-note-classification": "tsx scripts/verify-agent-note-classification.ts",
+    "verify-agent-note-format": "tsx scripts/verify-agent-note-format.ts",
+    "verify-archived-agent-notes": "tsx scripts/verify-archived-agent-notes.ts"
   },
   "dependencies": {
     "archiver": "^7.0.1",
