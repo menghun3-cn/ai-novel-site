@@ -21,6 +21,7 @@ body {
   line-height: 1.9;
   color: inherit;
   word-break: break-word;
+  overflow-wrap: break-word;
 }
 .article p {
   margin: 0 0 1.2em;
@@ -57,4 +58,51 @@ body {
   margin: 0 0 1.2em;
   padding-left: 2em;
   list-style: revert;
+}
+
+/* ---------- 移动端自适应 ---------- */
+@media (max-width: 640px) {
+  .article {
+    font-size: var(--reader-size-mobile, 16px);
+    line-height: 1.85;
+  }
+  .article p {
+    text-indent: 2em;
+  }
+}
+
+/* ---------- 安全区适配（刘海屏/底部横条）---------- */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .reader-safe-bottom {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* ---------- 阅读器过渡动画 ---------- */
+.chapter-enter {
+  animation: chapterFadeIn 0.25s ease-out;
+}
+@keyframes chapterFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------- 已读章节标记 ---------- */
+.chapter-read {
+  position: relative;
+}
+.chapter-read::after {
+  content: '✓';
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  color: #22c55e;
 }

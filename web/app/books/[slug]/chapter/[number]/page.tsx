@@ -6,6 +6,8 @@ import { chapterLabel } from '@/lib/format';
 import ReaderControls from '@/components/ReaderControls';
 import ReadingProgress from '@/components/ReadingProgress';
 import RememberRead from '@/components/RememberRead';
+import ScrollRestore from '@/components/ScrollRestore';
+import SwipeNavigation from '@/components/SwipeNavigation';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,40 +35,66 @@ export default async function ChapterPage({
   const chapterLink = (chNumber: number) => `/books/${book.slug}/chapter/${chNumber}`;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <div className="chapter-enter mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+      {/* 阅读位置恢复/跳转到顶部 */}
+      <ScrollRestore bookSlug={book.slug} chapterNumber={chapter.number} />
+
+      {/* 移动端滑动手势 */}
+      <SwipeNavigation
+        bookSlug={book.slug}
+        prevChapter={prev?.number ?? null}
+        nextChapter={next?.number ?? null}
+      />
+
       <ReadingProgress />
 
-      {/* 标题区 */}
-      <div className="mb-6 text-center">
-        <Link href={`/books/${book.slug}`} className="text-sm text-neutral-500 hover:underline dark:text-neutral-400">
+      {/* 标题区 - 移动端自适应 */}
+      <div className="mb-4 text-center sm:mb-6">
+        <Link
+          href={`/books/${book.slug}`}
+          className="text-xs text-neutral-500 hover:underline dark:text-neutral-400 sm:text-sm"
+        >
           {book.title}
         </Link>
-        <h1 className="mt-2 text-2xl font-bold">{chapterLabel(chapter.number, chapter.title)}</h1>
+        <h1 className="mt-2 text-xl font-bold sm:text-2xl">{chapterLabel(chapter.number, chapter.title)}</h1>
       </div>
 
       <ReaderControls bookSlug={book.slug} chapterNumber={chapter.number} />
 
-      {/* 正文 */}
+      {/* 正文 - 移动端自适应 */}
       <article className="article" dangerouslySetInnerHTML={{ __html: html }} />
 
-      {/* 底部导航 */}
-      <nav className="mt-12 flex items-center justify-between border-t border-neutral-200 pt-5 text-sm dark:border-neutral-800">
+      {/* 底部导航 - 移动端更大的触控目标 */}
+      <nav className="mt-8 flex items-center justify-between border-t border-neutral-200 pt-4 text-sm dark:border-neutral-800 sm:mt-12 sm:pt-5">
         {prev ? (
-          <Link href={chapterLink(prev.number)} className="text-neutral-600 transition hover:text-sky-600 dark:text-neutral-300 dark:hover:text-sky-400">
-            ← 上一章
+          <Link
+            href={chapterLink(prev.number)}
+            className="flex items-center gap-1 rounded-lg px-3 py-2 text-neutral-600 transition hover:bg-neutral-100 hover:text-sky-600 active:scale-95 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
+          >
+            <span className="text-lg">←</span>
+            <span className="hidden sm:inline">上一章</span>
+            <span className="sm:hidden">上</span>
           </Link>
         ) : (
-          <span className="text-neutral-300 dark:text-neutral-600">← 上一章</span>
+          <span className="px-3 py-2 text-neutral-300 dark:text-neutral-600">← 上一章</span>
         )}
-        <Link href={`/books/${book.slug}`} className="font-medium text-neutral-600 transition hover:text-sky-600 dark:text-neutral-300 dark:hover:text-sky-400">
+        <Link
+          href={`/books/${book.slug}`}
+          className="rounded-lg px-4 py-2 font-medium text-neutral-600 transition hover:bg-neutral-100 hover:text-sky-600 active:scale-95 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
+        >
           目录
         </Link>
         {next ? (
-          <Link href={chapterLink(next.number)} className="text-neutral-600 transition hover:text-sky-600 dark:text-neutral-300 dark:hover:text-sky-400">
-            下一章 →
+          <Link
+            href={chapterLink(next.number)}
+            className="flex items-center gap-1 rounded-lg px-3 py-2 text-neutral-600 transition hover:bg-neutral-100 hover:text-sky-600 active:scale-95 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-sky-400"
+          >
+            <span className="sm:hidden">下</span>
+            <span className="hidden sm:inline">下一章</span>
+            <span className="text-lg">→</span>
           </Link>
         ) : (
-          <span className="text-neutral-300 dark:text-neutral-600">下一章 →</span>
+          <span className="px-3 py-2 text-neutral-300 dark:text-neutral-600">下一章 →</span>
         )}
       </nav>
 

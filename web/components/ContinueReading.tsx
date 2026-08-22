@@ -27,7 +27,7 @@ export default function ContinueReading({
   return (
     <Link
       href={`/books/${bookSlug}/chapter/${last}`}
-      className="rounded-full border border-sky-600 px-6 py-2.5 text-sm font-medium text-sky-600 transition hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-neutral-800"
+      className="rounded-full border border-sky-600 px-5 py-2.5 text-sm font-medium text-sky-600 transition hover:bg-sky-50 active:scale-95 dark:text-sky-400 dark:hover:bg-neutral-800 sm:px-6"
     >
       继续阅读 第{last}章
     </Link>
