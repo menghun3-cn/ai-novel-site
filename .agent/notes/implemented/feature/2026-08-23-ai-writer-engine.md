@@ -18,11 +18,17 @@ rather than straight to published.
 
 1. **Provider abstraction** — `LlmProvider.complete()` plus one concrete
    adapter, `createOpenAiCompatibleProvider` (chat-completions over fetch,
-   works with DeepSeek/OpenAI/local gateways). Config comes from env
-   (`AI_BASE_URL/AI_API_KEY/AI_MODEL`) via `resolveProviderFromEnv`; missing
-   vars raise `AI_NOT_CONFIGURED` (mapped 503), upstream failures become
+   works with DeepSeek/OpenAI/local gateways). Config comes from env via
+   `resolveProviderFromEnv` (async): `AI_BASE_URL`/`AI_API_KEY` are required
+   (missing → `AI_NOT_CONFIGURED`, 503); `AI_MODEL` is optional — when unset
+   the resolver fetches `${baseUrl}/models`, filters out non-chat models
+   (embed/rerank/audio/image/moderation/vision pattern), and takes the first
+   remaining id, cached per baseUrl+apiKey. Discovery failures raise
+   `AI_PROVIDER_FAILED` (502); a list with no eligible model raises
+   `AI_NOT_CONFIGURED`. Upstream completion failures become
    `AI_PROVIDER_FAILED` (502). Tests use `createFakeProvider` and a local
-   http server — no real network in CI.
+   http server (serving both /models and /chat/completions) — no real
+   network in CI.
 2. **Rule QC first** — `qualityCheckChapter()` is a pure function with three
    gates: minimum length (default 500 chars), AI self-reference markers
    (`/作为(一个)?AI|语言模型|…/`), and sliding-window repetition (60-char

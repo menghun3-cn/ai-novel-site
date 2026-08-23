@@ -16,9 +16,9 @@ const {
   createBook,
   createChapter,
   getChapterByNumber,
-  getGenerationContext,
   createOpenAiCompatibleProvider,
   resolveProviderFromEnv,
+  clearProviderCache,
   createFakeProvider,
   qualityCheckChapter,
   generateChapterDraft,
@@ -63,12 +63,18 @@ async function assertThrows(code: string, fn: () => unknown | Promise<unknown>, 
 // ---------- 环境解析 ----------
 {
   await assertThrows('AI_NOT_CONFIGURED', () => resolveProviderFromEnv({}), '环境缺失 → AI_NOT_CONFIGURED');
-  const p = resolveProviderFromEnv({ AI_BASE_URL: 'http://127.0.0.1:9/v1', AI_API_KEY: 'k', AI_MODEL: 'm' });
-  assertOk(p.name === 'openai-compatible:m', '三要素齐备时构造 Provider');
+  const p = await resolveProviderFromEnv({ AI_BASE_URL: 'http://127.0.0.1:9/v1', AI_API_KEY: 'k', AI_MODEL: 'm' });
+  assertOk(p.name === 'openai-compatible:m', '显式 AI_MODEL 时直接构造,不访问上游');
 }
 
-// ---------- 本地 HTTP 模拟 OpenAI 兼容端点 ----------
+// ---------- 本地 HTTP 模拟 OpenAI 兼容端点(含 /models 自动发现) ----------
+let modelList: string[] = ['text-embedding-mock', 'mock-chat', 'mock-vision'];
 const server = http.createServer((req, res) => {
+  if (req.method === 'GET' && req.url?.includes('/models')) {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ data: modelList.map((id) => ({ id })) }));
+    return;
+  }
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {
@@ -93,7 +99,23 @@ const server = http.createServer((req, res) => {
 await new Promise<void>((res) => server.listen(0, '127.0.0.1', res));
 const addr = server.address();
 if (!addr || typeof addr === 'string') throw new Error('no port');
-const provider = createOpenAiCompatibleProvider({ baseUrl: `http://127.0.0.1:${addr.port}`, apiKey: 'test', model: 'fake-model' });
+const MOCK_BASE = `http://127.0.0.1:${addr.port}`;
+const provider = createOpenAiCompatibleProvider({ baseUrl: MOCK_BASE, apiKey: 'test', model: 'fake-model' });
+
+// ---------- 模型自动发现 ----------
+{
+  clearProviderCache();
+  const p = await resolveProviderFromEnv({ AI_BASE_URL: MOCK_BASE, AI_API_KEY: 'test' });
+  assertOk(p.name === 'openai-compatible:mock-chat', `无 AI_MODEL 时自动发现并跳过 embedding/vision(实得 ${p.name})`);
+  const cached = await resolveProviderFromEnv({ AI_BASE_URL: MOCK_BASE, AI_API_KEY: 'test' });
+  assertOk(cached.name === p.name, '同凭据二次解析命中缓存');
+  clearProviderCache();
+  modelList = ['text-embedding-mock', 'mock-rerank-v2'];
+  await assertThrows('AI_NOT_CONFIGURED', () => resolveProviderFromEnv({ AI_BASE_URL: MOCK_BASE, AI_API_KEY: 'test' }), '列表无非对话模型 → AI_NOT_CONFIGURED');
+  modelList = ['mock-chat', 'text-embedding-mock'];
+  const first = await resolveProviderFromEnv({ AI_BASE_URL: MOCK_BASE, AI_API_KEY: 'test' });
+  assertOk(first.name === 'openai-compatible:mock-chat', '取第一个符合条件的模型');
+}
 
 const book = createBook({ slug: 'ai-book', title: '火种纪元', authorName: '测', categoryName: '奇幻', tags: [] });
 
