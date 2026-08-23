@@ -72,5 +72,6 @@ serialization automation exists end-to-end at the service layer with a
 testable clock. Cost: `updateChapter` still accepts raw `status` patches
 (admin full control), so the strict transitions are enforced by the review
 methods, not by the generic editor — the UI must route through them; the
-scheduler process itself does not exist yet (executor only), so nothing
-publishes automatically until PR #8 wires the runner.
+scheduler process and its HTTP surface shipped in
+[the follow-up note](2026-08-23-publish-scheduler-api.md), and deployment
+must include that process for automation to be live.

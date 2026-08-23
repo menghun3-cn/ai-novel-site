@@ -12,7 +12,7 @@ const patchSchema = z
     title: z.string().min(1).max(300),
     contentMd: z.string().min(1),
     slug: z.string().max(300).nullish(),
-    status: z.enum(['draft', 'scheduled', 'published', 'hidden']),
+    status: z.enum(['draft', 'pending_review', 'scheduled', 'published', 'hidden']),
     scheduledAt: z.string().datetime().nullish(),
   })
   .partial();
