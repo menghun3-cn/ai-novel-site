@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getBookBySlug, listPublishedChapters } from '@novel/core';
+import { getBookBySlug, listPublishedChapters, getBookStats } from '@novel/core';
 import ContinueReading from '@/components/ContinueReading';
 import ChapterList from '@/components/ChapterList';
 import BookActions from '@/components/BookActions';
@@ -58,6 +58,7 @@ export default async function BookDetailPage({ params }: { params: Promise<{ slu
             {book.authorName} · {book.categoryName} ·{' '}
             {book.status === 'serializing' ? '连载中' : '已完结'} · {chapters.length} 章
           </p>
+          <BookStatsLine bookId={book.id} />
           {book.tags.length > 0 && (
             <div className="mt-3 flex flex-wrap justify-center gap-2 md:justify-start">
               {book.tags.map((t) => (
@@ -93,5 +94,17 @@ export default async function BookDetailPage({ params }: { params: Promise<{ slu
       {/* 章节列表（支持正序/倒序） */}
       <ChapterList bookSlug={book.slug} chapters={chapterData} />
     </div>
+  );
+}
+
+/** V7 热度行:PV · 收藏 · 完读率(无信号时整行不渲染) */
+function BookStatsLine({ bookId }: { bookId: string }) {
+  const st = getBookStats(bookId);
+  if (st.viewCount === 0 && st.favoriteCount === 0) return null;
+  return (
+    <p className="mt-1.5 text-xs text-neutral-400 dark:text-neutral-500">
+      {st.viewCount} 次阅读 · {st.favoriteCount} 人收藏
+      {st.finishRate > 0 ? ` · 完读率 ${Math.round(st.finishRate * 100)}%` : ''}
+    </p>
   );
 }
