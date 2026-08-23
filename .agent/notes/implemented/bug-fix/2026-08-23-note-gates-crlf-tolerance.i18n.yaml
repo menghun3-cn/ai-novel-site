@@ -1,0 +1,8 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with the project's
+# translation-pairing verifier:
+#   git hash-object 2026-08-23-note-gates-crlf-tolerance.md
+#   git hash-object 2026-08-23-note-gates-crlf-tolerance.zh.md
+2026-08-23-note-gates-crlf-tolerance.md: bfc31148d492aa6e61256d95591eed5586931bf1
+2026-08-23-note-gates-crlf-tolerance.zh.md: b5de02de91eb17521c60bacb63994fdce3725cc6
