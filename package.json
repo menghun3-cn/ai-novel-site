@@ -30,6 +30,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w core && npm run typecheck -w web",
     "test": "tsx scripts/verify.ts",
     "test:core": "tsx scripts/verify-admin-core.ts",
+    "test:api": "tsx scripts/verify-admin-api.ts",
     "check:notes": "npm run verify-agent-note-classification && npm run verify-agent-note-format && npm run verify-archived-agent-notes",
     "verify-agent-note-classification": "tsx scripts/verify-agent-note-classification.ts",
     "verify-agent-note-format": "tsx scripts/verify-agent-note-format.ts",
