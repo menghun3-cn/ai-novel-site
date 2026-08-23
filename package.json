@@ -34,6 +34,7 @@
     "test:media": "tsx scripts/verify-admin-media.ts",
     "test:publish": "tsx scripts/verify-publish-workflow.ts",
     "test:publish-api": "tsx scripts/verify-publish-api.ts",
+    "test:story": "tsx scripts/verify-story-core.ts",
     "scheduler": "tsx scripts/publish-scheduler.ts",
     "check:notes": "npm run verify-agent-note-classification && npm run verify-agent-note-format && npm run verify-archived-agent-notes",
     "verify-agent-note-classification": "tsx scripts/verify-agent-note-classification.ts",
