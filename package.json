@@ -43,6 +43,7 @@
     "test:ai-serial-api": "tsx scripts/verify-ai-serial-api.ts",
     "test:reader": "tsx scripts/verify-reader.ts",
     "test:reader-api": "tsx scripts/verify-reader-api.ts",
+    "test:discovery": "tsx scripts/verify-discovery.ts",
     "scheduler": "tsx scripts/publish-scheduler.ts",
     "check:notes": "npm run verify-agent-note-classification && npm run verify-agent-note-format && npm run verify-archived-agent-notes",
     "verify-agent-note-classification": "tsx scripts/verify-agent-note-classification.ts",

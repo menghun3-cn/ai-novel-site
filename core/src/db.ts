@@ -291,6 +291,17 @@ function migrateJobOptionColumns(db: Database.Database): void {
   if (!cols.includes('llm_review')) db.exec('ALTER TABLE generation_jobs ADD COLUMN llm_review INTEGER');
 }
 
+/**
+ * 轻量迁移:V7 Discovery 热度信号列(books.view_count, chapters.view_count/finish_count)。
+ */
+function migrateDiscoveryColumns(db: Database.Database): void {
+  const bookCols = (db.prepare('PRAGMA table_info(books)').all() as { name: string }[]).map((c) => c.name);
+  if (!bookCols.includes('view_count')) db.exec('ALTER TABLE books ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0');
+  const chapterCols = (db.prepare('PRAGMA table_info(chapters)').all() as { name: string }[]).map((c) => c.name);
+  if (!chapterCols.includes('view_count')) db.exec('ALTER TABLE chapters ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0');
+  if (!chapterCols.includes('finish_count')) db.exec('ALTER TABLE chapters ADD COLUMN finish_count INTEGER NOT NULL DEFAULT 0');
+}
+
 export function getDb(): Database.Database {
   if (!sqlite) {
     ensureDataDir();
@@ -301,6 +312,7 @@ export function getDb(): Database.Database {
     migrateAuthorColumns(sqlite);
     migratePublishColumns(sqlite);
     migrateJobOptionColumns(sqlite);
+    migrateDiscoveryColumns(sqlite);
   }
   return sqlite;
 }
