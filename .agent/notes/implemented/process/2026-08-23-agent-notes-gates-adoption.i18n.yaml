@@ -1,0 +1,8 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with the project's
+# translation-pairing verifier:
+#   git hash-object 2026-08-23-agent-notes-gates-adoption.md
+#   git hash-object 2026-08-23-agent-notes-gates-adoption.zh.md
+2026-08-23-agent-notes-gates-adoption.md: cf8fbc3e3afbcc4a2d9e0ac1d664b07dbc78d4f3
+2026-08-23-agent-notes-gates-adoption.zh.md: 49f09b913d9603feb0d0cf09911c5a61a8547381
