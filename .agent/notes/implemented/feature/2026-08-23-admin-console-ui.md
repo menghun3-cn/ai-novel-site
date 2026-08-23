@@ -79,5 +79,5 @@ categories, tags, media) from the browser with one token; public pages are
 isolated from console chrome. Cost: the token in localStorage is readable
 to XSS on the site origin — acceptable while the console is same-origin and
 operator-only, but a HttpOnly cookie session is the upgrade path if scopes
-grow. Chapter modal interactions were not driven end-to-end in the browser;
-their logic is covered by the API test suites.
+grow. Chapter modal interactions were later driven end-to-end by the V3
+review console ([related](2026-08-23-review-console-ui.md)).
