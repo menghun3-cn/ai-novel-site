@@ -1,13 +1,14 @@
 /**
- * V3 定时发布调度器:常驻进程,周期性调用 runPublishCycle()
- * (到期定时章节转发布 + 每书每日自动发布)。
+ * 调度器:常驻进程,每 tick 依次执行
+ *   1) runPublishCycle()          — 到期定时章节转发布 + 每书每日自动发布(V3)
+ *   2) runAiSerializationCycle()  — 每书每日 AI 连载:入队生成→质检→送审/发布(V5)
  *
  * 运行:npm run scheduler
  * 环境变量:
  *   NOVEL_DATA_DIR         数据目录(默认仓库 data/)
- *   PUBLISH_TICK_SECONDS   扫描间隔,默认 60 秒
+ *   PUBLISH_TICK_SECONDS   扫描间隔,默认 60 秒(下限 5)
  */
-import { runPublishCycle, type PublishCycleResult } from '@novel/core';
+import { runAiSerializationCycle, runPublishCycle, type SerializationCycleResult } from '@novel/core';
 
 const tickSeconds = Number(process.env.PUBLISH_TICK_SECONDS ?? 60);
 if (!Number.isFinite(tickSeconds) || tickSeconds < 5) {
@@ -28,7 +29,18 @@ async function tick(): Promise<void> {
     }
   } catch (err) {
     // 单次失败不终止调度器;错误完整落日志便于排查
-    console.error(`[${new Date().toISOString()}] cycle failed:`, err);
+    console.error(`[${new Date().toISOString()}] publish cycle failed:`, err);
+  }
+
+  try {
+    const ai: SerializationCycleResult = await runAiSerializationCycle();
+    if (ai.enqueued > 0 || ai.processed > 0) {
+      console.log(
+        `[${new Date().toISOString()}] ai-serial: triggered=${ai.booksTriggered} enqueued=${ai.enqueued} processed=${ai.processed}`
+      );
+    }
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] ai-serial cycle failed:`, err);
   }
 }
 

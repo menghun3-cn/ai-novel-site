@@ -1,6 +1,6 @@
 {
   "name": "novel-builder",
-  "version": "4.0.1",
+  "version": "5.0.0",
   "description": "MD/TXT 小说目录 → Content Core → Web Publisher / EPUB / BookOrbit",
   "type": "module",
   "license": "MIT",
@@ -39,6 +39,8 @@
     "test:ai-writer": "tsx scripts/verify-ai-writer.ts",
     "test:ai-api": "tsx scripts/verify-ai-api.ts",
     "test:settings": "tsx scripts/verify-admin-settings.ts",
+    "test:ai-serial": "tsx scripts/verify-ai-serial.ts",
+    "test:ai-serial-api": "tsx scripts/verify-ai-serial-api.ts",
     "scheduler": "tsx scripts/publish-scheduler.ts",
     "check:notes": "npm run verify-agent-note-classification && npm run verify-agent-note-format && npm run verify-archived-agent-notes",
     "verify-agent-note-classification": "tsx scripts/verify-agent-note-classification.ts",

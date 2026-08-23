@@ -3,7 +3,7 @@
 // AI 创作中心:选书 → Story Core 事实管理(世界观/人物/关系/故事线/大纲/伏笔) + AI 章节生成工作台
 // 结构蓝图见 PR16 描述;所有卡片复用 ui.tsx 原语与既有 LSG token
 
-import { Bot, Flame, Pencil, Plus, Sparkles, Trash2, Users } from 'lucide-react';
+import { Bot, CalendarClock, Flame, ListChecks, Pencil, Plus, Sparkles, Trash2, Users } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api } from '@/lib/admin-client';
 import {
@@ -131,6 +131,37 @@ export default function AdminStoryPage() {
   const [generating, setGenerating] = useState(false);
   const [aiResult, setAiResult] = useState<null | { ok: boolean; lines: string[] }>(null);
 
+  // AI 自动连载
+  interface SerialConfig {
+    enabled: boolean;
+    hour: number;
+    count: number;
+    autoPublish: boolean;
+    minChars: number;
+  }
+  interface SerialJob {
+    id: number;
+    bookId?: string;
+    chapterNumber: number | null;
+    status: 'pending' | 'running' | 'published' | 'submitted' | 'rejected' | 'failed';
+    error: string | null;
+    chars: number | null;
+    model: string | null;
+    updatedAt: string;
+  }
+  const JOB_BADGE: Record<SerialJob['status'], { tone: 'success' | 'warning' | 'danger' | 'info' | 'running'; label: string }> = {
+    published: { tone: 'success', label: '已发布' },
+    submitted: { tone: 'info', label: '待审核' },
+    rejected: { tone: 'warning', label: '质检拒绝' },
+    failed: { tone: 'danger', label: '失败' },
+    running: { tone: 'running', label: '执行中' },
+    pending: { tone: 'running', label: '排队中' },
+  };
+  const [serialCfg, setSerialCfg] = useState({ enabled: false, hour: '8', count: '1', autoPublish: false, minChars: '500' });
+  const [serialJobs, setSerialJobs] = useState<SerialJob[] | null>(null);
+  const [batchCount, setBatchCount] = useState('5');
+  const [serialBusy, setSerialBusy] = useState<'save' | 'enqueue' | 'run' | null>(null);
+
   const notify = (msg: string) => {
     setNotice(msg);
     setError(null);
@@ -173,6 +204,76 @@ export default function AdminStoryPage() {
   useEffect(() => {
     void loadStory(bookId);
   }, [bookId, loadStory]);
+
+  const loadSerial = useCallback(async (id: string) => {
+    if (!id) return;
+    try {
+      const [cfg, jobs] = await Promise.all([
+        api<{ config: SerialConfig }>(`/api/admin/books/${id}/ai-serialization`),
+        api<{ jobs: SerialJob[] }>(`/api/admin/ai/serial/jobs?bookId=${id}&limit=10`),
+      ]);
+      setSerialCfg({
+        enabled: cfg.config.enabled,
+        hour: String(cfg.config.hour),
+        count: String(cfg.config.count),
+        autoPublish: cfg.config.autoPublish,
+        minChars: String(cfg.config.minChars),
+      });
+      setSerialJobs(jobs.jobs);
+    } catch {
+      setSerialJobs([]);
+    }
+  }, []);
+  useEffect(() => {
+    void loadSerial(bookId);
+  }, [bookId, loadSerial]);
+
+  async function saveSerial(): Promise<void> {
+    if (serialBusy) return;
+    setSerialBusy('save');
+    try {
+      await api(`/api/admin/books/${bookId}/ai-serialization`, {
+        method: 'PUT',
+        body: JSON.stringify({ enabled: serialCfg.enabled, hour: Number(serialCfg.hour), count: Number(serialCfg.count), autoPublish: serialCfg.autoPublish, minChars: Number(serialCfg.minChars) }),
+      });
+      notify(serialCfg.enabled ? `AI 连载已启用:每日 ${serialCfg.hour} 点生成 ${serialCfg.count} 章` : 'AI 连载配置已保存(停用)');
+      await loadSerial(bookId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setSerialBusy(null);
+    }
+  }
+
+  async function batchEnqueue(): Promise<void> {
+    if (serialBusy) return;
+    setSerialBusy('enqueue');
+    try {
+      const res = await api<{ jobs: unknown[] }>('/api/admin/ai/serial/enqueue', { method: 'POST', body: JSON.stringify({ bookId, count: Math.max(1, Math.min(50, Number(batchCount) || 1)) }) });
+      notify(`已入队 ${res.jobs.length} 个生成任务${serialCfg.autoPublish ? ',处理通过后将自动发布' : ',通过质检后进入审核队列'}`);
+      await loadSerial(bookId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '入队失败');
+    } finally {
+      setSerialBusy(null);
+    }
+  }
+
+  async function processQueue(): Promise<void> {
+    if (serialBusy) return;
+    setSerialBusy('run');
+    try {
+      const res = await api<{ processed: number; jobs: SerialJob[] }>('/api/admin/ai/serial/run', { method: 'POST', body: JSON.stringify({ limit: 20 }) });
+      setSerialJobs(res.jobs.filter((j) => !j.bookId || j.bookId === bookId).slice(0, 10));
+      notify(res.processed > 0 ? `已处理 ${res.processed} 个生成任务,结果见下方任务列表` : '队列中没有待处理的任务');
+      window.dispatchEvent(new CustomEvent('admin:review-changed'));
+      await loadStory(bookId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '处理失败');
+    } finally {
+      setSerialBusy(null);
+    }
+  }
 
   async function run(promise: Promise<unknown>, okMsg: string): Promise<boolean> {
     try {
@@ -613,6 +714,126 @@ export default function AdminStoryPage() {
               <p className="mt-3 text-xs leading-relaxed text-[#94a3b8]">
                 生成前自动组装:世界观 · 人物状态 · 关系 · 进行中故事线 · 未回收伏笔 · 最近章节尾部 · 目标章大纲。质检拦截时不会写入任何章节。
               </p>
+            </div>
+          </section>
+
+          {/* AI 自动连载卡 */}
+          <section className="overflow-hidden rounded-xl bg-white shadow-sm">
+            <header className="flex h-14 items-center gap-2 px-5 text-white" style={{ background: 'linear-gradient(135deg,#0ea5e9,#2563eb)' }}>
+              <CalendarClock size={18} aria-hidden />
+              <h2 className="text-base font-semibold">AI 自动连载 · 每日流水线</h2>
+              <span className="ml-auto">
+                {serialCfg.enabled ? (
+                  <Badge tone="success">已启用</Badge>
+                ) : (
+                  <Badge tone="info">未启用</Badge>
+                )}
+              </span>
+            </header>
+            <div className="p-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Field label="状态">
+                  <Select value={serialCfg.enabled ? 'on' : 'off'} onChange={(e) => setSerialCfg({ ...serialCfg, enabled: e.target.value === 'on' })}>
+                    <option value="off">停用</option>
+                    <option value="on">启用</option>
+                  </Select>
+                </Field>
+                <Field label="每日时刻(0-23 点)">
+                  <Input type="number" min={0} max={23} value={serialCfg.hour} onChange={(e) => setSerialCfg({ ...serialCfg, hour: e.target.value })} />
+                </Field>
+                <Field label="每日生成章数(1-20)">
+                  <Input type="number" min={1} max={20} value={serialCfg.count} onChange={(e) => setSerialCfg({ ...serialCfg, count: e.target.value })} />
+                </Field>
+                <Field label="发布模式">
+                  <Select value={serialCfg.autoPublish ? 'auto' : 'review'} onChange={(e) => setSerialCfg({ ...serialCfg, autoPublish: e.target.value === 'auto' })}>
+                    <option value="review">送审核队列(人工确认)</option>
+                    <option value="auto">自动发布</option>
+                  </Select>
+                </Field>
+                <Field label="质检字数下限(200-20000)">
+                  <Input type="number" min={200} max={20000} value={serialCfg.minChars} onChange={(e) => setSerialCfg({ ...serialCfg, minChars: e.target.value })} />
+                </Field>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Button variant="primary" disabled={!bookId || serialBusy !== null} onClick={() => void saveSerial()}>
+                  {serialBusy === 'save' ? (
+                    <>
+                      <Spinner size={14} /> 保存中…
+                    </>
+                  ) : (
+                    '保存连载配置'
+                  )}
+                </Button>
+                <span className="flex items-center gap-2 text-sm text-[#334155]">
+                  批量
+                  <Input type="number" min={1} max={50} value={batchCount} onChange={(e) => setBatchCount(e.target.value)} className="w-20" aria-label="批量生成章数" />
+                  章
+                </span>
+                <Button variant="secondary" disabled={!bookId || serialBusy !== null} onClick={() => void batchEnqueue()}>
+                  {serialBusy === 'enqueue' ? (
+                    <>
+                      <Spinner size={14} /> 入队中…
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={14} /> 批量生成入队
+                    </>
+                  )}
+                </Button>
+                <Button variant="secondary" disabled={serialBusy !== null || !serialJobs?.some((j) => j.status === 'pending')} onClick={() => void processQueue()}>
+                  {serialBusy === 'run' ? (
+                    <>
+                      <Spinner size={14} /> 处理中…
+                    </>
+                  ) : (
+                    <>
+                      <ListChecks size={14} /> 立即处理队列
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-[#94a3b8]">
+                启用后由常驻调度器(npm run scheduler)每日到点自动执行;「立即处理队列」与调度器同一执行器。发布模式选「自动发布」即视为路线图中的人工确认放行。
+              </p>
+
+              <div className="mt-5 overflow-x-auto">
+                <table className="w-full min-w-[640px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-[#e2e8f0] bg-[#f8fafc] text-xs uppercase tracking-wide text-[#64748b]">
+                      <th className="h-9 px-3 font-medium">状态</th>
+                      <th className="h-9 px-3 font-medium">章号</th>
+                      <th className="h-9 px-3 font-medium">字数</th>
+                      <th className="h-9 px-3 font-medium">模型</th>
+                      <th className="h-9 px-3 font-medium">时间</th>
+                      <th className="h-9 px-3 font-medium">错误/说明</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(serialJobs ?? []).length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-8 text-center text-[#94a3b8]">
+                          暂无生成任务 — 保存配置等待每日自动执行,或用上方按钮批量入队
+                        </td>
+                      </tr>
+                    ) : (
+                      (serialJobs ?? []).map((j) => (
+                        <tr key={j.id} className="border-b border-[#f1f5f9] transition-colors hover:bg-[#f8fafc]">
+                          <td className="px-3 py-2.5">
+                            <Badge tone={JOB_BADGE[j.status].tone}>{JOB_BADGE[j.status].label}</Badge>
+                          </td>
+                          <td className="px-3 py-2.5 text-[#334155]">{j.chapterNumber ?? '—'}</td>
+                          <td className="px-3 py-2.5 text-[#334155]">{j.chars ?? '—'}</td>
+                          <td className="px-3 py-2.5 text-[#64748b]">{j.model ?? '—'}</td>
+                          <td className="px-3 py-2.5 text-[#64748b]">{j.updatedAt.slice(11, 19)}</td>
+                          <td className="max-w-[220px] truncate px-3 py-2.5 text-[#b45309]" title={j.error ?? undefined}>
+                            {j.error ?? '—'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </section>
         </>
