@@ -1,6 +1,6 @@
 // Content Core 领域模型:Book / Chapter / Author / Category / Tag 与发布状态机
 
-export const BOOK_STATUSES = ['serializing', 'completed'] as const;
+export const BOOK_STATUSES = ['serializing', 'completed', 'hidden'] as const;
 export type BookStatus = (typeof BOOK_STATUSES)[number];
 
 export const CHAPTER_STATUSES = ['draft', 'scheduled', 'published', 'hidden'] as const;
@@ -16,6 +16,25 @@ export function isChapterStatus(v: unknown): v is ChapterStatus {
 
 export function isPublishedStatus(status: string): boolean {
   return status === 'published';
+}
+
+/** 管理侧错误:code 用于 API 层映射 HTTP 语义 */
+export type CoreErrorCode =
+  | 'BOOK_NOT_FOUND'
+  | 'SLUG_TAKEN'
+  | 'CHAPTER_NOT_FOUND'
+  | 'CHAPTER_NUMBER_CONFLICT'
+  | 'INVALID_CHAPTER_ORDER'
+  | 'INVALID_STATUS';
+
+export class CoreError extends Error {
+  constructor(
+    public readonly code: CoreErrorCode,
+    message?: string
+  ) {
+    super(message ?? code);
+    this.name = 'CoreError';
+  }
 }
 
 export interface Author {
@@ -137,4 +156,57 @@ export interface ImportReport {
   added: number;
   updated: number;
   total: number;
+}
+
+// ---------- 管理侧输入(V2 Content Management) ----------
+
+/** 新建小说;slug 唯一,重复抛 SLUG_TAKEN */
+export interface CreateBookInput {
+  slug: string;
+  title: string;
+  description?: string | null;
+  coverPath?: string | null;
+  status?: BookStatus;
+  authorName: string;
+  categoryName: string;
+  tags?: string[];
+}
+
+/** 按 id 编辑小说;仅提供的字段生效,tags 提供时全量重建 */
+export interface UpdateBookPatch {
+  title?: string;
+  description?: string | null;
+  coverPath?: string | null;
+  status?: BookStatus;
+  authorName?: string;
+  categoryName?: string;
+  tags?: string[];
+}
+
+export interface ListAllBooksOptions {
+  status?: BookStatus;
+  categorySlug?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** 新建章节;number 缺省取当前最大章号+1,冲突抛 CHAPTER_NUMBER_CONFLICT */
+export interface CreateChapterInput {
+  bookId: string;
+  number?: number;
+  title: string;
+  contentMd: string;
+  slug?: string | null;
+  status?: ChapterStatus;
+  scheduledAt?: string | null;
+}
+
+/** 编辑章节;status 转换语义见 updateChapter */
+export interface UpdateChapterPatch {
+  title?: string;
+  contentMd?: string;
+  slug?: string | null;
+  status?: ChapterStatus;
+  scheduledAt?: string | null;
 }
