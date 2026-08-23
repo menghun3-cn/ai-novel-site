@@ -1,0 +1,15 @@
+# 统一 LF:Windows 检出(core.autocrlf)不得改写字节,Agent Note 门禁与
+# 归档封存 hash 依赖字节稳定(见 implemented/bug-fix/2026-08-23-note-gates-crlf-tolerance)
+* text=auto eol=lf
+
+# 二进制资产(当前未跟踪,防患于未然)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.epub binary
+*.db binary

@@ -23,22 +23,22 @@ from `develop` at milestone boundaries, and every release merge is tagged
 standing integration branch for the current milestone.
 
 Every development item — feature, fix, or chore — is built on its own branch
-(`feat|fix|chore/<topic>`) cut from `develop`, and lands only through a
-`--no-ff` merge whose merge commit message names the change as a numbered PR
-(`PR #N: <topic>`). Direct work commits on `master` or `develop` are
-forbidden. Branches are pushed to `origin` so the same history can be opened
-as real GitHub PRs; because the `gh` CLI is unavailable in the working
-environment, the PR review step is currently simulated by the local
-branch-plus-merge-commit topology, which keeps every change independently
-revertible and attributable.
+(`feat|fix|chore/<topic>`) cut from `develop`, and lands only through a merge
+commit whose message names the change as a numbered PR (`PR #N: <topic>`).
+Direct work commits on `master` or `develop` are forbidden. Branches are
+pushed to `origin`; since the `gh` CLI (v2.98.0) became available,
+authenticated through a `GH_PAT` environment variable mapped onto
+`GH_TOKEN`, PRs are opened for real (`gh pr create --base develop`) and
+landed with `gh pr merge --merge`, so GitHub records the reviewable PR and
+the merge commit. PRs #1–#2 predate gh availability and were merged locally
+with `--no-ff` — topologically identical to GitHub merge commits.
 
 ## Alternatives considered
 
-**GitHub flow (every PR straight into `master`).** Lost for now: with no `gh`
-CLI the PR step is simulated locally anyway, and milestone-scale work needs a
-visible integration point where V2 features accumulate before the release
-merge; merging each feature straight to the release line would tag-or-not
-ambiguity at milestone boundaries.
+**GitHub flow (every PR straight into `master`).** Lost for now:
+milestone-scale work needs a visible integration point where V2 features
+accumulate before the release merge; merging each feature straight to the
+release line would create tag-or-not ambiguity at milestone boundaries.
 
 **Continue committing to `master` directly.** Lost: no clean `v1.0.0`-style
 rollback points, no per-change review or revert boundary, and unrelated agent

@@ -4,5 +4,5 @@
 # translation-pairing verifier:
 #   git hash-object 2026-08-23-release-tags-develop-integration-pr-flow.md
 #   git hash-object 2026-08-23-release-tags-develop-integration-pr-flow.zh.md
-2026-08-23-release-tags-develop-integration-pr-flow.md: 11f7f5d11737f88ebfd36f9c62700e6f0e2a741c
-2026-08-23-release-tags-develop-integration-pr-flow.zh.md: 097cd12692eb957a4d6000eb657ef2d79256a2b5
+2026-08-23-release-tags-develop-integration-pr-flow.md: 51709ecca1f0b1df39787c75572c65eb6d6d170b
+2026-08-23-release-tags-develop-integration-pr-flow.zh.md: 44f4a3b89614ee73a1f9d71332b873509e7247f9
