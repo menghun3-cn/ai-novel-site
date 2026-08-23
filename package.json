@@ -36,6 +36,8 @@
     "test:publish-api": "tsx scripts/verify-publish-api.ts",
     "test:story": "tsx scripts/verify-story-core.ts",
     "test:story-context": "tsx scripts/verify-story-context.ts",
+    "test:ai-writer": "tsx scripts/verify-ai-writer.ts",
+    "test:ai-api": "tsx scripts/verify-ai-api.ts",
     "scheduler": "tsx scripts/publish-scheduler.ts",
     "check:notes": "npm run verify-agent-note-classification && npm run verify-agent-note-format && npm run verify-archived-agent-notes",
     "verify-agent-note-classification": "tsx scripts/verify-agent-note-classification.ts",

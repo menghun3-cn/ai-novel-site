@@ -42,7 +42,9 @@ export type CoreErrorCode =
   | 'RELATIONSHIP_NOT_FOUND'
   | 'ARC_NOT_FOUND'
   | 'OUTLINE_NOT_FOUND'
-  | 'FORESHADOWING_NOT_FOUND';
+  | 'FORESHADOWING_NOT_FOUND'
+  | 'AI_NOT_CONFIGURED'
+  | 'AI_PROVIDER_FAILED';
 
 export class CoreError extends Error {
   constructor(
