@@ -14,6 +14,7 @@ interface BookRow {
   status: string;
   chapterCount: number;
   publishedCount: number;
+  pendingReviewCount: number;
 }
 interface MediaRow {
   name: string;
@@ -29,7 +30,7 @@ const GRADIENTS = {
 export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState({ books: 0, serializing: 0, hidden: 0, chaptersPublished: 0, chaptersDraft: 0, authors: 0, tags: 0, media: 0 });
+  const [stats, setStats] = useState({ books: 0, serializing: 0, hidden: 0, chaptersPublished: 0, chaptersDraft: 0, pendingReview: 0, authors: 0, tags: 0, media: 0 });
 
   useEffect(() => {
     let alive = true;
@@ -49,6 +50,7 @@ export default function AdminDashboardPage() {
           hidden: books.filter((b) => b.status === 'hidden').length,
           chaptersPublished: books.reduce((s, b) => s + b.publishedCount, 0),
           chaptersDraft: books.reduce((s, b) => s + Math.max(0, b.chapterCount - b.publishedCount), 0),
+          pendingReview: books.reduce((s, b) => s + (b.pendingReviewCount ?? 0), 0),
           authors: authorsRes.authors.length,
           tags: tagsRes.tags.length,
           media: mediaRes.media.length,
@@ -83,7 +85,11 @@ export default function AdminDashboardPage() {
             <h1 className="text-xl font-semibold text-[#0f172a]">内容概览</h1>
             <p className="mt-1 text-sm text-[#64748b]">
               连载中 <b className="font-semibold text-[#1677ff]">{stats.serializing}</b> · 已隐藏{' '}
-              <b className="font-semibold text-[#1677ff]">{stats.hidden}</b> · 作者{' '}
+              <b className="font-semibold text-[#1677ff]">{stats.hidden}</b> · 待审核{' '}
+              <Link href="/admin/review" className="hover:underline">
+                <b className={`font-semibold ${stats.pendingReview > 0 ? 'text-[#dc2626]' : 'text-[#1677ff]'}`}>{stats.pendingReview}</b>
+              </Link>{' '}
+              · 作者{' '}
               <b className="font-semibold text-[#1677ff]">{stats.authors}</b> · 标签{' '}
               <b className="font-semibold text-[#1677ff]">{stats.tags}</b>
             </p>

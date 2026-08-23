@@ -93,6 +93,7 @@ export const BOOK_STATUS_BADGE: Record<string, { tone: BadgeTone; label: string 
 };
 export const CHAPTER_STATUS_BADGE: Record<string, { tone: BadgeTone; label: string }> = {
   draft: { tone: 'info', label: '草稿' },
+  pending_review: { tone: 'warning', label: '待审核' },
   scheduled: { tone: 'warning', label: '定时' },
   published: { tone: 'success', label: '已发布' },
   hidden: { tone: 'danger', label: '已下线' },
