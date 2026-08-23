@@ -25,7 +25,15 @@ export type CoreErrorCode =
   | 'CHAPTER_NOT_FOUND'
   | 'CHAPTER_NUMBER_CONFLICT'
   | 'INVALID_CHAPTER_ORDER'
-  | 'INVALID_STATUS';
+  | 'INVALID_STATUS'
+  | 'AUTHOR_NOT_FOUND'
+  | 'AUTHOR_NAME_TAKEN'
+  | 'AUTHOR_IN_USE'
+  | 'CATEGORY_NOT_FOUND'
+  | 'CATEGORY_NAME_TAKEN'
+  | 'CATEGORY_IN_USE'
+  | 'TAG_NOT_FOUND'
+  | 'TAG_NAME_TAKEN';
 
 export class CoreError extends Error {
   constructor(
@@ -40,6 +48,13 @@ export class CoreError extends Error {
 export interface Author {
   id: number;
   name: string;
+  bio?: string | null;
+  avatarPath?: string | null;
+}
+
+/** 管理侧作者视图:附作品数 */
+export interface AuthorWithCount extends Author {
+  bookCount: number;
 }
 
 export interface Category {
@@ -209,4 +224,20 @@ export interface UpdateChapterPatch {
   slug?: string | null;
   status?: ChapterStatus;
   scheduledAt?: string | null;
+}
+
+/** 编辑作者;仅提供的字段生效;slug 化的实体名可改,slug 不可改 */
+export interface UpdateAuthorPatch {
+  name?: string;
+  bio?: string | null;
+  avatarPath?: string | null;
+}
+
+/** 重命名分类/标签;slug 保持不变(URL 稳定性) */
+export interface UpdateCategoryPatch {
+  name?: string;
+}
+
+export interface UpdateTagPatch {
+  name?: string;
 }

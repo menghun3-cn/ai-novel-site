@@ -1,0 +1,8 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with the project's
+# translation-pairing verifier:
+#   git hash-object 2026-08-23-admin-author-category-tag-management.md
+#   git hash-object 2026-08-23-admin-author-category-tag-management.zh.md
+2026-08-23-admin-author-category-tag-management.md: 16fe1788ceed8af4c7a160ea8a201273a42e9485
+2026-08-23-admin-author-category-tag-management.zh.md: 4176fe5e9d3203905eb55770fc14e7c0cf351e49
