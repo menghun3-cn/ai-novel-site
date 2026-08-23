@@ -85,5 +85,63 @@ const { GET: meRoute } = await import('../web/app/api/auth/me/route');
   assertOk(afterLogout.user === null, '旧会话不可用');
 }
 
+// ---------- V6 个性化端点:favorite/subscribe/progress/shelf/history ----------
+{
+  const { GET: favGet, POST: favPost } = await import('../web/app/api/books/[slug]/favorite/route');
+  const { GET: subGet, POST: subPost } = await import('../web/app/api/books/[slug]/subscribe/route');
+  const { POST: progressPost } = await import('../web/app/api/books/[slug]/chapters/[number]/progress/route');
+  const { GET: shelfGet } = await import('../web/app/api/me/shelf/route');
+  const { GET: historyGet } = await import('../web/app/api/me/history/route');
+
+  // 造一本带两章已发布的书
+  const { createBook: cb, createChapter, submitChapterForReview, approveChapter } = await import('@novel/core');
+  const book = cb({ slug: 'api-shelf-book', title: '端点书架之书', authorName: '测', categoryName: '科幻', tags: [] });
+  for (const num of [1, 2]) {
+    createChapter({ bookId: book.id, number: num, title: `第${num}章`, contentMd: '# t\n\n' + '正文'.repeat(300) });
+    submitChapterForReview(book.id, num);
+    approveChapter(book.id, num, { mode: 'now' });
+  }
+  const slugCtx = { params: Promise.resolve({ slug: book.slug }) };
+  const chCtx = (n: number) => ({ params: Promise.resolve({ slug: book.slug, number: String(n) }) });
+  const nfCtx = { params: Promise.resolve({ slug: 'no-such-slug' }) };
+
+  // 未登录一律 401
+  assertOk((await favPost(req('POST', '/x'), slugCtx)).status === 401, '未登录收藏 → 401');
+  assertOk((await shelfGet(req('GET', '/x'))).status === 401, '未登录书架 → 401');
+
+  // 用注册会话
+  const reg = await registerRoute(req('POST', '/api/auth/register', { username: '书友丙', email: 'bing@x.com', password: 'password123' }));
+  const cookie = sessionCookieOf(await loginRoute(req('POST', '/api/auth/login', { login: 'bing@x.com', password: 'password123' })));
+  void reg;
+
+  const st1 = await assertJson(await favGet(req('GET', '/x', undefined, cookie), slugCtx), 200, '收藏状态(未收藏)');
+  assertOk(st1.favorited === false, '初始未收藏');
+  const tog = await assertJson(await favPost(req('POST', '/x', undefined, cookie), slugCtx), 200, '切换收藏');
+  assertOk(tog.favorited === true, '收藏 → true');
+  await assertJson(await favPost(req('POST', '/x', undefined, cookie), slugCtx), 200, '');
+  const nfFav = await favGet(req('GET', '/x', undefined, cookie), nfCtx);
+  assertOk(nfFav.status === 404, '未知 slug → 404 BOOK_NOT_FOUND');
+
+  await assertJson(await subPost(req('POST', '/x', undefined, cookie), slugCtx), 200, '订阅');
+  const subState = await assertJson(await subGet(req('GET', '/x', undefined, cookie), slugCtx), 200, '订阅状态');
+  assertOk(subState.subscribed === true, '已订阅');
+
+  await assertJson(await progressPost(req('POST', '/x', {}, cookie), chCtx(1)), 200, '上报进度 第1章');
+  const badCh = await progressPost(req('POST', '/x', {}, cookie), chCtx(99));
+  assertOk(badCh.status === 404, '未发布章号进度 → 404 CHAPTER_NOT_FOUND');
+
+  const shelf = await assertJson(await shelfGet(req('GET', '/x', undefined, cookie)), 200, '我的书架');
+  const entries = shelf.entries as Array<{ title: string; hasUpdate: boolean; progressChapter: number | null }>;
+  assertOk(entries.length === 1 && entries[0].title === '端点书架之书' && entries[0].progressChapter === 1, '书架含进度条目');
+
+  await assertJson(await progressPost(req('POST', '/x', {}, cookie), chCtx(2)), 200, '上报进度 第2章');
+  const shelf2 = (await (await shelfGet(req('GET', '/x', undefined, cookie))).json()) as { entries: Array<{ hasUpdate: boolean }> };
+  assertOk(shelf2.entries[0].hasUpdate === false, '追平最新 → 无更新提示');
+
+  const hist = await assertJson(await historyGet(req('GET', '/x?limit=10', undefined, cookie)), 200, '阅读历史');
+  const items = hist.items as Array<{ chapterNumber: number }>;
+  assertOk(items.length === 1 && items[0].chapterNumber === 2, '历史为最近章(#2)');
+}
+
 console.log(failed === 0 ? '\n读者认证端点全部验证通过' : `\n${failed} 项失败`);
 process.exit(failed === 0 ? 0 : 1);

@@ -128,3 +128,153 @@ export function logoutReader(token: string | null | undefined): void {
   if (!token) return;
   getDb().prepare('DELETE FROM sessions WHERE token = ?').run(token);
 }
+
+// ---------- V6 个性化:收藏 / 订阅 / 阅读进度 ----------
+
+function assertBookExists(bookId: string): void {
+  if (!getDb().prepare('SELECT id FROM books WHERE id = ?').get(bookId)) {
+    throw new CoreError('BOOK_NOT_FOUND', `book not found: ${bookId}`);
+  }
+}
+
+/** 收藏/取消收藏(幂等);返回切换后的状态 */
+export function toggleFavorite(userId: string, bookId: string): boolean {
+  const db = getDb();
+  assertBookExists(bookId);
+  const has = db.prepare('SELECT 1 FROM favorites WHERE user_id = ? AND book_id = ?').get(userId, bookId);
+  if (has) {
+    db.prepare('DELETE FROM favorites WHERE user_id = ? AND book_id = ?').run(userId, bookId);
+    return false;
+  }
+  db.prepare('INSERT INTO favorites (user_id, book_id, created_at) VALUES (?, ?, ?)').run(userId, bookId, new Date().toISOString());
+  return true;
+}
+
+export function isFavorited(userId: string, bookId: string): boolean {
+  return Boolean(getDb().prepare('SELECT 1 FROM favorites WHERE user_id = ? AND book_id = ?').get(userId, bookId));
+}
+
+export function isSubscribed(userId: string, bookId: string): boolean {
+  return Boolean(getDb().prepare('SELECT 1 FROM subscriptions WHERE user_id = ? AND book_id = ?').get(userId, bookId));
+}
+
+/** 订阅/退订(幂等) */
+export function toggleSubscription(userId: string, bookId: string): boolean {
+  const db = getDb();
+  assertBookExists(bookId);
+  const has = db.prepare('SELECT 1 FROM subscriptions WHERE user_id = ? AND book_id = ?').get(userId, bookId);
+  if (has) {
+    db.prepare('DELETE FROM subscriptions WHERE user_id = ? AND book_id = ?').run(userId, bookId);
+    return false;
+  }
+  db.prepare('INSERT INTO subscriptions (user_id, book_id, last_seen_chapter, created_at) VALUES (?, ?, 0, ?)').run(
+    userId,
+    bookId,
+    new Date().toISOString()
+  );
+  return true;
+}
+
+/**
+ * 上报阅读进度(upsert;章号必须为该书已发布章节,否则 CHAPTER_NOT_FOUND)。
+ * 同时把订阅的 last_seen_chapter 前移到该章(只增不减),驱动「有更新」判定。
+ */
+export function reportProgress(userId: string, bookId: string, chapterNumber: number, percent = 0): void {
+  if (!Number.isInteger(chapterNumber) || chapterNumber < 1) {
+    throw new CoreError('INVALID_INPUT', `chapterNumber must be a positive integer: ${String(chapterNumber)}`);
+  }
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  const db = getDb();
+  const ch = db.prepare("SELECT number FROM chapters WHERE book_id = ? AND number = ? AND status = 'published'").get(bookId, chapterNumber);
+  if (!ch) {
+    throw new CoreError('CHAPTER_NOT_FOUND', `published chapter not found: #${chapterNumber}`);
+  }
+  db.prepare(
+    `INSERT INTO reading_progress (user_id, book_id, chapter_number, percent, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (user_id, book_id) DO UPDATE SET
+       chapter_number = excluded.chapter_number, percent = excluded.percent, updated_at = excluded.updated_at`
+  ).run(userId, bookId, chapterNumber, clamped, new Date().toISOString());
+  // 订阅的已看章号只增不减(读到旧章不回退更新提示)
+  db.prepare('UPDATE subscriptions SET last_seen_chapter = MAX(last_seen_chapter, ?) WHERE user_id = ? AND book_id = ?').run(
+    chapterNumber,
+    userId,
+    bookId
+  );
+}
+
+interface ShelfRow {
+  id: string;
+  slug: string;
+  title: string;
+  author_name: string;
+  favorited: number;
+  subscribed: number;
+  published_count: number;
+  progress_chapter: number | null;
+  progress_percent: number;
+}
+
+/** 书架:收藏 ∪ 订阅 的书,合并发布章数/阅读进度/更新提示;按最近阅读排序 */
+export function getReaderShelf(userId: string): ShelfEntryView[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT b.id, b.slug, b.title, a.name AS author_name,
+         (f.user_id IS NOT NULL) AS favorited,
+         (s.user_id IS NOT NULL) AS subscribed,
+         (SELECT COUNT(*) FROM chapters c WHERE c.book_id = b.id AND c.status = 'published') AS published_count,
+         rp.chapter_number AS progress_chapter,
+         COALESCE(rp.percent, 0) AS progress_percent
+       FROM books b
+       JOIN authors a ON a.id = b.author_id
+       LEFT JOIN favorites f ON f.book_id = b.id AND f.user_id = ?
+       LEFT JOIN subscriptions s ON s.book_id = b.id AND s.user_id = ?
+       LEFT JOIN reading_progress rp ON rp.book_id = b.id AND rp.user_id = ?
+       WHERE f.user_id IS NOT NULL OR s.user_id IS NOT NULL
+       ORDER BY COALESCE(rp.updated_at, f.created_at, s.created_at) DESC`
+    )
+    .all(userId, userId, userId) as ShelfRow[];
+  return rows.map((r) => ({
+    bookId: r.id,
+    slug: r.slug,
+    title: r.title,
+    authorName: r.author_name,
+    publishedCount: r.published_count,
+    latestChapter: r.published_count > 0 ? r.published_count : null,
+    favorited: r.favorited === 1,
+    subscribed: r.subscribed === 1,
+    progressChapter: r.progress_chapter,
+    progressPercent: r.progress_percent,
+    hasUpdate: r.progress_chapter === null ? r.published_count > 0 : r.published_count > r.progress_chapter,
+  }));
+}
+
+type ShelfEntryView = import('./domain').ShelfEntry;
+
+interface HistoryRow {
+  book_id: string;
+  slug: string;
+  title: string;
+  chapter_number: number;
+  percent: number;
+  updated_at: string;
+}
+
+/** 最近阅读:按进度更新时间倒序 */
+export function getReadingHistory(userId: string, limit = 20): import('./domain').HistoryEntry[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT rp.book_id, b.slug, b.title, rp.chapter_number, rp.percent, rp.updated_at
+       FROM reading_progress rp JOIN books b ON b.id = rp.book_id
+       WHERE rp.user_id = ? ORDER BY rp.updated_at DESC LIMIT ?`
+    )
+    .all(userId, Math.max(1, Math.min(limit, 100))) as HistoryRow[];
+  return rows.map((r) => ({
+    bookId: r.book_id,
+    slug: r.slug,
+    title: r.title,
+    chapterNumber: r.chapter_number,
+    percent: r.percent,
+    updatedAt: r.updated_at,
+  }));
+}

@@ -83,5 +83,50 @@ async function assertThrows(code: string, fn: () => unknown | Promise<unknown>, 
   assertOk(n.n === 0, '过期会话被惰性清理');
 }
 
+// ---------- V6 个性化:收藏/订阅/进度/书架/历史 ----------
+{
+  const { createBook, createChapter, getChapterByNumber, submitChapterForReview, approveChapter, toggleFavorite, toggleSubscription, isFavorited, reportProgress, getReaderShelf, getReadingHistory } = await import('@novel/core');
+
+  const me = getSessionReader(loginReader({ login: '星海读者', password: 'password123' }).token);
+  const book = createBook({ slug: 'reader-shelf-book', title: '书架之书', authorName: '测', categoryName: '科幻', tags: [] });
+  // 两章直接以 published 落库(绕过审核流,便于阅读站场景)
+  for (const num of [1, 2]) {
+    createChapter({ bookId: book.id, number: num, title: `第${num}章`, contentMd: `# 第${num}章\n\n` + '内容'.repeat(400) });
+    submitChapterForReview(book.id, num);
+    approveChapter(book.id, num, { mode: 'now' });
+  }
+
+  await assertThrows('BOOK_NOT_FOUND', () => toggleFavorite(me.id, 'book_nope'), '收藏书不存在 → BOOK_NOT_FOUND');
+
+  assertOk(toggleFavorite(me.id, book.id) === true && isFavorited(me.id, book.id), '收藏 → true');
+  assertOk(toggleSubscription(me.id, book.id) === true, '订阅 → true');
+
+  await assertThrows('CHAPTER_NOT_FOUND', () => reportProgress(me.id, book.id, 99), '未发布章号 → CHAPTER_NOT_FOUND');
+  reportProgress(me.id, book.id, 1, 80);
+  reportProgress(me.id, book.id, 2, 10);
+  reportProgress(me.id, book.id, 1, 50); // 读旧章
+
+  let shelf = getReaderShelf(me.id);
+  assertOk(shelf.length === 1 && shelf[0].title === '书架之书', '书架含该书');
+  assertOk(shelf[0].progressChapter === 1 && shelf[0].progressPercent === 50, `进度取最近上报(第${shelf[0].progressChapter}章 ${shelf[0].progressPercent}%)`);
+  assertOk(shelf[0].latestChapter === 2 && shelf[0].hasUpdate === true, '最新第2章 > 已读第1章 → 有更新');
+
+  // 读到最新章后更新提示消失
+  reportProgress(me.id, book.id, 2, 100);
+  shelf = getReaderShelf(me.id);
+  assertOk(shelf[0].hasUpdate === false, '追平最新章 → 无更新提示');
+
+  // 历史倒序 + 上限
+  const hist = getReadingHistory(me.id, 10);
+  assertOk(hist.length === 1 && hist[0].chapterNumber === 2 && hist[0].percent === 100, `历史为该书最近进度(#${hist[0]?.chapterNumber})`);
+
+  // 退订后书架仍保留(还有收藏);取消收藏+退订 → 书架空
+  assertOk(toggleSubscription(me.id, book.id) === false, '退订 → false');
+  shelf = getReaderShelf(me.id);
+  assertOk(shelf.length === 1 && !shelf[0].subscribed && shelf[0].favorited, '退订后收藏仍在书架');
+  toggleFavorite(me.id, book.id);
+  assertOk(getReaderShelf(me.id).length === 0, '收藏也取消后书架空');
+}
+
 console.log(failed === 0 ? '\n读者账号全部验证通过' : `\n${failed} 项失败`);
 process.exit(failed === 0 ? 0 : 1);
