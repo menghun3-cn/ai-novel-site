@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS books (
   status TEXT NOT NULL DEFAULT 'serializing',
   author_id INTEGER NOT NULL REFERENCES authors(id),
   category_id INTEGER NOT NULL REFERENCES categories(id),
+  autopilot_enabled INTEGER NOT NULL DEFAULT 0,
+  autopilot_hour INTEGER NOT NULL DEFAULT 8,
+  autopilot_count INTEGER NOT NULL DEFAULT 1,
+  autopilot_last_date TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -83,15 +87,14 @@ CREATE TABLE IF NOT EXISTS chapters (
   status TEXT NOT NULL DEFAULT 'draft',
   scheduled_at TEXT,
   published_at TEXT,
+  review_note TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (book_id, number)
 );
 
-CREATE INDEX IF NOT EXISTS idx_books_slug ON books(slug);
-CREATE INDEX IF NOT EXISTS idx_chapters_book_number ON chapters(book_id, number);
-CREATE INDEX IF NOT EXISTS idx_chapters_book_status ON chapters(book_id, status);
 CREATE INDEX IF NOT EXISTS idx_chapters_published_at ON chapters(published_at);
+CREATE INDEX IF NOT EXISTS idx_chapters_status_scheduled ON chapters(status, scheduled_at);
 `;
 
 let sqlite: Database.Database | null = null;
@@ -106,6 +109,20 @@ function migrateAuthorColumns(db: Database.Database): void {
   if (!cols.includes('avatar_path')) db.exec('ALTER TABLE authors ADD COLUMN avatar_path TEXT');
 }
 
+/**
+ * 轻量迁移:V3 发布核心——books 补自动发布配置列,chapters 补驳回备注列。
+ * 幂等;老数据默认关闭自动发布(hour=8,count=1 与文档示例一致)。
+ */
+function migratePublishColumns(db: Database.Database): void {
+  const bookCols = (db.prepare('PRAGMA table_info(books)').all() as { name: string }[]).map((c) => c.name);
+  if (!bookCols.includes('autopilot_enabled')) db.exec('ALTER TABLE books ADD COLUMN autopilot_enabled INTEGER NOT NULL DEFAULT 0');
+  if (!bookCols.includes('autopilot_hour')) db.exec('ALTER TABLE books ADD COLUMN autopilot_hour INTEGER NOT NULL DEFAULT 8');
+  if (!bookCols.includes('autopilot_count')) db.exec('ALTER TABLE books ADD COLUMN autopilot_count INTEGER NOT NULL DEFAULT 1');
+  if (!bookCols.includes('autopilot_last_date')) db.exec('ALTER TABLE books ADD COLUMN autopilot_last_date TEXT');
+  const chapterCols = (db.prepare('PRAGMA table_info(chapters)').all() as { name: string }[]).map((c) => c.name);
+  if (!chapterCols.includes('review_note')) db.exec('ALTER TABLE chapters ADD COLUMN review_note TEXT');
+}
+
 export function getDb(): Database.Database {
   if (!sqlite) {
     ensureDataDir();
@@ -114,6 +131,7 @@ export function getDb(): Database.Database {
     sqlite.pragma('foreign_keys = ON');
     sqlite.exec(DDL);
     migrateAuthorColumns(sqlite);
+    migratePublishColumns(sqlite);
   }
   return sqlite;
 }

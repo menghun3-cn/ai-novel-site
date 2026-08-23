@@ -3,7 +3,8 @@
 export const BOOK_STATUSES = ['serializing', 'completed', 'hidden'] as const;
 export type BookStatus = (typeof BOOK_STATUSES)[number];
 
-export const CHAPTER_STATUSES = ['draft', 'scheduled', 'published', 'hidden'] as const;
+// V3 发布工作流:draft --送审--> pending_review --批准--> scheduled/published,驳回回 draft
+export const CHAPTER_STATUSES = ['draft', 'pending_review', 'scheduled', 'published', 'hidden'] as const;
 export type ChapterStatus = (typeof CHAPTER_STATUSES)[number];
 
 export function isBookStatus(v: unknown): v is BookStatus {
@@ -26,6 +27,8 @@ export type CoreErrorCode =
   | 'CHAPTER_NUMBER_CONFLICT'
   | 'INVALID_CHAPTER_ORDER'
   | 'INVALID_STATUS'
+  | 'INVALID_REVIEW_TRANSITION'
+  | 'INVALID_AUTOPILOT'
   | 'AUTHOR_NOT_FOUND'
   | 'AUTHOR_NAME_TAKEN'
   | 'AUTHOR_IN_USE'
@@ -92,6 +95,8 @@ export interface Chapter {
   status: ChapterStatus;
   scheduledAt: string | null;
   publishedAt: string | null;
+  /** 最近一次驳回备注;送审/批准时清空 */
+  reviewNote?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -103,6 +108,8 @@ export interface BookWithMeta extends Book {
   tags: string[];
   chapterCount: number;
   publishedCount: number;
+  /** 待审核章节数(V3 审核工作流) */
+  pendingReviewCount: number;
   latestChapterNumber: number | null;
   latestChapterTitle: string | null;
   latestPublishedAt: string | null;
@@ -240,4 +247,47 @@ export interface UpdateCategoryPatch {
 
 export interface UpdateTagPatch {
   name?: string;
+}
+
+// ---------- V3 发布核心:审核工作流 / 自动发布 ----------
+
+/** 审核批准:立即发布,或转入定时(必须提供 scheduledAt) */
+export type ApproveChapterInput = { mode: 'now' } | { mode: 'scheduled'; scheduledAt: string };
+
+/** 审核队列条目:章节 + 所属书籍摘要 */
+export interface ReviewQueueItem {
+  bookId: string;
+  bookSlug: string;
+  bookTitle: string;
+  chapter: Chapter;
+}
+
+/**
+ * 每书每日自动发布配置。调度器在本地时刻到达 hour 后的首次扫描中,
+ * 从该书最旧的 draft 章节起自动发布 count 章;lastRunDate 记录本地
+ * YYYY-MM-DD,保证每天至多触发一次。
+ */
+export interface AutopilotConfig {
+  enabled: boolean;
+  /** 本地小时 0-23 */
+  hour: number;
+  /** 每次发布的章数 1-50 */
+  count: number;
+  lastRunDate: string | null;
+}
+
+export interface ConfigureAutopilotPatch {
+  enabled?: boolean;
+  hour?: number;
+  count?: number;
+}
+
+/** 单次发布周期结果 */
+export interface PublishCycleResult {
+  /** 到期定时章节转发布数 */
+  duePublished: number;
+  /** 触发自动发布的书籍数 */
+  autopilotBooks: number;
+  /** 自动发布章节数 */
+  autopilotPublished: number;
 }

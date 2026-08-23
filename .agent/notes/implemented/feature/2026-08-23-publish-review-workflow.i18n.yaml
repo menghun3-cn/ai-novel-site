@@ -1,0 +1,8 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with the project's
+# translation-pairing verifier:
+#   git hash-object 2026-08-23-publish-review-workflow.md
+#   git hash-object 2026-08-23-publish-review-workflow.zh.md
+2026-08-23-publish-review-workflow.md: a5905b28556eb5469687ae1c1cf25c85425ea020
+2026-08-23-publish-review-workflow.zh.md: f7e52158d4fb4a8ef525a2c84796a0575152d0cd
