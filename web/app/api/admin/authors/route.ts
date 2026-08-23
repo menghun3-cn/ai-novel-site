@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getAuthor, listAuthors, updateAuthor, upsertAuthor } from '@novel/core';
-import { json, readJson, withAdmin } from '@/lib/admin-api';
+import { AdminRouteContext, json, readJson, withAdmin } from '@/lib/admin-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,10 +11,10 @@ const createSchema = z.object({
   avatarPath: z.string().max(1000).nullish(),
 });
 
-export const GET = withAdmin(async () => json({ authors: listAuthors() }));
+export const GET = withAdmin<AdminRouteContext>(async () => json({ authors: listAuthors() }));
 
 /** 幂等创建:按名字拿到作者行,再以 update 语义写入简介/头像 */
-export const POST = withAdmin(async (req: NextRequest) => {
+export const POST = withAdmin<AdminRouteContext>(async (req: NextRequest) => {
   const input = await readJson(req, createSchema);
   const id = upsertAuthor(input.name);
   const author = getAuthor(id)!;

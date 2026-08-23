@@ -1,13 +1,13 @@
 import type { NextRequest } from 'next/server';
-import { fail, json, withAdmin } from '@/lib/admin-api';
+import { AdminRouteContext, fail, json, withAdmin } from '@/lib/admin-api';
 import { listMedia, saveMedia } from '@/lib/admin-media';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withAdmin(async () => json({ media: listMedia() }));
+export const GET = withAdmin<AdminRouteContext>(async () => json({ media: listMedia() }));
 
 /** multipart/form-data 上传:字段 file(必填),可选用 name 覆盖文件名 */
-export const POST = withAdmin(async (req: NextRequest) => {
+export const POST = withAdmin<AdminRouteContext>(async (req: NextRequest) => {
   let form: FormData;
   try {
     form = await req.formData();

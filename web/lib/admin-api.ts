@@ -92,6 +92,11 @@ export async function readJson<T>(req: NextRequest, schema: ZodType<T>): Promise
   return parsed.data;
 }
 
+/** 静态(无动态段)管理路由上下文:Next 15 生成类型要求导出方法第二参数与 RouteContext 兼容 */
+export interface AdminRouteContext {
+  params: Promise<Record<string, never>>;
+}
+
 /** 路由处理统一包装:鉴权 → 业务 → 错误映射(ctx 泛型兼容动态路由) */
 export function withAdmin<C = undefined>(
   fn: (req: NextRequest, ctx: C) => Promise<Response>
