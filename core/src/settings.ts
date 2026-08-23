@@ -73,3 +73,19 @@ export function setLlmSettings(patch: {
   if (patch.model !== undefined) setRaw(KEY_MODEL, patch.model?.trim() || null);
   return getLlmSettings();
 }
+
+/**
+ * 统一 Provider 取源:后台设置逐字段优先,环境变量回退。
+ * 生成路由 / 调度器 / 连通性测试共用,保证语义一致。
+ */
+export async function resolveProviderFromStore(env: NodeJS.ProcessEnv = process.env): Promise<
+  ReturnType<typeof import('./ai-writer').resolveProvider>
+> {
+  const { resolveProvider } = await import('./ai-writer');
+  const stored = getLlmSecretConfig();
+  return resolveProvider({
+    baseUrl: stored.baseUrl || env.AI_BASE_URL,
+    apiKey: stored.apiKey || env.AI_API_KEY,
+    model: stored.model || env.AI_MODEL,
+  });
+}

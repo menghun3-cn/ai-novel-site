@@ -993,7 +993,8 @@ export function deleteTag(id: number): boolean {
 
 // ---------- V3:自动发布配置与发布周期 ----------
 
-function localDateKey(d: Date): string {
+/** 本地时区 YYYY-MM-DD 键(V5 AI 连载日守卫复用) */
+export function localDateKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');

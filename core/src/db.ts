@@ -174,6 +174,34 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT,
   updated_at TEXT NOT NULL
 );
+
+-- V5 AI 自动连载:每书配置 + 生成任务历史
+CREATE TABLE IF NOT EXISTS ai_serialization (
+  book_id TEXT PRIMARY KEY REFERENCES books(id),
+  enabled INTEGER NOT NULL DEFAULT 0,
+  hour INTEGER NOT NULL DEFAULT 8,
+  count INTEGER NOT NULL DEFAULT 1,
+  auto_publish INTEGER NOT NULL DEFAULT 0,
+  min_chars INTEGER NOT NULL DEFAULT 500,
+  last_run_date TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS generation_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id TEXT NOT NULL REFERENCES books(id),
+  chapter_number INTEGER,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempt INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  chars INTEGER,
+  model TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_generation_jobs_book ON generation_jobs(book_id, status);
 `;
 
 let sqlite: Database.Database | null = null;

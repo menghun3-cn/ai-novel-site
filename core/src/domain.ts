@@ -29,6 +29,7 @@ export type CoreErrorCode =
   | 'INVALID_STATUS'
   | 'INVALID_REVIEW_TRANSITION'
   | 'INVALID_AUTOPILOT'
+  | 'INVALID_AI_SERIALIZATION'
   | 'AUTHOR_NOT_FOUND'
   | 'AUTHOR_NAME_TAKEN'
   | 'AUTHOR_IN_USE'
@@ -392,4 +393,44 @@ export interface StoryForeshadowing {
   plantedChapter: number | null;
   resolvedChapter: number | null;
   createdAt: string;
+}
+
+// ---------- V5 AI 自动连载 ----------
+
+export type GenerationJobStatus = 'pending' | 'running' | 'published' | 'submitted' | 'rejected' | 'failed';
+
+export function isGenerationJobStatus(v: unknown): v is GenerationJobStatus {
+  return typeof v === 'string' && ['pending', 'running', 'published', 'submitted', 'rejected', 'failed'].includes(v);
+}
+
+/** 每书 AI 连载配置;未创建时读出虚拟默认值(停用/8点/1章/送审模式) */
+export interface AiSerializationConfig {
+  bookId: string;
+  enabled: boolean;
+  hour: number;
+  count: number;
+  autoPublish: boolean;
+  minChars: number;
+  lastRunDate: string | null;
+}
+
+export interface ConfigureAiSerializationPatch {
+  enabled?: boolean;
+  hour?: number;
+  count?: number;
+  autoPublish?: boolean;
+  minChars?: number;
+}
+
+export interface GenerationJob {
+  id: number;
+  bookId: string;
+  chapterNumber: number | null;
+  status: GenerationJobStatus;
+  attempt: number;
+  error: string | null;
+  chars: number | null;
+  model: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
