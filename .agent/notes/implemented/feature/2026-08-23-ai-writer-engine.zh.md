@@ -17,10 +17,14 @@ Story Core 存事实,上下文组装器出提示词,但还没有任何东西与 
 
 1. **Provider 抽象**——`LlmProvider.complete()` 加一个具体适配器
    `createOpenAiCompatibleProvider`(chat-completions 走 fetch,DeepSeek/
-   OpenAI/本地网关通吃)。配置经 `resolveProviderFromEnv` 从环境变量
-   (`AI_BASE_URL/AI_API_KEY/AI_MODEL`)解析;缺变量抛 `AI_NOT_CONFIGURED`
-   (映射 503),上游失败变 `AI_PROVIDER_FAILED`(502)。测试用
-   `createFakeProvider` 与本地 http 服务——CI 不碰真网。
+   OpenAI/本地网关通吃)。配置经 `resolveProviderFromEnv`(异步)从环境变量
+   解析:`AI_BASE_URL`/`AI_API_KEY` 必填(缺 → `AI_NOT_CONFIGURED`,503);
+   `AI_MODEL` 可选——缺省时请求 `${baseUrl}/models` 自动发现,按模式过滤掉
+   非对话类(embed/rerank/音频/图像/审核/vision)取第一个,结果按
+   baseUrl+apiKey 缓存;发现失败抛 `AI_PROVIDER_FAILED`(502),列表没有可
+   用模型抛 `AI_NOT_CONFIGURED`。上游补全失败变 `AI_PROVIDER_FAILED`
+   (502)。测试用 `createFakeProvider` 与本地 http 服务(同时服务 /models
+   与 /chat/completions)——CI 不碰真网。
 2. **规则质检先行**——`qualityCheckChapter()` 是纯函数,三道闸:最短长度
    (默认 500 字)、AI 自述标记(`/作为(一个)?AI|语言模型|…/`)、滑窗重复
    (60 字窗半步滑动,≥4 次相同即拦)。任一闸失败**完全不建章节行**;API

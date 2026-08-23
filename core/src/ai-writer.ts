@@ -68,15 +68,61 @@ export function createOpenAiCompatibleProvider(cfg: OpenAiCompatibleConfig): Llm
   };
 }
 
-/** 从环境变量解析 Provider;未配置抛 AI_NOT_CONFIGURED(调用方映射 503) */
-export function resolveProviderFromEnv(env: NodeJS.ProcessEnv = process.env): LlmProvider {
+/**
+ * 非对话类模型过滤:模型自动发现时排除 embedding/rerank/音频/图像/审核类,
+ * 剩余取列表第一个。命中即排除,大小写不敏感。
+ */
+const NON_CHAT_MODEL_PATTERN = /embed|rerank|whisper|tts|audio|dall-e|image|moderation|guard|vision/i;
+
+/** 从 OpenAI 兼容上游 GET /models 拉取并选出第一个对话模型 */
+async function discoverFirstChatModel(baseUrl: string, apiKey: string): Promise<string> {
+  const base = baseUrl.replace(/\/+$/, '');
+  let res: Response;
+  try {
+    res = await fetch(`${base}/models`, { headers: { authorization: `Bearer ${apiKey}` } });
+  } catch (err) {
+    throw new CoreError('AI_PROVIDER_FAILED', `model discovery network error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new CoreError('AI_PROVIDER_FAILED', `model discovery ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const data = (await res.json()) as { data?: Array<{ id?: string }> };
+  const ids = (data.data ?? []).map((m) => m.id).filter((id): id is string => typeof id === 'string' && id.length > 0);
+  const eligible = ids.filter((id) => !NON_CHAT_MODEL_PATTERN.test(id));
+  if (eligible.length === 0) {
+    throw new CoreError('AI_NOT_CONFIGURED', `no eligible chat model in /models (${ids.length} listed; AI_MODEL can be set explicitly)`);
+  }
+  return eligible[0];
+}
+
+/** 已解析的 (baseUrl,apiKey) → model 缓存,避免每次生成都打 /models */
+const resolvedModelCache = new Map<string, string>();
+
+/**
+ * 从环境变量解析 Provider。AI_BASE_URL / AI_API_KEY 必填(缺 → AI_NOT_CONFIGURED,503);
+ * AI_MODEL 可选——缺省时从 `${baseUrl}/models` 自动发现,过滤非对话类后取第一个
+ * (发现失败 → AI_PROVIDER_FAILED,502;列表无非对话外模型 → AI_NOT_CONFIGURED)。
+ * 注意:异步;发现结果按 baseUrl+apiKey 缓存。
+ */
+export async function resolveProviderFromEnv(env: NodeJS.ProcessEnv = process.env): Promise<LlmProvider> {
   const baseUrl = env.AI_BASE_URL?.trim();
   const apiKey = env.AI_API_KEY?.trim();
-  const model = env.AI_MODEL?.trim();
-  if (!baseUrl || !apiKey || !model) {
-    throw new CoreError('AI_NOT_CONFIGURED', 'AI_BASE_URL / AI_API_KEY / AI_MODEL must all be set');
+  if (!baseUrl || !apiKey) {
+    throw new CoreError('AI_NOT_CONFIGURED', 'AI_BASE_URL / AI_API_KEY must be set');
+  }
+  const explicit = env.AI_MODEL?.trim();
+  let model = explicit || resolvedModelCache.get(`${baseUrl}|${apiKey}`) || '';
+  if (!model) {
+    model = await discoverFirstChatModel(baseUrl, apiKey);
+    resolvedModelCache.set(`${baseUrl}|${apiKey}`, model);
   }
   return createOpenAiCompatibleProvider({ baseUrl, apiKey, model });
+}
+
+/** 清空模型发现缓存(测试用) */
+export function clearProviderCache(): void {
+  resolvedModelCache.clear();
 }
 
 /** 测试/离线用固定回声 Provider */
