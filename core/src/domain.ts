@@ -30,6 +30,11 @@ export type CoreErrorCode =
   | 'INVALID_REVIEW_TRANSITION'
   | 'INVALID_AUTOPILOT'
   | 'INVALID_AI_SERIALIZATION'
+  | 'INVALID_INPUT'
+  | 'USERNAME_TAKEN'
+  | 'EMAIL_TAKEN'
+  | 'INVALID_CREDENTIALS'
+  | 'SESSION_EXPIRED'
   | 'AUTHOR_NOT_FOUND'
   | 'AUTHOR_NAME_TAKEN'
   | 'AUTHOR_IN_USE'
@@ -440,5 +445,59 @@ export interface GenerationJob {
   submitForReview?: boolean | null;
   llmReview?: boolean | null;
   createdAt: string;
+  updatedAt: string;
+}
+
+// ---------- V6 Reader Platform:读者 ----------
+
+export interface ReaderUser {
+  id: string;
+  username: string;
+  email: string;
+  createdAt: string;
+}
+
+export interface RegisterReaderInput {
+  username: string;
+  email: string;
+  password: string;
+}
+
+/** 登录标识:用户名或邮箱均可 */
+export interface LoginReaderInput {
+  login: string;
+  password: string;
+}
+
+export interface ReaderSession {
+  token: string;
+  expiresAt: string;
+  user: ReaderUser;
+}
+
+/** 书架条目:收藏/订阅的书 + 进度 + 更新提示 */
+export interface ShelfEntry {
+  bookId: string;
+  slug: string;
+  title: string;
+  authorName: string;
+  /** 已发布章节数(= 最新章号,按 number 计) */
+  publishedCount: number;
+  latestChapter: number | null;
+  favorited: boolean;
+  subscribed: boolean;
+  progressChapter: number | null;
+  progressPercent: number;
+  /** 最新已发布章节 > 阅读进度 → 有更新 */
+  hasUpdate: boolean;
+}
+
+/** 阅读历史条目 */
+export interface HistoryEntry {
+  bookId: string;
+  slug: string;
+  title: string;
+  chapterNumber: number;
+  percent: number;
   updatedAt: string;
 }

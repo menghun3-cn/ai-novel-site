@@ -206,6 +206,51 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_generation_jobs_book ON generation_jobs(book_id, status);
+
+-- V6 Reader Platform:读者账号与会话
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+-- V6 个性化:收藏 / 订阅 / 阅读进度
+CREATE TABLE IF NOT EXISTS favorites (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, book_id)
+);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  last_seen_chapter INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, book_id)
+);
+
+CREATE TABLE IF NOT EXISTS reading_progress (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  chapter_number INTEGER NOT NULL,
+  percent INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, book_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_progress_user_time ON reading_progress(user_id, updated_at DESC);
 `;
 
 let sqlite: Database.Database | null = null;

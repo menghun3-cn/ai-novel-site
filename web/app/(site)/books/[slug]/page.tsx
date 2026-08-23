@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { getBookBySlug, listPublishedChapters } from '@novel/core';
 import ContinueReading from '@/components/ContinueReading';
 import ChapterList from '@/components/ChapterList';
+import BookActions from '@/components/BookActions';
 import { chapterLabel } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -84,6 +85,7 @@ export default async function BookDetailPage({ params }: { params: Promise<{ slu
               </Link>
             )}
             <ContinueReading bookSlug={book.slug} latestNumber={latest?.number ?? null} />
+            <BookActions slug={book.slug} />
           </div>
         </div>
       </div>
