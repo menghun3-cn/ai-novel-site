@@ -5,8 +5,10 @@ import {
   CoreError,
   isBookStatus,
   isChapterStatus,
+  type ApproveChapterInput,
   type Author,
   type AuthorWithCount,
+  type AutopilotConfig,
   type Book,
   type BookStatus,
   type BookWithMeta,
@@ -15,12 +17,15 @@ import {
   type Chapter,
   type ChapterStatus,
   type ChapterView,
+  type ConfigureAutopilotPatch,
   type CreateBookInput,
   type CreateChapterInput,
   type FeedItem,
   type ImportChapterInput,
   type ImportChapterResult,
   type ListAllBooksOptions,
+  type PublishCycleResult,
+  type ReviewQueueItem,
   type Tag,
   type UpdateAuthorPatch,
   type UpdateCategoryPatch,
@@ -60,6 +65,10 @@ interface BookRow {
   status: BookStatus;
   author_id: number;
   category_id: number;
+  autopilot_enabled: number;
+  autopilot_hour: number;
+  autopilot_count: number;
+  autopilot_last_date: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -84,6 +93,7 @@ interface BookMetaRow extends BookRow {
   category_name: string;
   chapter_count: number;
   published_count: number;
+  pending_review_count: number;
   latest_chapter_number: number | null;
   latest_chapter_title: string | null;
   latest_published_at: string | null;
@@ -99,6 +109,7 @@ interface ChapterRow {
   status: ChapterStatus;
   scheduled_at: string | null;
   published_at: string | null;
+  review_note: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -114,6 +125,7 @@ function toChapter(r: ChapterRow): Chapter {
     status: r.status,
     scheduledAt: r.scheduled_at,
     publishedAt: r.published_at,
+    reviewNote: r.review_note ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -126,6 +138,7 @@ SELECT b.*,
        c.name AS category_name,
        (SELECT COUNT(*) FROM chapters ch WHERE ch.book_id = b.id) AS chapter_count,
        (SELECT COUNT(*) FROM chapters ch WHERE ch.book_id = b.id AND ch.status = 'published') AS published_count,
+       (SELECT COUNT(*) FROM chapters ch WHERE ch.book_id = b.id AND ch.status = 'pending_review') AS pending_review_count,
        (SELECT ch.number FROM chapters ch WHERE ch.book_id = b.id AND ch.status = 'published' ORDER BY ch.number DESC LIMIT 1) AS latest_chapter_number,
        (SELECT ch.title FROM chapters ch WHERE ch.book_id = b.id AND ch.status = 'published' ORDER BY ch.number DESC LIMIT 1) AS latest_chapter_title,
        (SELECT ch.published_at FROM chapters ch WHERE ch.book_id = b.id AND ch.status = 'published' ORDER BY ch.number DESC LIMIT 1) AS latest_published_at
@@ -162,6 +175,7 @@ function toBookWithMeta(r: BookMetaRow, tags: Map<string, string[]>): BookWithMe
     tags: tags.get(r.id) ?? [],
     chapterCount: r.chapter_count,
     publishedCount: r.published_count,
+    pendingReviewCount: r.pending_review_count,
     latestChapterNumber: r.latest_chapter_number,
     latestChapterTitle: r.latest_chapter_title,
     latestPublishedAt: r.latest_published_at,
@@ -693,6 +707,107 @@ export function deleteChapter(bookId: string, number: number): boolean {
   return res.changes > 0;
 }
 
+// ---------- V3:审核工作流 ----------
+
+function getChapterRow(bookId: string, number: number): ChapterRow {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT * FROM chapters WHERE book_id = ? AND number = ?')
+    .get(bookId, number) as ChapterRow | undefined;
+  if (!row) throw new CoreError('CHAPTER_NOT_FOUND', `${bookId} chapter ${number}`);
+  return row;
+}
+
+function touchBook(bookId: string, at: string): void {
+  getDb()
+    .prepare('UPDATE books SET updated_at = ? WHERE id = ?')
+    .run(at, bookId);
+}
+
+/** 送审:draft → pending_review;清空旧驳回备注与遗留定时 */
+export function submitChapterForReview(bookId: string, number: number): Chapter {
+  const db = getDb();
+  const row = getChapterRow(bookId, number);
+  if (row.status !== 'draft') {
+    throw new CoreError('INVALID_REVIEW_TRANSITION', `only draft chapters can be submitted (current: ${row.status})`);
+  }
+  const at = nowIso();
+  db.prepare("UPDATE chapters SET status = 'pending_review', scheduled_at = NULL, review_note = NULL, updated_at = ? WHERE id = ?").run(
+    at,
+    row.id
+  );
+  touchBook(bookId, at);
+  return getChapterByNumber(bookId, number)!;
+}
+
+/**
+ * 批准:pending_review → published(立即,首次发布时间记为当前)或 scheduled(必须给 scheduledAt)。
+ * 驳回备注清空。
+ */
+export function approveChapter(bookId: string, number: number, decision: ApproveChapterInput): Chapter {
+  const db = getDb();
+  const row = getChapterRow(bookId, number);
+  if (row.status !== 'pending_review') {
+    throw new CoreError('INVALID_REVIEW_TRANSITION', `only pending_review chapters can be approved (current: ${row.status})`);
+  }
+  const at = nowIso();
+  if (decision.mode === 'scheduled') {
+    if (!decision.scheduledAt) {
+      throw new CoreError('INVALID_REVIEW_TRANSITION', 'scheduled approval requires scheduledAt');
+    }
+    db.prepare("UPDATE chapters SET status = 'scheduled', scheduled_at = ?, review_note = NULL, updated_at = ? WHERE id = ?").run(
+      decision.scheduledAt,
+      at,
+      row.id
+    );
+  } else {
+    db.prepare("UPDATE chapters SET status = 'published', published_at = COALESCE(published_at, ?), review_note = NULL, updated_at = ? WHERE id = ?").run(
+      at,
+      at,
+      row.id
+    );
+  }
+  touchBook(bookId, at);
+  return getChapterByNumber(bookId, number)!;
+}
+
+/** 驳回:pending_review → draft;备注写入 review_note(可空),发布历史保留 */
+export function rejectChapter(bookId: string, number: number, note?: string | null): Chapter {
+  const db = getDb();
+  const row = getChapterRow(bookId, number);
+  if (row.status !== 'pending_review') {
+    throw new CoreError('INVALID_REVIEW_TRANSITION', `only pending_review chapters can be rejected (current: ${row.status})`);
+  }
+  const at = nowIso();
+  db.prepare("UPDATE chapters SET status = 'draft', scheduled_at = NULL, review_note = ?, updated_at = ? WHERE id = ?").run(
+    note?.trim() ? note.trim() : null,
+    at,
+    row.id
+  );
+  touchBook(bookId, at);
+  return getChapterByNumber(bookId, number)!;
+}
+
+/** 全库待审核队列:按提交时间先后(更新时间升序),附书籍摘要 */
+export function listPendingReview(limit = 100, offset = 0): ReviewQueueItem[] {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT ch.*, b.slug AS book_slug, b.title AS book_title
+       FROM chapters ch JOIN books b ON b.id = ch.book_id
+       WHERE ch.status = 'pending_review'
+       ORDER BY ch.updated_at ASC, ch.book_id ASC, ch.number ASC
+       LIMIT ? OFFSET ?`
+    )
+    .all(limit, offset) as (ChapterRow & { book_slug: string; book_title: string })[];
+  return rows.map((r) => ({
+    bookId: r.book_id,
+    bookSlug: r.book_slug,
+    bookTitle: r.book_title,
+    chapter: toChapter(r),
+  }));
+}
+
 /**
  * 整体重排:orderedNumbers 必须是该书现有章号的一个排列。
  * 两阶段更新(先加偏移再落位)绕开 UNIQUE(book_id, number) 的中途冲突。
@@ -874,4 +989,124 @@ export function deleteTag(id: number): boolean {
   });
   tx();
   return true;
+}
+
+// ---------- V3:自动发布配置与发布周期 ----------
+
+function localDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** 读取某书的自动发布配置;书不存在抛 BOOK_NOT_FOUND */
+export function getAutopilotConfig(bookId: string): AutopilotConfig {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM books WHERE id = ?').get(bookId) as BookRow | undefined;
+  if (!row) throw new CoreError('BOOK_NOT_FOUND', `book not found: ${bookId}`);
+  return {
+    enabled: row.autopilot_enabled === 1,
+    hour: row.autopilot_hour,
+    count: row.autopilot_count,
+    lastRunDate: row.autopilot_last_date,
+  };
+}
+
+/** 配置自动发布;hour 0-23、count 1-50,非法值抛 INVALID_AUTOPILOT */
+export function configureAutopilot(bookId: string, patch: ConfigureAutopilotPatch): AutopilotConfig {
+  const db = getDb();
+  if (!db.prepare('SELECT id FROM books WHERE id = ?').get(bookId)) {
+    throw new CoreError('BOOK_NOT_FOUND', `book not found: ${bookId}`);
+  }
+  const current = getAutopilotConfig(bookId);
+  const hour = patch.hour ?? current.hour;
+  const count = patch.count ?? current.count;
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    throw new CoreError('INVALID_AUTOPILOT', `hour must be an integer 0-23: ${hour}`);
+  }
+  if (!Number.isInteger(count) || count < 1 || count > 50) {
+    throw new CoreError('INVALID_AUTOPILOT', `count must be an integer 1-50: ${count}`);
+  }
+  const enabled = patch.enabled ?? current.enabled;
+  db.prepare('UPDATE books SET autopilot_enabled = ?, autopilot_hour = ?, autopilot_count = ? WHERE id = ?').run(
+    enabled ? 1 : 0,
+    hour,
+    count,
+    bookId
+  );
+  return getAutopilotConfig(bookId);
+}
+
+/**
+ * 到期定时发布:所有 status=scheduled 且 scheduled_at<=now 的章节转 published
+ * (publishedAt 缺失时记 now);联动刷新所属书籍 updated_at。事务内完成,返回发布数。
+ */
+export function publishDueChapters(now = new Date()): number {
+  const db = getDb();
+  const at = now.toISOString();
+  const tx = db.transaction(() => {
+    const res = db
+      .prepare(
+        `UPDATE chapters
+         SET status = 'published', published_at = COALESCE(published_at, ?), updated_at = ?
+         WHERE status = 'scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= ?`
+      )
+      .run(at, at, at);
+    if (res.changes > 0) {
+      db.prepare(
+        `UPDATE books SET updated_at = ?
+         WHERE id IN (SELECT DISTINCT book_id FROM chapters WHERE status = 'published' AND updated_at = ?)`
+      ).run(at, at);
+    }
+    return res.changes;
+  });
+  return tx();
+}
+
+/**
+ * 每日自动发布:对启用 autopilot 的书,当本地时刻已到配置小时且今天尚未触发时,
+ * 从最旧的 draft 章节起发布 count 章,并记 lastRunDate(本地 YYYY-MM-DD)。
+ */
+export function runAutopilot(now = new Date()): { books: number; published: number } {
+  const db = getDb();
+  const at = now.toISOString();
+  const today = localDateKey(now);
+  const hour = now.getHours();
+  const books = db
+    .prepare('SELECT id, autopilot_hour, autopilot_count, autopilot_last_date FROM books WHERE autopilot_enabled = 1')
+    .all() as Pick<BookRow, 'id' | 'autopilot_hour' | 'autopilot_count' | 'autopilot_last_date'>[];
+
+  let firedBooks = 0;
+  let publishedTotal = 0;
+  for (const b of books) {
+    if (hour < b.autopilot_hour || b.autopilot_last_date === today) continue;
+    const tx = db.transaction(() => {
+      const drafts = db
+        .prepare("SELECT id FROM chapters WHERE book_id = ? AND status = 'draft' ORDER BY number ASC LIMIT ?")
+        .all(b.id, b.autopilot_count) as { id: string }[];
+      for (const ch of drafts) {
+        db.prepare("UPDATE chapters SET status = 'published', published_at = COALESCE(published_at, ?), review_note = NULL, updated_at = ? WHERE id = ?").run(
+          at,
+          at,
+          ch.id
+        );
+      }
+      db.prepare('UPDATE books SET autopilot_last_date = ?, updated_at = ? WHERE id = ?').run(today, at, b.id);
+      return drafts.length;
+    });
+    const n = tx();
+    if (n > 0) {
+      firedBooks += 1;
+      publishedTotal += n;
+    }
+  }
+  return { books: firedBooks, published: publishedTotal };
+}
+
+/** 发布周期:先扫到期定时章节,再跑每日自动发布 */
+export function runPublishCycle(now = new Date()): PublishCycleResult {
+  const duePublished = publishDueChapters(now);
+  const autopilot = runAutopilot(now);
+  return { duePublished, autopilotBooks: autopilot.books, autopilotPublished: autopilot.published };
 }
