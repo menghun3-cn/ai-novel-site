@@ -30,6 +30,11 @@ export type CoreErrorCode =
   | 'INVALID_REVIEW_TRANSITION'
   | 'INVALID_AUTOPILOT'
   | 'INVALID_AI_SERIALIZATION'
+  | 'INVALID_INPUT'
+  | 'USERNAME_TAKEN'
+  | 'EMAIL_TAKEN'
+  | 'INVALID_CREDENTIALS'
+  | 'SESSION_EXPIRED'
   | 'AUTHOR_NOT_FOUND'
   | 'AUTHOR_NAME_TAKEN'
   | 'AUTHOR_IN_USE'
@@ -441,4 +446,31 @@ export interface GenerationJob {
   llmReview?: boolean | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// ---------- V6 Reader Platform:读者 ----------
+
+export interface ReaderUser {
+  id: string;
+  username: string;
+  email: string;
+  createdAt: string;
+}
+
+export interface RegisterReaderInput {
+  username: string;
+  email: string;
+  password: string;
+}
+
+/** 登录标识:用户名或邮箱均可 */
+export interface LoginReaderInput {
+  login: string;
+  password: string;
+}
+
+export interface ReaderSession {
+  token: string;
+  expiresAt: string;
+  user: ReaderUser;
 }

@@ -206,6 +206,24 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_generation_jobs_book ON generation_jobs(book_id, status);
+
+-- V6 Reader Platform:读者账号与会话
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 `;
 
 let sqlite: Database.Database | null = null;
