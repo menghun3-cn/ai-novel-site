@@ -36,7 +36,15 @@ export type CoreErrorCode =
   | 'CATEGORY_NAME_TAKEN'
   | 'CATEGORY_IN_USE'
   | 'TAG_NOT_FOUND'
-  | 'TAG_NAME_TAKEN';
+  | 'TAG_NAME_TAKEN'
+  | 'CHARACTER_NOT_FOUND'
+  | 'CHARACTER_NAME_TAKEN'
+  | 'RELATIONSHIP_NOT_FOUND'
+  | 'ARC_NOT_FOUND'
+  | 'OUTLINE_NOT_FOUND'
+  | 'FORESHADOWING_NOT_FOUND'
+  | 'AI_NOT_CONFIGURED'
+  | 'AI_PROVIDER_FAILED';
 
 export class CoreError extends Error {
   constructor(
@@ -290,4 +298,98 @@ export interface PublishCycleResult {
   autopilotBooks: number;
   /** 自动发布章节数 */
   autopilotPublished: number;
+}
+
+// ---------- V4 Story Core:世界观 / 人物 / 关系 / 故事线 / 章节大纲 / 伏笔 ----------
+
+export type CharacterRole = 'protagonist' | 'antagonist' | 'supporting' | 'minor';
+
+export function isCharacterRole(v: unknown): v is CharacterRole {
+  return typeof v === 'string' && ['protagonist', 'antagonist', 'supporting', 'minor'].includes(v);
+}
+
+export type ArcStatus = 'planned' | 'active' | 'done';
+
+export function isArcStatus(v: unknown): v is ArcStatus {
+  return typeof v === 'string' && ['planned', 'active', 'done'].includes(v);
+}
+
+/** 每书一份的世界观与写作规则(虚拟默认值:未创建时为空串) */
+export interface StoryWorld {
+  bookId: string;
+  setting: string;
+  rules: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface StoryCharacter {
+  id: number;
+  bookId: string;
+  name: string;
+  role: CharacterRole;
+  persona: string;
+  appearance: string;
+  background: string;
+  state: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertCharacterInput {
+  name: string;
+  role?: CharacterRole;
+  persona?: string;
+  appearance?: string;
+  background?: string;
+  state?: string;
+}
+
+export interface StoryRelationship {
+  id: number;
+  bookId: string;
+  fromName: string;
+  toName: string;
+  kind: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface StoryArc {
+  id: number;
+  bookId: string;
+  title: string;
+  summary: string;
+  startChapter: number | null;
+  endChapter: number | null;
+  status: ArcStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertArcInput {
+  title: string;
+  summary?: string;
+  startChapter?: number | null;
+  endChapter?: number | null;
+  status?: ArcStatus;
+}
+
+export interface StoryOutline {
+  id: number;
+  bookId: string;
+  number: number;
+  title: string;
+  beats: string;
+  updatedAt: string;
+}
+
+export interface StoryForeshadowing {
+  id: number;
+  bookId: string;
+  label: string;
+  detail: string;
+  plantedChapter: number | null;
+  resolvedChapter: number | null;
+  createdAt: string;
 }

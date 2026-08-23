@@ -95,6 +95,78 @@ CREATE TABLE IF NOT EXISTS chapters (
 
 CREATE INDEX IF NOT EXISTS idx_chapters_published_at ON chapters(published_at);
 CREATE INDEX IF NOT EXISTS idx_chapters_status_scheduled ON chapters(status, scheduled_at);
+
+-- V4 Story Core:世界观/人物/关系/故事线/章节大纲/伏笔(每书隔离)
+CREATE TABLE IF NOT EXISTS story_worlds (
+  id TEXT PRIMARY KEY,
+  book_id TEXT NOT NULL UNIQUE REFERENCES books(id),
+  setting TEXT NOT NULL DEFAULT '',
+  rules TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS story_characters (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id TEXT NOT NULL REFERENCES books(id),
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'supporting',
+  persona TEXT NOT NULL DEFAULT '',
+  appearance TEXT NOT NULL DEFAULT '',
+  background TEXT NOT NULL DEFAULT '',
+  state TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (book_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS story_relationships (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id TEXT NOT NULL REFERENCES books(id),
+  from_name TEXT NOT NULL,
+  to_name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS story_arcs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id TEXT NOT NULL REFERENCES books(id),
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  start_chapter INTEGER,
+  end_chapter INTEGER,
+  status TEXT NOT NULL DEFAULT 'planned',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS story_outlines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id TEXT NOT NULL REFERENCES books(id),
+  number INTEGER NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  beats TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL,
+  UNIQUE (book_id, number)
+);
+
+CREATE TABLE IF NOT EXISTS story_foreshadowing (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id TEXT NOT NULL REFERENCES books(id),
+  label TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  planted_chapter INTEGER,
+  resolved_chapter INTEGER,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_story_characters_book ON story_characters(book_id);
+CREATE INDEX IF NOT EXISTS idx_story_relationships_book ON story_relationships(book_id);
+CREATE INDEX IF NOT EXISTS idx_story_arcs_book ON story_arcs(book_id);
+CREATE INDEX IF NOT EXISTS idx_story_outlines_book ON story_outlines(book_id, number);
+CREATE INDEX IF NOT EXISTS idx_story_foreshadowing_book ON story_foreshadowing(book_id);
 `;
 
 let sqlite: Database.Database | null = null;
