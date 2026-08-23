@@ -37,7 +37,9 @@ export function ensureDataDir(): void {
 const DDL = `
 CREATE TABLE IF NOT EXISTS authors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE
+  name TEXT NOT NULL UNIQUE,
+  bio TEXT,
+  avatar_path TEXT
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -94,6 +96,16 @@ CREATE INDEX IF NOT EXISTS idx_chapters_published_at ON chapters(published_at);
 
 let sqlite: Database.Database | null = null;
 
+/**
+ * 轻量迁移:已有库的 authors 表补齐 V2 管理列(bio/avatar_path)。
+ * 新库由 DDL 直接建出;老库按 PRAGMA 检查后 ALTER,幂等。
+ */
+function migrateAuthorColumns(db: Database.Database): void {
+  const cols = (db.prepare('PRAGMA table_info(authors)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('bio')) db.exec('ALTER TABLE authors ADD COLUMN bio TEXT');
+  if (!cols.includes('avatar_path')) db.exec('ALTER TABLE authors ADD COLUMN avatar_path TEXT');
+}
+
 export function getDb(): Database.Database {
   if (!sqlite) {
     ensureDataDir();
@@ -101,6 +113,7 @@ export function getDb(): Database.Database {
     sqlite.pragma('journal_mode = WAL');
     sqlite.pragma('foreign_keys = ON');
     sqlite.exec(DDL);
+    migrateAuthorColumns(sqlite);
   }
   return sqlite;
 }

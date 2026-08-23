@@ -28,6 +28,19 @@ const {
   reorderChapters,
   latestUpdates,
   rssItems,
+  upsertAuthor,
+  listAuthors,
+  getAuthor,
+  updateAuthor,
+  deleteAuthor,
+  getCategory,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  getTag,
+  createTag,
+  updateTag,
+  deleteTag,
 } = await import('@novel/core');
 
 let failed = 0;
@@ -130,6 +143,43 @@ expectCoreError('INVALID_CHAPTER_ORDER', () => reorderChapters(book.id, [1]), '�
 assertOk(deleteBook(book.id), 'deleteBook 删除成功');
 expectCoreError('BOOK_NOT_FOUND', () => createChapter({ bookId: book.id, title: '孤儿', contentMd: 'x' }), '删除后建章抛 BOOK_NOT_FOUND');
 assertOk(deleteBook('book_missing') === false, '删除不存在小说返回 false');
+
+// ---------- 作者/分类/标签管理 ----------
+
+const authorId = upsertAuthor('作者甲');
+const authorUpdated = updateAuthor(authorId, { bio: '简介甲', avatarPath: '/avatars/a.svg' });
+assertOk(authorUpdated.bio === '简介甲' && authorUpdated.avatarPath === '/avatars/a.svg', 'updateAuthor 写入简介与头像');
+
+createBook({ slug: 'author-use', title: '在用之书', authorName: '作者乙', categoryName: '都市' });
+const authorB = listAuthors().find((a) => a.name === '作者乙')!;
+assertOk(authorB.bookCount === 1, 'listAuthors 附作品数');
+expectCoreError('AUTHOR_NAME_TAKEN', () => updateAuthor(authorB.id, { name: '作者甲' }), '作者改名撞车抛 AUTHOR_NAME_TAKEN');
+expectCoreError('AUTHOR_IN_USE', () => deleteAuthor(authorB.id), '删除有作品的作者抛 AUTHOR_IN_USE');
+expectCoreError('AUTHOR_NOT_FOUND', () => updateAuthor(99999, { bio: 'x' }), '编辑不存在作者抛 AUTHOR_NOT_FOUND');
+
+// 在用之书的分类被引用
+const inUseCategoryId = getAnyBookById('book_authoruse')!.categoryId;
+expectCoreError('CATEGORY_IN_USE', () => deleteCategory(inUseCategoryId), '删除被书籍引用的分类抛 CATEGORY_IN_USE');
+
+// 书删掉后,作者与分类都可删
+assertOk(deleteBook('book_authoruse'), '清理在用之书');
+assertOk(deleteAuthor(authorB.id) === true && getAuthor(authorB.id) === null, '书删后作者可删且不可见');
+assertOk(deleteCategory(inUseCategoryId) === true && getCategory(inUseCategoryId) === null, '书删后分类可删且不可见');
+expectCoreError('CATEGORY_NOT_FOUND', () => deleteCategory(inUseCategoryId), '重复删除分类抛 CATEGORY_NOT_FOUND');
+
+const cat = createCategory('奇幻');
+assertOk(cat.slug.trim().length > 0, 'createCategory 派生 slug');
+expectCoreError('CATEGORY_NAME_TAKEN', () => createCategory('科幻'), '重复分类抛 CATEGORY_NAME_TAKEN');
+const catRenamed = updateCategory(cat.id, { name: '东方奇幻' });
+const catAfter = getCategory(cat.id);
+assertOk(catRenamed.name === '东方奇幻' && catAfter !== null && catAfter.slug === cat.slug, '分类重命名生效且 slug 不变');
+
+const tag = createTag('星际');
+expectCoreError('TAG_NAME_TAKEN', () => createTag('AI'), '重复标签抛 TAG_NAME_TAKEN(AI 已存在)');
+const tagRenamed = updateTag(tag.id, { name: '深空' });
+assertOk(tagRenamed.name === '深空' && getTag(tag.id)?.slug === tag.slug, '标签重命名生效且 slug 不变');
+assertOk(deleteTag(tag.id) && getTag(tag.id) === null, 'deleteTag 连同关联删除');
+expectCoreError('TAG_NOT_FOUND', () => deleteTag(tag.id), '重复删除标签抛 TAG_NOT_FOUND');
 
 if (failed > 0) {
   console.error(`\n${failed} 项验证失败`);

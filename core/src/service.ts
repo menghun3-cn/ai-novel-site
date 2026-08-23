@@ -5,9 +5,12 @@ import {
   CoreError,
   isBookStatus,
   isChapterStatus,
+  type Author,
+  type AuthorWithCount,
   type Book,
   type BookStatus,
   type BookWithMeta,
+  type Category,
   type CategoryWithCount,
   type Chapter,
   type ChapterStatus,
@@ -19,7 +22,10 @@ import {
   type ImportChapterResult,
   type ListAllBooksOptions,
   type Tag,
+  type UpdateAuthorPatch,
+  type UpdateCategoryPatch,
   type UpdateChapterPatch,
+  type UpdateTagPatch,
   type UpdateItem,
   type UpdateBookPatch,
   type UpsertBookInput,
@@ -715,4 +721,157 @@ export function reorderChapters(bookId: string, orderedNumbers: number[]): Chapt
   });
   tx();
   return listChapters(bookId);
+}
+
+// ---------- 管理侧:作者 ----------
+
+interface AuthorRow {
+  id: number;
+  name: string;
+  bio: string | null;
+  avatar_path: string | null;
+  book_count?: number;
+}
+
+function toAuthorWithCount(r: AuthorRow): AuthorWithCount {
+  return {
+    id: r.id,
+    name: r.name,
+    bio: r.bio,
+    avatarPath: r.avatar_path,
+    bookCount: r.book_count ?? 0,
+  };
+}
+
+const AUTHOR_SELECT = `
+SELECT a.id, a.name, a.bio, a.avatar_path,
+       (SELECT COUNT(*) FROM books b WHERE b.author_id = a.id) AS book_count
+FROM authors a`;
+
+/** 管理列表:全部作者附作品数,按作品数降序 */
+export function listAuthors(): AuthorWithCount[] {
+  const db = getDb();
+  return (db.prepare(`${AUTHOR_SELECT} ORDER BY book_count DESC, a.name`).all() as AuthorRow[]).map(toAuthorWithCount);
+}
+
+export function getAuthor(id: number): AuthorWithCount | null {
+  const db = getDb();
+  const row = db.prepare(`${AUTHOR_SELECT} WHERE a.id = ?`).get(id) as AuthorRow | undefined;
+  return row ? toAuthorWithCount(row) : null;
+}
+
+/** 编辑作者(名/简介/头像);改名撞车抛 AUTHOR_NAME_TAKEN */
+export function updateAuthor(id: number, patch: UpdateAuthorPatch): AuthorWithCount {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM authors WHERE id = ?').get(id) as AuthorRow | undefined;
+  if (!row) throw new CoreError('AUTHOR_NOT_FOUND', `author not found: ${id}`);
+  if (patch.name !== undefined && patch.name !== row.name) {
+    const clash = db.prepare('SELECT id FROM authors WHERE name = ?').get(patch.name);
+    if (clash) throw new CoreError('AUTHOR_NAME_TAKEN', `author name already exists: ${patch.name}`);
+  }
+  db.prepare('UPDATE authors SET name = ?, bio = ?, avatar_path = ? WHERE id = ?').run(
+    patch.name ?? row.name,
+    patch.bio !== undefined ? patch.bio : row.bio,
+    patch.avatarPath !== undefined ? patch.avatarPath : row.avatar_path,
+    id
+  );
+  return getAuthor(id)!;
+}
+
+/** 删除作者;仍有作品时抛 AUTHOR_IN_USE(先把书转移或删除) */
+export function deleteAuthor(id: number): boolean {
+  const db = getDb();
+  if (!db.prepare('SELECT id FROM authors WHERE id = ?').get(id)) {
+    throw new CoreError('AUTHOR_NOT_FOUND', `author not found: ${id}`);
+  }
+  const used = db.prepare('SELECT COUNT(*) AS n FROM books WHERE author_id = ?').get(id) as { n: number };
+  if (used.n > 0) throw new CoreError('AUTHOR_IN_USE', `author ${id} still has ${used.n} book(s)`);
+  db.prepare('DELETE FROM authors WHERE id = ?').run(id);
+  return true;
+}
+
+// ---------- 管理侧:分类 ----------
+
+export function getCategory(id: number): Category | null {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM categories WHERE id = ?').get(id) as Category | undefined;
+  return row ?? null;
+}
+
+/** 新建分类;name/slug 任一冲突抛 CATEGORY_NAME_TAKEN */
+export function createCategory(name: string): Category {
+  const db = getDb();
+  if (!name.trim()) throw new CoreError('CATEGORY_NAME_TAKEN', 'category name is required');
+  const slug = slugifyName(name);
+  const clash = db
+    .prepare('SELECT id FROM categories WHERE name = ? OR slug = ?')
+    .get(name, slug);
+  if (clash) throw new CoreError('CATEGORY_NAME_TAKEN', `category already exists: ${name}`);
+  const res = db.prepare('INSERT INTO categories (slug, name) VALUES (?, ?)').run(slug, name);
+  return { id: Number(res.lastInsertRowid), slug, name };
+}
+
+/** 重命名分类;slug 不变(URL 稳定性),新名撞车抛 CATEGORY_NAME_TAKEN */
+export function updateCategory(id: number, patch: UpdateCategoryPatch): Category {
+  const db = getDb();
+  const row = getCategory(id);
+  if (!row) throw new CoreError('CATEGORY_NOT_FOUND', `category not found: ${id}`);
+  if (patch.name === undefined || patch.name === row.name) return row;
+  const clash = db.prepare('SELECT id FROM categories WHERE name = ?').get(patch.name);
+  if (clash) throw new CoreError('CATEGORY_NAME_TAKEN', `category name already exists: ${patch.name}`);
+  db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(patch.name, id);
+  return { ...row, name: patch.name };
+}
+
+/** 删除分类;仍被书籍引用时抛 CATEGORY_IN_USE */
+export function deleteCategory(id: number): boolean {
+  const db = getDb();
+  if (!getCategory(id)) throw new CoreError('CATEGORY_NOT_FOUND', `category not found: ${id}`);
+  const used = db.prepare('SELECT COUNT(*) AS n FROM books WHERE category_id = ?').get(id) as { n: number };
+  if (used.n > 0) throw new CoreError('CATEGORY_IN_USE', `category ${id} still has ${used.n} book(s)`);
+  db.prepare('DELETE FROM categories WHERE id = ?').run(id);
+  return true;
+}
+
+// ---------- 管理侧:标签 ----------
+
+export function getTag(id: number): Tag | null {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM tags WHERE id = ?').get(id) as Tag | undefined;
+  return row ?? null;
+}
+
+/** 新建标签;name/slug 任一冲突抛 TAG_NAME_TAKEN */
+export function createTag(name: string): Tag {
+  const db = getDb();
+  if (!name.trim()) throw new CoreError('TAG_NAME_TAKEN', 'tag name is required');
+  const slug = slugifyName(name);
+  const clash = db.prepare('SELECT id FROM tags WHERE name = ? OR slug = ?').get(name, slug);
+  if (clash) throw new CoreError('TAG_NAME_TAKEN', `tag already exists: ${name}`);
+  const res = db.prepare('INSERT INTO tags (slug, name) VALUES (?, ?)').run(slug, name);
+  return { id: Number(res.lastInsertRowid), slug, name };
+}
+
+/** 重命名标签;slug 不变,新名撞车抛 TAG_NAME_TAKEN */
+export function updateTag(id: number, patch: UpdateTagPatch): Tag {
+  const db = getDb();
+  const row = getTag(id);
+  if (!row) throw new CoreError('TAG_NOT_FOUND', `tag not found: ${id}`);
+  if (patch.name === undefined || patch.name === row.name) return row;
+  const clash = db.prepare('SELECT id FROM tags WHERE name = ?').get(patch.name);
+  if (clash) throw new CoreError('TAG_NAME_TAKEN', `tag name already exists: ${patch.name}`);
+  db.prepare('UPDATE tags SET name = ? WHERE id = ?').run(patch.name, id);
+  return { ...row, name: patch.name };
+}
+
+/** 删除标签及其全部书籍关联;返回是否删除了东西 */
+export function deleteTag(id: number): boolean {
+  const db = getDb();
+  if (!getTag(id)) throw new CoreError('TAG_NOT_FOUND', `tag not found: ${id}`);
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM book_tags WHERE tag_id = ?').run(id);
+    db.prepare('DELETE FROM tags WHERE id = ?').run(id);
+  });
+  tx();
+  return true;
 }
