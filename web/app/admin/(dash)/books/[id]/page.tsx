@@ -1,8 +1,8 @@
 'use client';
 
-// 小说编辑:元数据表单 + 章节管理(新建/编辑/发布语义/上下移重排/删除)
+// 小说编辑:元数据表单 + 章节管理(新建/编辑/送审/发布语义/上下移重排/删除) + 每日自动发布配置
 
-import { ArrowDown, ArrowUp, ChevronLeft, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, Clock, Pencil, Plus, Send, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
@@ -27,7 +27,15 @@ interface ChapterRow {
   status: string;
   scheduledAt: string | null;
   publishedAt: string | null;
+  reviewNote?: string | null;
   contentMd: string;
+  updatedAt: string;
+}
+interface AutopilotConfig {
+  enabled: boolean;
+  hour: number;
+  count: number;
+  lastRunDate: string | null;
 }
 
 function fmt(iso: string | null): string {
@@ -59,12 +67,21 @@ export default function AdminBookDetailPage() {
   const [deleteTarget, setDeleteTarget] = useState<ChapterRow | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // 自动发布配置
+  const [autopilot, setAutopilot] = useState<AutopilotConfig>({ enabled: false, hour: 8, count: 1, lastRunDate: null });
+  const [savingAutopilot, setSavingAutopilot] = useState(false);
+
   const load = useCallback(async () => {
     try {
       setError(null);
-      const [b, c] = await Promise.all([api<{ book: BookDetail }>(`/api/admin/books/${id}`), api<{ chapters: ChapterRow[] }>(`/api/admin/books/${id}/chapters`)]);
+      const [b, c, ap] = await Promise.all([
+        api<{ book: BookDetail }>(`/api/admin/books/${id}`),
+        api<{ chapters: ChapterRow[] }>(`/api/admin/books/${id}/chapters`),
+        api<{ autopilot: AutopilotConfig }>(`/api/admin/books/${id}/autopilot`).catch(() => ({ autopilot: { enabled: false, hour: 8, count: 1, lastRunDate: null } })),
+      ]);
       setBook(b.book);
       setChapters(c.chapters);
+      setAutopilot(ap.autopilot);
       setMeta({
         title: b.book.title,
         authorName: b.book.authorName,
@@ -83,6 +100,41 @@ export default function AdminBookDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function submitForReview(number: number): Promise<void> {
+    setNotice(null);
+    try {
+      await api(`/api/admin/books/${id}/chapters/${number}/review`, { method: 'POST', body: JSON.stringify({ action: 'submit' }) });
+      notify(`第 ${number} 章已送审`);
+      window.dispatchEvent(new Event('admin:review-changed'));
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '送审失败');
+    }
+  }
+
+  async function saveAutopilot(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    if (savingAutopilot) return;
+    setSavingAutopilot(true);
+    setNotice(null);
+    try {
+      const res = await api<{ autopilot: AutopilotConfig }>(`/api/admin/books/${id}/autopilot`, {
+        method: 'PUT',
+        body: JSON.stringify({ enabled: autopilot.enabled, hour: Number(autopilot.hour), count: Number(autopilot.count) }),
+      });
+      setAutopilot(res.autopilot);
+      notify('自动发布配置已保存');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setSavingAutopilot(false);
+    }
+  }
+
+  function notify(msg: string): void {
+    setNotice(msg);
+  }
 
   async function saveMeta(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -238,6 +290,54 @@ export default function AdminBookDetailPage() {
             </div>
           </form>
 
+          {/* 每日自动发布配置 */}
+          <form onSubmit={(e) => void saveAutopilot(e)} className="mt-4 rounded-xl bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <Clock size={18} className="text-[#1677ff]" aria-hidden />
+              <h2 className="text-base font-semibold text-[#0f172a]">每日自动发布</h2>
+              {autopilot.lastRunDate ? <span className="text-xs text-[#94a3b8]">上次运行:{autopilot.lastRunDate}</span> : null}
+            </div>
+            <div className="flex flex-wrap items-end gap-4">
+              <label className="flex h-10 cursor-pointer items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label="启用自动发布"
+                  checked={autopilot.enabled}
+                  onChange={(e) => setAutopilot({ ...autopilot, enabled: e.target.checked })}
+                  className="h-5 w-5 accent-[#1677ff]"
+                />
+                <span className="text-sm font-medium text-[#334155]">{autopilot.enabled ? '已启用' : '已停用'}</span>
+              </label>
+              <Field label="每天时刻(0-23 点)">
+                <Input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={autopilot.hour}
+                  onChange={(e) => setAutopilot({ ...autopilot, hour: Number(e.target.value) })}
+                  className="w-28"
+                />
+              </Field>
+              <Field label="每次发布章数(1-50)">
+                <Input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={autopilot.count}
+                  onChange={(e) => setAutopilot({ ...autopilot, count: Number(e.target.value) })}
+                  className="w-36"
+                />
+              </Field>
+              <Button variant="primary" type="submit" disabled={savingAutopilot} size="md" className="ml-auto">
+                {savingAutopilot ? '保存中…' : '保存配置'}
+              </Button>
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-[#94a3b8]">
+              启用后,每天到达设定时刻,调度器自动从最旧的草稿章起发布对应章数(跳过审核队列;需部署 scheduler 进程)。默认关闭。
+            </p>
+          </form>
+
           {/* 章节 */}
           <div className="mt-5 mb-4 flex flex-wrap items-center gap-2">
             <h2 className="text-base font-semibold text-[#0f172a]">章节管理</h2>
@@ -279,15 +379,28 @@ export default function AdminBookDetailPage() {
                       return (
                         <tr key={c.id} className="group h-13 transition-all duration-200 hover:bg-[#f8fafc]">
                           <td className="border-b border-[#f1f5f9] px-4 text-sm text-[#94a3b8]">{c.number}</td>
-                          <td className="border-b border-[#f1f5f9] px-4 align-middle text-sm font-medium text-[#334155]">{c.title}</td>
+                          <td className="border-b border-[#f1f5f9] px-4 align-middle">
+                            <span className="text-sm font-medium text-[#334155]">{c.title}</span>
+                            {c.reviewNote ? <div className="mt-0.5 line-clamp-1 max-w-[320px] text-xs text-[#b45309]">驳回:{c.reviewNote}</div> : null}
+                          </td>
                           <td className="border-b border-[#f1f5f9] px-4 align-middle">
                             <Badge tone={badge.tone}>{badge.label}</Badge>
                           </td>
                           <td className="border-b border-[#f1f5f9] px-4 align-middle text-xs text-[#64748b]">
-                            {c.status === 'scheduled' ? `定时 ${fmt(c.scheduledAt)}` : `发布 ${fmt(c.publishedAt)}`}
+                            {c.status === 'scheduled' ? `定时 ${fmt(c.scheduledAt)}` : c.status === 'pending_review' ? `送审 ${fmt(c.updatedAt)}` : `发布 ${fmt(c.publishedAt)}`}
                           </td>
                           <td className="border-b border-[#f1f5f9] px-4 align-middle">
                             <div className="flex items-center justify-end gap-1 transition-opacity duration-250 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+                              {c.status === 'draft' ? (
+                                <button
+                                  aria-label={`送审第${c.number}章`}
+                                  title="提交审核"
+                                  onClick={() => void submitForReview(c.number)}
+                                  className="flex h-7 w-7 items-center justify-center rounded-md text-[#64748b] transition-all duration-150 hover:-translate-y-px hover:bg-[#e8f3ff] hover:text-[#1677ff] hover:shadow-sm"
+                                >
+                                  <Send size={15} />
+                                </button>
+                              ) : null}
                               <button aria-label={`上移第${c.number}章`} disabled={i === 0} onClick={() => void reorder(i, -1)} className="flex h-7 w-7 items-center justify-center rounded-md text-[#64748b] transition-all duration-150 hover:-translate-y-px hover:bg-[#f1f5f9] hover:text-[#334155] disabled:pointer-events-none disabled:opacity-30">
                                 <ArrowUp size={15} />
                               </button>
@@ -335,7 +448,14 @@ export default function AdminBookDetailPage() {
               <Input value={chapterForm.title} onChange={(e) => setChapterForm({ ...chapterForm, title: e.target.value })} />
             </Field>
             <Field label="状态">
-              <Select value={chapterForm.status} onChange={(e) => setChapterForm({ ...chapterForm, status: e.target.value })}>
+              <Select
+                value={chapterForm.status}
+                onChange={(e) => setChapterForm({ ...chapterForm, status: e.target.value })}
+                disabled={chapterModal?.mode === 'edit' && chapterModal.chapter.status === 'pending_review'}
+              >
+                {chapterModal?.mode === 'edit' && chapterModal.chapter.status === 'pending_review' ? (
+                  <option value="pending_review">待审核(请到审核队列处理)</option>
+                ) : null}
                 <option value="draft">草稿</option>
                 <option value="scheduled">定时发布</option>
                 <option value="published">立即发布</option>

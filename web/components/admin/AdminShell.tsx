@@ -4,15 +4,16 @@
 // 规格: 侧栏 200/64px · 顶栏/Logo区 56px · 菜单项40px · 内容区 p16 bg #eef4fb
 // 响应式: <768px 抽屉化 | 768-1024 默认收起 | ≥1024 默认展开
 
-import { BookOpen, FolderTree, ImageIcon, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Tags, Users, X } from 'lucide-react';
+import { BookOpen, FileCheck, FolderTree, ImageIcon, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Tags, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, clearToken, getToken } from '@/lib/admin-client';
 
 const NAV = [
   { href: '/admin', label: '概览', icon: LayoutDashboard },
   { href: '/admin/books', label: '小说管理', icon: BookOpen },
+  { href: '/admin/review', label: '审核队列', icon: FileCheck },
   { href: '/admin/authors', label: '作者管理', icon: Users },
   { href: '/admin/categories', label: '分类管理', icon: FolderTree },
   { href: '/admin/tags', label: '标签管理', icon: Tags },
@@ -22,6 +23,7 @@ const NAV = [
 const PAGE_TITLE: Record<string, string> = {
   '/admin': '概览',
   '/admin/books': '小说管理',
+  '/admin/review': '审核队列',
   '/admin/authors': '作者管理',
   '/admin/categories': '分类管理',
   '/admin/tags': '标签管理',
@@ -40,6 +42,26 @@ export default function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  const [reviewCount, setReviewCount] = useState(0);
+
+  // 待审核角标:拉取队列长度;审核动作后由页面派发 admin:review-changed 全局刷新
+  const refreshReviewCount = useCallback(async (): Promise<void> => {
+    try {
+      const res = await api<{ items: unknown[] }>('/api/admin/review-queue?limit=500');
+      setReviewCount(res.items.length);
+    } catch {
+      /* 静默:角标是辅助信息 */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshReviewCount();
+    const onRefresh = (): void => {
+      void refreshReviewCount();
+    };
+    window.addEventListener('admin:review-changed', onRefresh);
+    return () => window.removeEventListener('admin:review-changed', onRefresh);
+  }, [refreshReviewCount, pathname]);
 
   // 登录态守卫:无令牌或校验失败 → 登录页
   useEffect(() => {
@@ -117,6 +139,14 @@ export default function AdminShell({ children }: { children: ReactNode }) {
                 <span className={`ml-3 text-sm font-normal ${active ? 'font-medium text-[#1677ff]' : 'text-[#475569]'} ${collapsed ? 'md:hidden' : ''}`}>
                   {item.label}
                 </span>
+                {item.href === '/admin/review' && reviewCount > 0 ? (
+                  <span
+                    className={`ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[#dc2626] px-1.5 text-[11px] font-medium leading-none text-white ${collapsed ? 'md:hidden' : ''}`}
+                    aria-label={`${reviewCount} 章待审核`}
+                  >
+                    {reviewCount > 99 ? '99+' : reviewCount}
+                  </span>
+                ) : null}
               </Link>
             );
           })}
