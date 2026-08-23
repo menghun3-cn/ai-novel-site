@@ -25,6 +25,7 @@ const {
   setLlmSettings,
 } = await import('@novel/core');
 
+
 let failed = 0;
 function assertOk(cond: boolean, name: string): void {
   if (cond) {
@@ -169,6 +170,32 @@ configureAiSerialization(bookA.id, { autoPublish: true, minChars: 20000 });
   const c6 = await runAiSerializationCycle(d4);
   assertOk(c6.booksTriggered === 1 && c6.enqueued === 1, '停用的 bookA 不再触发,仅 bookB');
   assertOk(listGenerationJobs(bookA.id).length === jobsABefore, '停用的 bookA 零新任务');
+}
+
+// ---------- 任务级生成选项(工作台经队列透传) ----------
+{
+  // submitForReview=false → 草稿落库,任务终态 draft
+  enqueueGenerationJobs(bookA.id, 1, { submitForReview: false });
+  await processGenerationJobs(10);
+  const draftJob = listGenerationJobs(bookA.id)[0];
+  assertOk(draftJob.status === 'draft' && draftJob.chapterNumber !== null, `不送审 → 草稿(${draftJob.status}#${draftJob.chapterNumber})`);
+  assertOk(getChapterByNumber(bookA.id, draftJob.chapterNumber ?? -1)?.status === 'draft', '章节状态为 draft');
+
+  // minChars 覆盖:任务带 20000 → 拒绝,不影响书配置的后续任务
+  enqueueGenerationJobs(bookA.id, 1, { minChars: 20000, submitForReview: true });
+  enqueueGenerationJobs(bookA.id, 1, { submitForReview: true });
+  await processGenerationJobs(10);
+  const after = listGenerationJobs(bookA.id);
+  const rej2 = after.find((j) => j.minChars === 20000)!;
+  const ok3 = after.find((j) => j.minChars === null && j.submitForReview === true && j.status !== 'draft')!;
+  assertOk(rej2.status === 'rejected' && rej2.error?.includes('TOO_SHORT'), '任务级 minChars 覆盖生效(拒绝)');
+  // bookA 此刻 autoPublish=true(前文遗留),送审成功即直发;两种终态都算通过
+  assertOk(['submitted', 'published'].includes(ok3.status), `默认下限的任务正常落稿(${ok3.status})`);
+
+  // instructions 透传(mock 不校验内容,验证链路可用)
+  enqueueGenerationJobs(bookB.id, 1, { instructions: '以婚礼开场', submitForReview: true });
+  await processGenerationJobs(10);
+  assertOk(listGenerationJobs(bookB.id)[0].status === 'submitted' && listGenerationJobs(bookB.id)[0].instructions === '以婚礼开场', 'instructions 存储并正常执行');
 }
 
 // ---------- 收尾 ----------

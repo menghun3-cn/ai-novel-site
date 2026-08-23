@@ -397,10 +397,13 @@ export interface StoryForeshadowing {
 
 // ---------- V5 AI 自动连载 ----------
 
-export type GenerationJobStatus = 'pending' | 'running' | 'published' | 'submitted' | 'rejected' | 'failed';
+export type GenerationJobStatus = 'pending' | 'running' | 'published' | 'submitted' | 'held' | 'draft' | 'rejected' | 'failed';
 
 export function isGenerationJobStatus(v: unknown): v is GenerationJobStatus {
-  return typeof v === 'string' && ['pending', 'running', 'published', 'submitted', 'rejected', 'failed'].includes(v);
+  return (
+    typeof v === 'string' &&
+    ['pending', 'running', 'published', 'submitted', 'held', 'draft', 'rejected', 'failed'].includes(v)
+  );
 }
 
 /** 每书 AI 连载配置;未创建时读出虚拟默认值(停用/8点/1章/送审模式) */
@@ -431,6 +434,11 @@ export interface GenerationJob {
   error: string | null;
   chars: number | null;
   model: string | null;
+  /** 每任务生成选项(NULL = 沿用书的连载配置) */
+  instructions?: string | null;
+  minChars?: number | null;
+  submitForReview?: boolean | null;
+  llmReview?: boolean | null;
   createdAt: string;
   updatedAt: string;
 }
