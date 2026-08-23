@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createBook, listAllBooks, type BookStatus } from '@novel/core';
-import { intQuery, json, readJson, withAdmin } from '@/lib/admin-api';
+import { AdminRouteContext, intQuery, json, readJson, withAdmin } from '@/lib/admin-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +20,7 @@ const createSchema = z.object({
   tags: z.array(z.string().min(1).max(60)).max(30).optional(),
 });
 
-export const GET = withAdmin(async (req: NextRequest) => {
+export const GET = withAdmin<AdminRouteContext>(async (req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const books = listAllBooks({
     status: (sp.get('status') ?? undefined) as BookStatus | undefined,
@@ -32,7 +32,7 @@ export const GET = withAdmin(async (req: NextRequest) => {
   return json({ books });
 });
 
-export const POST = withAdmin(async (req: NextRequest) => {
+export const POST = withAdmin<AdminRouteContext>(async (req: NextRequest) => {
   const input = await readJson(req, createSchema);
   const book = createBook({
     ...input,
