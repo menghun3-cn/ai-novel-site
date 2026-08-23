@@ -2,8 +2,8 @@
 // 设计取向:匿名可记、写路径极轻(两条 UPDATE),评分在 getDiscoveryFeed 完成。
 
 import { Database } from 'better-sqlite3';
-import { CoreError, type BookStats, type DiscoverySection } from './domain.js';
-import { getDb } from './db.js';
+import { CoreError, type BookStats, type DiscoverySection } from './domain';
+import { getDb } from './db';
 
 /** 记录章节页打开(PV):书级与章级各 +1 */
 export function trackChapterView(bookId: string, chapterNumber: number): void {

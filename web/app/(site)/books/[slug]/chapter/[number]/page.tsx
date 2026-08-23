@@ -9,6 +9,7 @@ import RememberRead from '@/components/RememberRead';
 import ScrollRestore from '@/components/ScrollRestore';
 import SwipeNavigation from '@/components/SwipeNavigation';
 import ProgressReporter from '@/components/ProgressReporter';
+import ViewTracker from '@/components/ViewTracker';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,6 +102,7 @@ export default async function ChapterPage({
 
       <RememberRead bookSlug={book.slug} chapterNumber={chapter.number} />
       <ProgressReporter bookSlug={book.slug} chapterNumber={chapter.number} />
+      <ViewTracker bookSlug={book.slug} chapterNumber={chapter.number} />
     </div>
   );
 }
