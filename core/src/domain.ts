@@ -501,3 +501,37 @@ export interface HistoryEntry {
   percent: number;
   updatedAt: string;
 }
+
+/** V7 书籍热度统计 */
+export interface BookStats {
+  /** 章页打开总次数(书级) */
+  viewCount: number;
+  favoriteCount: number;
+  /** 整体完读率 0-1(全部已发布章 finish/view 聚合) */
+  finishRate: number;
+  publishedCount: number;
+}
+
+/** Discovery 板块条目 */
+export interface DiscoveryItem {
+  bookId: string;
+  slug: string;
+  title: string;
+  authorName: string;
+  description: string | null;
+  coverPath: string | null;
+  categoryName: string;
+  status: BookStatus | 'serializing';
+  publishedCount: number;
+  /** 规则打分,展示可不用 */
+  score: number;
+  /** 推荐理由短语(如分类名),可空 */
+  reason?: string;
+}
+
+/** Discovery 板块 */
+export interface DiscoverySection {
+  key: 'today' | 'hot' | 'recent' | 'new' | 'completed' | 'foryou';
+  title: string;
+  items: DiscoveryItem[];
+}
