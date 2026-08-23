@@ -167,6 +167,13 @@ CREATE INDEX IF NOT EXISTS idx_story_relationships_book ON story_relationships(b
 CREATE INDEX IF NOT EXISTS idx_story_arcs_book ON story_arcs(book_id);
 CREATE INDEX IF NOT EXISTS idx_story_outlines_book ON story_outlines(book_id, number);
 CREATE INDEX IF NOT EXISTS idx_story_foreshadowing_book ON story_foreshadowing(book_id);
+
+-- 运行时配置(键值):LLM 服务等运营者可在后台调整的配置
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at TEXT NOT NULL
+);
 `;
 
 let sqlite: Database.Database | null = null;

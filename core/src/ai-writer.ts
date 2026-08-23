@@ -99,25 +99,40 @@ async function discoverFirstChatModel(baseUrl: string, apiKey: string): Promise<
 /** 已解析的 (baseUrl,apiKey) → model 缓存,避免每次生成都打 /models */
 const resolvedModelCache = new Map<string, string>();
 
+export interface ProviderConfig {
+  baseUrl: string | null | undefined;
+  apiKey: string | null | undefined;
+  model?: string | null;
+}
+
 /**
- * 从环境变量解析 Provider。AI_BASE_URL / AI_API_KEY 必填(缺 → AI_NOT_CONFIGURED,503);
- * AI_MODEL 可选——缺省时从 `${baseUrl}/models` 自动发现,过滤非对话类后取第一个
- * (发现失败 → AI_PROVIDER_FAILED,502;列表无非对话外模型 → AI_NOT_CONFIGURED)。
- * 注意:异步;发现结果按 baseUrl+apiKey 缓存。
+ * 从给定配置解析 Provider(通用入口)。baseUrl/apiKey 必填
+ * (缺 → AI_NOT_CONFIGURED,503);model 缺省时从 `${baseUrl}/models` 自动发现,
+ * 过滤非对话类后取第一个(发现失败 → AI_PROVIDER_FAILED,502;
+ * 列表无可对话模型 → AI_NOT_CONFIGURED)。
+ * 异步;发现结果按 baseUrl+apiKey 缓存。
  */
-export async function resolveProviderFromEnv(env: NodeJS.ProcessEnv = process.env): Promise<LlmProvider> {
-  const baseUrl = env.AI_BASE_URL?.trim();
-  const apiKey = env.AI_API_KEY?.trim();
+export async function resolveProvider(config: ProviderConfig): Promise<LlmProvider> {
+  const baseUrl = config.baseUrl?.trim();
+  const apiKey = config.apiKey?.trim();
   if (!baseUrl || !apiKey) {
-    throw new CoreError('AI_NOT_CONFIGURED', 'AI_BASE_URL / AI_API_KEY must be set');
+    throw new CoreError('AI_NOT_CONFIGURED', 'LLM base URL / API key must be configured (admin settings or AI_BASE_URL / AI_API_KEY)');
   }
-  const explicit = env.AI_MODEL?.trim();
+  const explicit = config.model?.trim();
   let model = explicit || resolvedModelCache.get(`${baseUrl}|${apiKey}`) || '';
   if (!model) {
     model = await discoverFirstChatModel(baseUrl, apiKey);
     resolvedModelCache.set(`${baseUrl}|${apiKey}`, model);
   }
   return createOpenAiCompatibleProvider({ baseUrl, apiKey, model });
+}
+
+/**
+ * 环境变量薄壳:AI_BASE_URL / AI_API_KEY 必填,AI_MODEL 可选(语义同上)。
+ * 后台配置优先的场景请改用 getLlmSecretConfig() 合并后调 resolveProvider。
+ */
+export async function resolveProviderFromEnv(env: NodeJS.ProcessEnv = process.env): Promise<LlmProvider> {
+  return resolveProvider({ baseUrl: env.AI_BASE_URL, apiKey: env.AI_API_KEY, model: env.AI_MODEL });
 }
 
 /** 清空模型发现缓存(测试用) */
