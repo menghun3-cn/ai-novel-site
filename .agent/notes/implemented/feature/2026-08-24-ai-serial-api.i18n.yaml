@@ -1,0 +1,8 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with the project's
+# translation-pairing verifier:
+#   git hash-object 2026-08-24-ai-serial-api.md
+#   git hash-object 2026-08-24-ai-serial-api.zh.md
+2026-08-24-ai-serial-api.md: dc34f9e7c8047990f5955697f37a9377b748928c
+2026-08-24-ai-serial-api.zh.md: 4c1b423068e047ea740bac8bac7c326654b6b8c0
