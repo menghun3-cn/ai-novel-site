@@ -110,6 +110,10 @@ interface JobRow {
   error: string | null;
   chars: number | null;
   model: string | null;
+  instructions: string | null;
+  min_chars: number | null;
+  submit_for_review: number | null;
+  llm_review: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -124,6 +128,10 @@ function toJob(r: JobRow): GenerationJob {
     error: r.error,
     chars: r.chars,
     model: r.model,
+    instructions: r.instructions,
+    minChars: r.min_chars,
+    submitForReview: r.submit_for_review === null ? null : r.submit_for_review === 1,
+    llmReview: r.llm_review === null ? null : r.llm_review === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -141,8 +149,19 @@ export function listGenerationJobs(bookId?: string, limit = 50): GenerationJob[]
   return rows.map(toJob);
 }
 
-/** 批量入队(如「AI 生成前 N 章」);书不存在抛错 */
-export function enqueueGenerationJobs(bookId: string, count: number): GenerationJob[] {
+export interface EnqueueJobOptions {
+  /** 额外写作指令(工作台「额外指令」) */
+  instructions?: string | null;
+  /** 覆盖字数下限(NULL = 用书的连载配置) */
+  minChars?: number | null;
+  /** 覆盖送审行为(NULL = true,与原工作台语义一致) */
+  submitForReview?: boolean | null;
+  /** 覆盖 LLM 编辑复核(NULL = false) */
+  llmReview?: boolean | null;
+}
+
+/** 批量入队(如「AI 生成前 N 章」或单章草稿);书不存在抛错 */
+export function enqueueGenerationJobs(bookId: string, count: number, opts: EnqueueJobOptions = {}): GenerationJob[] {
   assertBook(bookId);
   if (!Number.isInteger(count) || count < 1 || count > 50) {
     throw new CoreError('INVALID_AI_SERIALIZATION', `enqueue count must be 1-50: ${String(count)}`);
@@ -150,12 +169,22 @@ export function enqueueGenerationJobs(bookId: string, count: number): Generation
   const db = getDb();
   const at = nowIso();
   const stmt = db.prepare(
-    "INSERT INTO generation_jobs (book_id, chapter_number, status, attempt, created_at, updated_at) VALUES (?, NULL, 'pending', 0, ?, ?)"
+    `INSERT INTO generation_jobs
+       (book_id, chapter_number, status, attempt, instructions, min_chars, submit_for_review, llm_review, created_at, updated_at)
+     VALUES (?, NULL, 'pending', 0, ?, ?, ?, ?, ?, ?)`
   );
   const jobs: GenerationJob[] = [];
   const tx = db.transaction(() => {
     for (let i = 0; i < count; i++) {
-      const res = stmt.run(bookId, at, at);
+      const res = stmt.run(
+        bookId,
+        opts.instructions ?? null,
+        opts.minChars ?? null,
+        opts.submitForReview === undefined || opts.submitForReview === null ? null : opts.submitForReview ? 1 : 0,
+        opts.llmReview === undefined || opts.llmReview === null ? null : opts.llmReview ? 1 : 0,
+        at,
+        at
+      );
       jobs.push(toJob(db.prepare('SELECT * FROM generation_jobs WHERE id = ?').get(Number(res.lastInsertRowid)) as JobRow));
     }
   });
@@ -179,21 +208,37 @@ async function executeJob(job: GenerationJob): Promise<GenerationJob> {
   try {
     touch({ status: 'running', attempt: job.attempt + 1 });
     const provider = await resolveProviderFromStore();
+    // 任务级选项优先,缺省沿用书的连载配置(送审=true 与原工作台语义一致)
+    const submitForReview = job.submitForReview ?? true;
+    const llmReview = job.llmReview ?? false;
+    const minChars = job.minChars ?? config.minChars;
     const result: GenerateChapterResult = await generateChapterDraft(job.bookId, {
       provider,
-      submitForReview: true,
-      llmReview: false,
-      minChars: config.minChars,
+      submitForReview,
+      llmReview,
+      minChars,
+      instructions: job.instructions ?? undefined,
     });
     if (!result.created) {
       const detail = result.quality.issues.map((i) => `${i.code}:${i.detail}`).join('; ');
       touch({ status: 'rejected', error: detail });
       return getJob(job.bookId, job.id)!;
     }
-    let finalStatus: GenerationJobStatus = 'submitted';
-    if (config.autoPublish) {
+    // 章节已落库;决定任务终态:
+    //  - 不送审 → draft(草稿,人工后续处理)
+    //  - 送审但被 LLM 复核暂扣(holdNote) → held
+    //  - 送审 + autoPublish + 无暂扣 → 直接批准发布
+    //  - 其余 → submitted(待审核队列)
+    let finalStatus: GenerationJobStatus;
+    if (!submitForReview) {
+      finalStatus = 'draft';
+    } else if (result.holdNote) {
+      finalStatus = 'held';
+    } else if (config.autoPublish) {
       approveChapter(job.bookId, result.chapterNumber, { mode: 'now' });
       finalStatus = 'published';
+    } else {
+      finalStatus = 'submitted';
     }
     touch({
       status: finalStatus,

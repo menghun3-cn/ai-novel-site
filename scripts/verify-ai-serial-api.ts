@@ -103,6 +103,22 @@ const { GET: jobsGet } = await import('../web/app/api/admin/ai/serial/jobs/route
 
   const list = await assertJson(await jobsGet(req('GET', `/api/admin/ai/serial/jobs?bookId=${book.id}&limit=10`)), 200, '任务列表(按书过滤)');
   assertOk((list.jobs as unknown[]).length === 2, '过滤后恰好 2 条');
+
+  // ---------- background 模式:立即返回 + 进程内跑完(504 修复语义) ----------
+  await enqueuePost(req('POST', '/api/admin/ai/serial/enqueue', { bookId: book.id, count: 1 }));
+  const t0 = Date.now();
+  const bg = await assertJson(await runPost(req('POST', '/api/admin/ai/serial/run', { mode: 'background', limit: 10 })), 200, 'background 模式启动');
+  const elapsed = Date.now() - t0;
+  assertOk(bg.started === true && elapsed < 2000, `立即返回(<2s,实得 ${elapsed}ms)`);
+  // mock 上游很快;给后台 worker 一点时间后确认任务已完成
+  let settled = false;
+  for (let i = 0; i < 15 && !settled; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const l = await jobsGet(req('GET', `/api/admin/ai/serial/jobs?bookId=${book.id}&limit=1`));
+    const d = (await l.json()) as { jobs: Array<{ status: string }> };
+    settled = d.jobs[0] && !['pending', 'running'].includes(d.jobs[0].status);
+  }
+  assertOk(settled === true, '后台 worker 完成最新任务');
 }
 
 server.close();
