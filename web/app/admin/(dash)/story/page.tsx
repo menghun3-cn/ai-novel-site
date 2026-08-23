@@ -143,7 +143,7 @@ export default function AdminStoryPage() {
     id: number;
     bookId?: string;
     chapterNumber: number | null;
-    status: 'pending' | 'running' | 'published' | 'submitted' | 'rejected' | 'failed';
+    status: 'pending' | 'running' | 'published' | 'submitted' | 'held' | 'draft' | 'rejected' | 'failed';
     error: string | null;
     chars: number | null;
     model: string | null;
@@ -156,6 +156,8 @@ export default function AdminStoryPage() {
     failed: { tone: 'danger', label: '失败' },
     running: { tone: 'running', label: '执行中' },
     pending: { tone: 'running', label: '排队中' },
+    held: { tone: 'warning', label: '复核暂扣' },
+    draft: { tone: 'info', label: '草稿' },
   };
   const [serialCfg, setSerialCfg] = useState({ enabled: false, hour: '8', count: '1', autoPublish: false, minChars: '500' });
   const [serialJobs, setSerialJobs] = useState<SerialJob[] | null>(null);
@@ -263,11 +265,20 @@ export default function AdminStoryPage() {
     if (serialBusy) return;
     setSerialBusy('run');
     try {
-      const res = await api<{ processed: number; jobs: SerialJob[] }>('/api/admin/ai/serial/run', { method: 'POST', body: JSON.stringify({ limit: 20 }) });
-      setSerialJobs(res.jobs.filter((j) => !j.bookId || j.bookId === bookId).slice(0, 10));
-      notify(res.processed > 0 ? `已处理 ${res.processed} 个生成任务,结果见下方任务列表` : '队列中没有待处理的任务');
+      // 后台模式:立即 kick,轮询到本书无 pending/running 为止(上限 10 分钟)
+      await api('/api/admin/ai/serial/run', { method: 'POST', body: JSON.stringify({ mode: 'background', limit: 20 }) });
+      notify('后台处理已启动…');
+      const deadline = Date.now() + 10 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const list = await api<{ jobs: SerialJob[] }>(`/api/admin/ai/serial/jobs?bookId=${bookId}&limit=10`);
+        setSerialJobs(list.jobs);
+        if (!list.jobs.some((j) => j.status === 'pending' || j.status === 'running')) break;
+      }
       window.dispatchEvent(new CustomEvent('admin:review-changed'));
       await loadStory(bookId);
+      setNotice('队列处理结束,结果见下方任务列表');
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : '处理失败');
     } finally {
@@ -387,24 +398,50 @@ export default function AdminStoryPage() {
     setAiResult(null);
     setError(null);
     try {
-      const res = await api<{ result: { created: boolean; chapterNumber?: number; title?: string; chars?: number; submitted?: boolean; holdNote?: string | null; quality?: { issues: Array<{ code: string; detail: string }> }; reason?: string; llmReview?: { verdict: string; note: string | null } | null } }>(
-        '/api/admin/ai/generate-chapter',
-        { method: 'POST', body: JSON.stringify({ bookId, instructions: aiInstructions || null, submitForReview: aiSubmit, llmReview: aiReview }) }
-      );
-      const r = res.result;
-      if (r.created) {
-        const parts = [`第 ${r.chapterNumber} 章《${r.title}》已落稿(${r.chars} 字)`];
-        parts.push(r.submitted ? '已送入审核队列' : r.holdNote ? `LLM 复核暂扣:${r.holdNote}` : '保存为草稿');
+      // 后台队列模式:入队 → kick 后台执行 → 轮询任务状态。
+      // 同步等待整章 LLM 生成会被反代(nginx/宝塔默认 60s)掐成 504。
+      const enq = await api<{ jobs: Array<{ id: number }> }>('/api/admin/ai/serial/enqueue', {
+        method: 'POST',
+        body: JSON.stringify({ bookId, count: 1, instructions: aiInstructions || null, submitForReview: aiSubmit, llmReview: aiReview }),
+      });
+      const jobId = enq.jobs[0].id;
+      await api('/api/admin/ai/serial/run', { method: 'POST', body: JSON.stringify({ mode: 'background', limit: 20 }) });
+      notify('已进入后台生成队列,执行中…');
+
+      // 轮询本任务直至终态(上限 10 分钟)
+      const deadline = Date.now() + 10 * 60 * 1000;
+      let finalJob: SerialJob | null = null;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const list = await api<{ jobs: SerialJob[] }>(`/api/admin/ai/serial/jobs?bookId=${bookId}&limit=10`);
+        setSerialJobs(list.jobs);
+        const me = list.jobs.find((j) => j.id === jobId) ?? null;
+        if (me && !['pending', 'running'].includes(me.status)) {
+          finalJob = me;
+          break;
+        }
+      }
+
+      if (!finalJob) {
+        setAiResult({ ok: false, lines: ['后台执行超时未返回,请稍后在任务列表查看结果'] });
+      } else if (finalJob.status === 'published' || finalJob.status === 'submitted') {
+        const parts = [`第 ${finalJob.chapterNumber} 章已落稿(${finalJob.chars ?? '?'} 字)`];
+        parts.push(finalJob.status === 'published' ? '已自动发布上线' : '已送入审核队列');
         setAiResult({ ok: true, lines: parts });
         window.dispatchEvent(new Event('admin:review-changed'));
         await loadStory(bookId);
+      } else if (finalJob.status === 'held') {
+        setAiResult({ ok: false, lines: [`第 ${finalJob.chapterNumber} 章被 LLM 复核暂扣,可在审核队列查看备注`] });
+        window.dispatchEvent(new Event('admin:review-changed'));
+        await loadStory(bookId);
+      } else if (finalJob.status === 'draft') {
+        setAiResult({ ok: true, lines: [`第 ${finalJob.chapterNumber} 章已保存为草稿(未送审)`] });
+        await loadStory(bookId);
+      } else if (finalJob.status === 'rejected') {
+        setAiResult({ ok: false, lines: ['质检未通过,未落稿:', finalJob.error ?? ''] });
       } else {
-        setAiResult({
-          ok: false,
-          lines: ['质检未通过,未落稿:', ...r.quality!.issues.map((i) => `${i.code}:${i.detail}`)],
-        });
+        setAiResult({ ok: false, lines: ['生成失败:', finalJob.error ?? '未知错误'] });
       }
-      notify('生成流程结束');
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成失败');
     } finally {

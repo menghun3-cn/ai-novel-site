@@ -197,6 +197,10 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
   error TEXT,
   chars INTEGER,
   model TEXT,
+  instructions TEXT,
+  min_chars INTEGER,
+  submit_for_review INTEGER,
+  llm_review INTEGER,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -230,6 +234,18 @@ function migratePublishColumns(db: Database.Database): void {
   if (!chapterCols.includes('review_note')) db.exec('ALTER TABLE chapters ADD COLUMN review_note TEXT');
 }
 
+/**
+ * 轻量迁移:V5.0.1——generation_jobs 补每任务生成选项列
+ * (instructions/min_chars/submit_for_review/llm_review,NULL=沿用书的连载配置)。
+ */
+function migrateJobOptionColumns(db: Database.Database): void {
+  const cols = (db.prepare('PRAGMA table_info(generation_jobs)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('instructions')) db.exec('ALTER TABLE generation_jobs ADD COLUMN instructions TEXT');
+  if (!cols.includes('min_chars')) db.exec('ALTER TABLE generation_jobs ADD COLUMN min_chars INTEGER');
+  if (!cols.includes('submit_for_review')) db.exec('ALTER TABLE generation_jobs ADD COLUMN submit_for_review INTEGER');
+  if (!cols.includes('llm_review')) db.exec('ALTER TABLE generation_jobs ADD COLUMN llm_review INTEGER');
+}
+
 export function getDb(): Database.Database {
   if (!sqlite) {
     ensureDataDir();
@@ -239,6 +255,7 @@ export function getDb(): Database.Database {
     sqlite.exec(DDL);
     migrateAuthorColumns(sqlite);
     migratePublishColumns(sqlite);
+    migrateJobOptionColumns(sqlite);
   }
   return sqlite;
 }
