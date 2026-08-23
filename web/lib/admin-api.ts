@@ -5,6 +5,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { CoreError, type CoreErrorCode } from '@novel/core';
+import { MediaError } from '@/lib/admin-media';
 import type { ZodType } from 'zod';
 
 export const ADMIN_TOKEN_HEADER = 'x-admin-token';
@@ -60,6 +61,9 @@ const STATUS_BY_CODE: Record<CoreErrorCode, number> = {
 export function handleError(err: unknown): Response {
   if (err instanceof CoreError) {
     return fail(STATUS_BY_CODE[err.code] ?? 400, err.code, err.message);
+  }
+  if (err instanceof MediaError) {
+    return fail(err.status, err.code, err.message);
   }
   console.error('[admin-api]', err);
   return fail(500, 'INTERNAL_ERROR');
