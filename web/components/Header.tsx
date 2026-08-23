@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import ThemeToggle from './ThemeToggle';
+import ReaderMenu from './ReaderMenu';
 import pkg from '../package.json';
 
 const navLink =
@@ -65,6 +66,8 @@ export default function Header() {
             搜索
           </button>
         </form>
+        {/* 读者入口:登录/注册 或 书架/用户名/退出(客户端探测会话) */}
+        <ReaderMenu />
         <ThemeToggle />
       </div>
     </header>
