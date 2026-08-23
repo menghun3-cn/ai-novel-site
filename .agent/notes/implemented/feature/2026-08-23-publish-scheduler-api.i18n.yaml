@@ -1,0 +1,8 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with the project's
+# translation-pairing verifier:
+#   git hash-object 2026-08-23-publish-scheduler-api.md
+#   git hash-object 2026-08-23-publish-scheduler-api.zh.md
+2026-08-23-publish-scheduler-api.md: 0782e11e22a5cfe59ace8346688d24c338bfdb4a
+2026-08-23-publish-scheduler-api.zh.md: 6be22cf12bafa94ca7682be52161a81b3c5ec7a3

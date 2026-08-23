@@ -1,0 +1,50 @@
+/**
+ * V3 定时发布调度器:常驻进程,周期性调用 runPublishCycle()
+ * (到期定时章节转发布 + 每书每日自动发布)。
+ *
+ * 运行:npm run scheduler
+ * 环境变量:
+ *   NOVEL_DATA_DIR         数据目录(默认仓库 data/)
+ *   PUBLISH_TICK_SECONDS   扫描间隔,默认 60 秒
+ */
+import { runPublishCycle, type PublishCycleResult } from '@novel/core';
+
+const tickSeconds = Number(process.env.PUBLISH_TICK_SECONDS ?? 60);
+if (!Number.isFinite(tickSeconds) || tickSeconds < 5) {
+  console.error(`[scheduler] PUBLISH_TICK_SECONDS must be a number >= 5, got: ${process.env.PUBLISH_TICK_SECONDS}`);
+  process.exit(1);
+}
+
+let running = true;
+
+async function tick(): Promise<void> {
+  try {
+    const result = runPublishCycle();
+    const { duePublished, autopilotBooks, autopilotPublished } = result;
+    if (duePublished > 0 || autopilotPublished > 0) {
+      console.log(
+        `[${new Date().toISOString()}] published: due=${duePublished} autopilot=${autopilotPublished} (books=${autopilotBooks})`
+      );
+    }
+  } catch (err) {
+    // 单次失败不终止调度器;错误完整落日志便于排查
+    console.error(`[${new Date().toISOString()}] cycle failed:`, err);
+  }
+}
+
+async function loop(): Promise<void> {
+  console.log(`[scheduler] started, tick=${tickSeconds}s`);
+  while (running) {
+    await tick();
+    await new Promise((r) => setTimeout(r, tickSeconds * 1000));
+  }
+  console.log('[scheduler] stopped');
+}
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    running = false;
+  });
+}
+
+void loop();
