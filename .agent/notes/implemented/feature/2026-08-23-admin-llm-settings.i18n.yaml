@@ -2,8 +2,7 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with the project's
 # translation-pairing verifier:
-#   git hash-object 2026-08-23-ai-writer-engine.md
-#   git hash-object 2026-08-23-ai-writer-engine.zh.md
-2026-08-23-ai-writer-engine.md: 47a764966f828b606377143d7aa0c9283ebd12f5
-2026-08-23-ai-writer-engine.zh.md: 7bf5e74401ff0bdb6cdf5f9a8144928900f2625a
-
+#   git hash-object 2026-08-23-admin-llm-settings.md
+#   git hash-object 2026-08-23-admin-llm-settings.zh.md
+2026-08-23-admin-llm-settings.md: 86e8880f0a99cff36b71c8454ef76d47bf01bd8e
+2026-08-23-admin-llm-settings.zh.md: 7211f6e85473f4e6ceb02e5c5e25918f243a3c8f
