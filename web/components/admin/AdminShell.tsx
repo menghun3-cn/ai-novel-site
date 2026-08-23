@@ -4,11 +4,14 @@
 // 规格: 侧栏 200/64px · 顶栏/Logo区 56px · 菜单项40px · 内容区 p16 bg #eef4fb
 // 响应式: <768px 抽屉化 | 768-1024 默认收起 | ≥1024 默认展开
 
-import { BookOpen, FileCheck, FolderTree, ImageIcon, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Sparkles, Tags, Users, X } from 'lucide-react';
+import { BookOpen, FileCheck, FolderTree, ImageIcon, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, Tags, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, clearToken, getToken } from '@/lib/admin-client';
+import appPackage from '../../package.json';
+
+const APP_VERSION = `v${appPackage.version}`;
 
 const NAV = [
   { href: '/admin', label: '概览', icon: LayoutDashboard },
@@ -19,6 +22,7 @@ const NAV = [
   { href: '/admin/categories', label: '分类管理', icon: FolderTree },
   { href: '/admin/tags', label: '标签管理', icon: Tags },
   { href: '/admin/media', label: '媒体库', icon: ImageIcon },
+  { href: '/admin/settings', label: '系统设置', icon: Settings },
 ] as const;
 
 const PAGE_TITLE: Record<string, string> = {
@@ -30,6 +34,7 @@ const PAGE_TITLE: Record<string, string> = {
   '/admin/categories': '分类管理',
   '/admin/tags': '标签管理',
   '/admin/media': '媒体库',
+  '/admin/settings': '系统设置',
 };
 
 function breadcrumb(pathname: string): string {
@@ -115,7 +120,10 @@ export default function AdminShell({ children }: { children: ReactNode }) {
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white" style={{ background: 'linear-gradient(135deg,#2d7fff,#1f5eea)' }}>
             <BookOpen size={20} aria-hidden />
           </span>
-          <span className={`text-[15px] font-semibold text-[#1e293b] ${collapsed ? 'md:hidden' : ''}`}>AI文学·内容中台</span>
+          <span className={`min-w-0 ${collapsed ? 'md:hidden' : ''}`}>
+            <span className="block truncate text-[15px] font-semibold leading-tight text-[#1e293b]">AI文学·内容中台</span>
+            <span className="block text-[10px] leading-tight text-[#94a3b8]">{APP_VERSION}</span>
+          </span>
           <button aria-label="关闭菜单" className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-[#94a3b8] hover:bg-[#f1f5f9] md:hidden" onClick={() => setDrawer(false)}>
             <X size={18} />
           </button>
