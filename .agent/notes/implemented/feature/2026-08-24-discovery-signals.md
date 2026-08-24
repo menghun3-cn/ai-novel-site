@@ -44,6 +44,8 @@ already-subscribed books. typecheck green.
 (PV/UV/时长), wrong cost for V7 scoring — every feed query would aggregate
 millions of rows. Counters are O(1) to read; if V8 needs history we add
 events *then*, and counters remain the fast path (rebateable from events).
+V8 kept exactly this bargain — see [analytics reading sessions]
+(2026-08-24-analytics-reading-sessions.md).
 
 **Server-side view tracking from the chapter RSC.** Server components can't
 reliably count client navigations without double-counting prefetches;
