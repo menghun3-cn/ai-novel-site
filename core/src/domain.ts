@@ -535,3 +535,61 @@ export interface DiscoverySection {
   title: string;
   items: DiscoveryItem[];
 }
+
+// ---------- V8 数据分析 ----------
+
+/** 平台运营总览 */
+export interface AnalyticsOverview {
+  /** 章节级 PV 总和(含重读) */
+  totalPv: number;
+  /** 书级 PV 总和(首页/详情点击) */
+  totalBookPv: number;
+  totalFinish: number;
+  totalFavorites: number;
+  totalSubscriptions: number;
+  totalReaders: number;
+  totalBooks: number;
+  totalPublishedChapters: number;
+  /** 总阅读时长(分钟) */
+  totalDurationMin: number;
+  /** 整体完读率 0-1 */
+  overallFinishRate: number;
+  /** 最近 7 天有进度的读者数 */
+  activeReaders7d: number;
+  /** 最近 7 天阅读会话数 */
+  activeSessions7d: number;
+}
+
+/** 单章指标 */
+export interface ChapterMetric {
+  chapterNumber: number;
+  title: string;
+  viewCount: number;
+  finishCount: number;
+  /** 本章完读率 0-100 */
+  finishRate: number;
+  /** 相对第一章 PV 的留存率 0-100 */
+  retention: number;
+  /** 平均阅读时长(秒) */
+  avgDurationSec: number;
+  /** 是否需要关注(流失或完读率低) */
+  flagged: boolean;
+  /** 标记原因:drop-off(流失) | low-finish(完读率低) */
+  flagReason?: 'drop-off' | 'low-finish';
+}
+
+/** 单书漏斗分析 */
+export interface BookFunnel {
+  bookId: string;
+  bookTitle: string;
+  totalPv: number;
+  totalFinish: number;
+  /** 整体完读率 0-100 */
+  overallFinishRate: number;
+  favorites: number;
+  subscriptions: number;
+  /** 第一章 PV(留存基线) */
+  baselinePv: number;
+  /** 每章指标(按章号排序) */
+  chapters: ChapterMetric[];
+}
