@@ -8,3 +8,4 @@ export * from './settings';
 export * from './ai-serial';
 export * from './reader';
 export * from './discovery';
+export * from './analytics';
