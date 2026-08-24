@@ -1,9 +1,10 @@
 # Novel Web Publisher 部署编排
 #
 # 用法:
-#   docker compose up -d                # 启动
-#   docker compose exec web sh          # 进入容器
+#   docker compose up -d                # 启动全部服务(web + scheduler)
+#   docker compose exec web sh          # 进入 web 容器
 #   docker compose exec web npm run import:novel -- /app/novels/星海余烬   # 导入小说
+#   docker compose logs -f scheduler    # 查看调度器日志
 #
 services:
   web:
@@ -21,3 +22,17 @@ services:
       - ./data:/app/data                                          # SQLite 数据库
       - ./web/public/covers:/app/web/public/covers               # 封面
       - ./novels:/app/novels:ro                                   # 小说源(导入时读取)
+
+  # 常驻调度器:每日自动连载 + 定时发布
+  scheduler:
+    build: .
+    container_name: novel-scheduler
+    restart: unless-stopped
+    # 不暴露端口,仅访问共享 data
+    environment:
+      NODE_ENV: production
+      NOVEL_DATA_DIR: /app/data
+      PUBLISH_TICK_SECONDS: "60"
+    volumes:
+      - ./data:/app/data                                          # 与 web 共享同一份 SQLite 数据库
+    command: ["npx", "tsx", "scripts/publish-scheduler.ts"]
