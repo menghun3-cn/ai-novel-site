@@ -4,5 +4,5 @@
 # translation-pairing verifier:
 #   git hash-object 2026-08-24-discovery-signals.md
 #   git hash-object 2026-08-24-discovery-signals.zh.md
-2026-08-24-discovery-signals.md: 580dac882303f8312de801f7123ffc0bebf06902
-2026-08-24-discovery-signals.zh.md: 780c73deb0a316030803e899a2e7a67be6589a46
+2026-08-24-discovery-signals.md: 07834cf619d1b21f02e149af3975159620d63e8a
+2026-08-24-discovery-signals.zh.md: 63065a27bb0cb398365a0d5c016abe2187e278c4
