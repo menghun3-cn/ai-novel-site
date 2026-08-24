@@ -1,0 +1,43 @@
+title:
+  en: "Scheduler service missing from docker-compose — AI serialization never ran"
+  zh: "docker-compose 缺失 scheduler 服务——AI 自动连载从未运行"
+summary:
+  en: |
+    The `publish-scheduler.ts` daemon calls `runPublishCycle()` and `runAiSerializationCycle()`
+    on a tick (default 60 s). Docker Compose only defined a `web` service whose CMD is `next start`,
+    so the scheduler process never launched — AI serialization was configured in the DB but
+    never triggered. Added a `scheduler` Compose service sharing the `data` volume, copied the
+    scheduler script into the final Docker stage, and verified that the cron‑style daily guard
+    fires and enqueues generation jobs on the next tick after the configured hour.
+  zh: |
+    `publish-scheduler.ts` 守护进程在每个 tick（默认 60 秒）时调用 `runPublishCycle()` 和
+    `runAiSerializationCycle()`。Docker Compose 原先只定义了 `web` 服务，其 CMD 为 `next start`，
+    因此调度进程从未启动——AI 自动连载虽已在数据库中配置，但从未被触发。修复方案：新增 `scheduler`
+    Compose 服务并共享 `data` 卷，将调度脚本复制到最终 Docker 阶段，验证 cron 式日守卫在配置
+    小时后的下一个 tick 正确触发并入队 generation jobs。
+
+steps:
+  en:
+    - "Added `scheduler` service to `docker-compose.yml` with `command: [\"npx\", \"tsx\", \"scripts/publish-scheduler.ts\"]` and identical volume + environment mappings."
+    - "Added `COPY scripts/publish-scheduler.ts ./scripts/` in the final stage of `Dockerfile`."
+    - "Rebuilt & restarted with `docker compose up -d --build` on the production host."
+    - "Verified via `docker compose logs scheduler`: `triggered=1 enqueued=2 processed=2`."
+  zh:
+    - "在 `docker-compose.yml` 中新增 `scheduler` 服务，command 为 `[\"npx\", \"tsx\", \"scripts/publish-scheduler.ts\"]`，并映射相同的卷和环境变量。"
+    - "在 `Dockerfile` 最终阶段添加 `COPY scripts/publish-scheduler.ts ./scripts/`。"
+    - "在生产主机执行 `docker compose up -d --build` 重建并重启。"
+    - "通过 `docker compose logs scheduler` 验证：`triggered=1 enqueued=2 processed=2`。"
+
+follow-up:
+  en: |
+    - Prod container cannot reach `https://zshy.muhn.edu.cn/dsapi/v1` (network isolation);
+      this is a separate infra issue — the scheduler side is fixed.
+    - After the network is restored, reset `last_run_date = NULL` on the target row so the
+      daily guard will re-fire, and delete the `failed` entries from `generation_jobs`.
+  zh: |
+    - 生产容器无法访问 `https://zshy.muhn.edu.cn/dsapi/v1`（网络隔离），此为独立基础设施问题——调度器侧已修复。
+    - 恢复网络后，需将目标行的 `last_run_date` 重置为 `NULL` 以使日守卫重新触发，并删除 `generation_jobs` 中的 `failed` 记录。
+
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/new/fix/scheduler-missing-docker"
+  branch: "fix/scheduler-missing-docker"
