@@ -46,6 +46,9 @@ COPY web/package.json ./web/
 # 章节 Markdown 渲染
 COPY web/lib/         ./web/lib/
 
+# 调度器入口脚本(scheduler 服务通过 compose 覆盖 CMD 启动)
+COPY scripts/publish-scheduler.ts ./scripts/
+
 # 数据目录(compose 卷挂载覆盖)
 RUN mkdir -p /app/data /app/web/public/covers
 
