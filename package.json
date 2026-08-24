@@ -45,6 +45,7 @@
     "test:reader-api": "tsx scripts/verify-reader-api.ts",
     "test:discovery": "tsx scripts/verify-discovery.ts",
     "test:discovery-api": "tsx scripts/verify-discovery-api.ts",
+    "test:analytics": "tsx scripts/verify-analytics.ts",
     "scheduler": "tsx scripts/publish-scheduler.ts",
     "check:notes": "npm run verify-agent-note-classification && npm run verify-agent-note-format && npm run verify-archived-agent-notes",
     "verify-agent-note-classification": "tsx scripts/verify-agent-note-classification.ts",

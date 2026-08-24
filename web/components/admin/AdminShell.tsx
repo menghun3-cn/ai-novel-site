@@ -4,7 +4,7 @@
 // 规格: 侧栏 200/64px · 顶栏/Logo区 56px · 菜单项40px · 内容区 p16 bg #eef4fb
 // 响应式: <768px 抽屉化 | 768-1024 默认收起 | ≥1024 默认展开
 
-import { BookOpen, FileCheck, FolderTree, ImageIcon, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, Tags, Users, X } from 'lucide-react';
+import { BarChart3, BookOpen, FileCheck, FolderTree, ImageIcon, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, Tags, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
@@ -18,6 +18,7 @@ const NAV = [
   { href: '/admin/books', label: '小说管理', icon: BookOpen },
   { href: '/admin/review', label: '审核队列', icon: FileCheck },
   { href: '/admin/story', label: 'AI 创作中心', icon: Sparkles },
+  { href: '/admin/analytics', label: '数据分析', icon: BarChart3 },
   { href: '/admin/authors', label: '作者管理', icon: Users },
   { href: '/admin/categories', label: '分类管理', icon: FolderTree },
   { href: '/admin/tags', label: '标签管理', icon: Tags },
@@ -30,6 +31,7 @@ const PAGE_TITLE: Record<string, string> = {
   '/admin/books': '小说管理',
   '/admin/review': '审核队列',
   '/admin/story': 'AI 创作中心',
+  '/admin/analytics': '数据分析',
   '/admin/authors': '作者管理',
   '/admin/categories': '分类管理',
   '/admin/tags': '标签管理',

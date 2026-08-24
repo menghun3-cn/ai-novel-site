@@ -251,6 +251,19 @@ CREATE TABLE IF NOT EXISTS reading_progress (
 );
 
 CREATE INDEX IF NOT EXISTS idx_progress_user_time ON reading_progress(user_id, updated_at DESC);
+
+-- V8 数据分析:阅读会话(记录每次打开章页到离开/完读的时长)
+CREATE TABLE IF NOT EXISTS reading_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  chapter_number INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  duration_sec INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_reading_sessions_book_chapter ON reading_sessions(book_id, chapter_number);
+CREATE INDEX IF NOT EXISTS idx_reading_sessions_started ON reading_sessions(started_at);
 `;
 
 let sqlite: Database.Database | null = null;
@@ -302,6 +315,15 @@ function migrateDiscoveryColumns(db: Database.Database): void {
   if (!chapterCols.includes('finish_count')) db.exec('ALTER TABLE chapters ADD COLUMN finish_count INTEGER NOT NULL DEFAULT 0');
 }
 
+/**
+ * 轻量迁移:V8 Analytics——reading_sessions 表(DDL 已建,此函数仅为完整性占位;
+ * 旧库会由 DDL 的 CREATE TABLE IF NOT EXISTS 自动补齐)。
+ */
+function migrateAnalyticsColumns(_db: Database.Database): void {
+  // reading_sessions 在新旧库均由 DDL 中的 IF NOT EXISTS 保证存在;
+  // 此处保留为后续可能添加的新列预留迁移点。
+}
+
 export function getDb(): Database.Database {
   if (!sqlite) {
     ensureDataDir();
@@ -313,6 +335,7 @@ export function getDb(): Database.Database {
     migratePublishColumns(sqlite);
     migrateJobOptionColumns(sqlite);
     migrateDiscoveryColumns(sqlite);
+    migrateAnalyticsColumns(sqlite);
   }
   return sqlite;
 }
