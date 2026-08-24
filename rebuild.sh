@@ -18,7 +18,7 @@ docker compose up -d
 
 echo "[rebuild] 等待服务就绪..."
 i=0
-until curl -fsS -o /dev/null http://127.0.0.1:33000/api/health 2>/dev/null; do
+until curl -fsS -o /dev/null http://127.0.0.1:33000/ 2>/dev/null; do
   i=$((i+1))
   if [ "$i" -ge 30 ]; then
     echo "[rebuild] 服务 30 次探测未就绪,查看日志: docker compose logs -f web"
@@ -27,4 +27,21 @@ until curl -fsS -o /dev/null http://127.0.0.1:33000/api/health 2>/dev/null; do
   sleep 2
 done
 
-echo "[rebuild] OK → http://<服务器IP>:33000  (健康检查已通过)"
+echo "[rebuild] 首页就绪,验证关键路由..."
+errors=0
+for path in / /books /register /login /shelf /me; do
+  status=$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:33000${path}" 2>/dev/null)
+  if [ "$status" -eq 200 ] || [ "$status" -eq 307 ] || [ "$status" -eq 308 ]; then
+    echo "  ✓ ${path} → ${status}"
+  else
+    echo "  ✗ ${path} → ${status}"
+    errors=$((errors+1))
+  fi
+done
+
+if [ "$errors" -gt 0 ]; then
+  echo "[rebuild] ${errors} 条路由异常,请检查部署!"
+  exit 1
+fi
+
+echo "[rebuild] OK → http://<服务器IP>:33000  (全部路由验证通过)"
