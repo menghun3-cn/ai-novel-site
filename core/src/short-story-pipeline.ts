@@ -23,6 +23,8 @@ import { getActiveRuleVersion } from './review-rule';
 import { getReviewRecord, latestReviewForVersion, runAutoReview } from './review-engine';
 import { runOptimization } from './optimize-engine';
 import { executeAssistTask, type AssistTaskInput } from './ai-assist';
+import { runChapterReview } from './chapter-review';
+import { runArcReview } from './arc-review';
 import {
   appendVersion,
   getShortStory,
@@ -184,6 +186,39 @@ export function enqueueManualOptimize(storyId: string): AiTask {
   });
 }
 
+/**
+ * V9 阶段二:章节评审入队 — 调度器/管理后台通用入口
+ * refId = chapterId,refType = 'chapter',被 processAiTasks 拾取后调 runChapterReview
+ */
+export function enqueueChapterReview(chapterId: string): AiTask {
+  return createAiTask({ type: 'AI_REVIEW_CHAPTER', refType: 'chapter', refId: chapterId });
+}
+
+/**
+ * V9 阶段二:弧级评审入队 — 调度器/管理后台通用入口
+ * 区间与弧标签存在 task.input 中(因为 refId 只能单值)
+ */
+export function enqueueArcReview(input: {
+  bookId: string;
+  arcLabel: string;
+  fromChapter: number;
+  toChapter: number;
+}): AiTask {
+  return createAiTask({
+    type: 'AI_REVIEW_ARC',
+    refType: 'book',
+    refId: input.bookId,
+    input: { bookId: input.bookId, arcLabel: input.arcLabel, fromChapter: input.fromChapter, toChapter: input.toChapter },
+  });
+}
+
+/**
+ * V9 阶段二:短篇发布入队(异步执行 publishShortStory,失败可由任务系统重试)
+ */
+export function enqueuePublishShortStory(storyId: string): AiTask {
+  return createAiTask({ type: 'PUBLISH_SHORT_STORY', refType: 'short_story', refId: storyId });
+}
+
 // ---------- 任务分发与循环处理 ----------
 
 export interface ExecuteTaskOptions {
@@ -229,6 +264,28 @@ export async function executeAiTask(task: AiTask, opts?: ExecuteTaskOptions): Pr
         version: optimized.version.version,
         charCount: optimized.charCount,
       };
+    }
+    case 'AI_REVIEW_CHAPTER': {
+      if (!task.refId) throw new CoreError('INVALID_INPUT', 'AI_REVIEW_CHAPTER 任务缺少 refId(chapterId)');
+      const rec = await runChapterReview(task.refId, opts?.provider ? { provider: opts.provider } : {});
+      return { recordId: rec.id, score: rec.score, level: rec.level, qualified: rec.qualified };
+    }
+    case 'AI_REVIEW_ARC': {
+      const input = task.input as { bookId: string; arcLabel: string; fromChapter: number; toChapter: number } | null;
+      if (!input?.bookId) throw new CoreError('INVALID_INPUT', 'AI_REVIEW_ARC 任务缺少 bookId');
+      const rec = await runArcReview(input.bookId, {
+        arcLabel: input.arcLabel,
+        fromChapter: input.fromChapter,
+        toChapter: input.toChapter,
+        ...(opts?.provider ? { provider: opts.provider } : {}),
+      });
+      return { recordId: rec.id, score: rec.score, level: rec.level, qualified: rec.qualified };
+    }
+    case 'PUBLISH_SHORT_STORY': {
+      if (!task.refId) throw new CoreError('INVALID_INPUT', 'PUBLISH_SHORT_STORY 任务缺少 refId(storyId)');
+      const { publishShortStory } = await import('./short-story-publication');
+      const pub = publishShortStory(task.refId);
+      return { publicationId: pub.publicationId, bookId: pub.bookId, bookSlug: pub.bookSlug };
     }
     default:
       throw new CoreError('INVALID_INPUT', `暂不支持的任务类型: ${String(task.type)}`);

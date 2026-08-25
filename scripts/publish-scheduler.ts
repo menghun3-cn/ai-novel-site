@@ -2,13 +2,20 @@
  * 调度器:常驻进程,每 tick 依次执行
  *   1) runPublishCycle()          — 到期定时章节转发布 + 每书每日自动发布(V3)
  *   2) runAiSerializationCycle()  — 每书每日 AI 连载:入队生成→质检→送审/发布(V5)
+ *   3) processAiTasks({limit:5})  — V9 阶段二:长篇章节评审/弧级评审等后台任务(V9.5)
  *
  * 运行:npm run scheduler
  * 环境变量:
  *   NOVEL_DATA_DIR         数据目录(默认仓库 data/)
  *   PUBLISH_TICK_SECONDS   扫描间隔,默认 60 秒(下限 5)
+ *
+ * ⚠️ 单实例约束:本调度器与 web/admin 进程共享 SQLite WAL。
+ *   SQLite 提供并发读写安全,但 ai_tasks 是抢抢式 PENDING→RUNNING 转换,可能
+ *   出现两个调度器同时拉到同一任务并重复处理。生产环境请仅启动一个调度器实例
+ *   (systemd / pm2 / docker single-replica);如需多实例,请加 advisory lock(pg_try_advisory_lock
+ *   类能力,SQLite 可用 file lock 代替)后再启本调度器,或拆分任务类型给不同实例。
  */
-import { runAiSerializationCycle, runPublishCycle, type SerializationCycleResult } from '@novel/core';
+import { processAiTasks, runAiSerializationCycle, runPublishCycle, type SerializationCycleResult } from '@novel/core';
 
 const tickSeconds = Number(process.env.PUBLISH_TICK_SECONDS ?? 60);
 if (!Number.isFinite(tickSeconds) || tickSeconds < 5) {
@@ -41,6 +48,20 @@ async function tick(): Promise<void> {
     }
   } catch (err) {
     console.error(`[${new Date().toISOString()}] ai-serial cycle failed:`, err);
+  }
+
+  // V9 阶段二:统一处理 ai_tasks(章节评审/弧级评审/PROCESS 等待任务),后台驱动长篇评审
+  try {
+    const processed = await processAiTasks({ limit: 5 });
+    if (processed.length > 0) {
+      const ok = processed.filter((t) => t.ok).length;
+      const fail = processed.filter((t) => !t.ok).length;
+      console.log(
+        `[${new Date().toISOString()}] ai-tasks: picked=${processed.length} ok=${ok} fail=${fail}`
+      );
+    }
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] ai-tasks process failed:`, err);
   }
 }
 
