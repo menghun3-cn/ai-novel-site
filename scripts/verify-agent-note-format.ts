@@ -2,22 +2,15 @@
  * Enforce Agent Note headers, lifecycle-specific sections, alternatives, and retired
  * marker rules. Classification and filenames belong to the sibling tree gate;
  * translation structure belongs to the pairing gate. Exact format and
- * grandfathering rules live in `.agent/notes/README.md`.
- *
- * Wire into your package.json as:
- *   "verify-agent-note-format": "tsx scripts/verify-agent-note-format.ts"
+ * grandfathering rules live in `.agents/notes/README.md`.
  */
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { agentNoteRoot, walkAgentNoteTree } from './agent-note-tree.ts'
 
-/**
- * The date these format rules took effect; the grandfather comment is valid only
- * before it. Set `AGENT_NOTE_FORMAT_ADOPTED` to the date your project adopted
- * the format (the template's own date is the default).
- */
-const FORMAT_ADOPTED = process.env.AGENT_NOTE_FORMAT_ADOPTED ?? '2026-08-17'
+/** The date these format rules took effect; the grandfather comment is valid only before it. */
+const FORMAT_ADOPTED = '2026-07-05'
 
 /** The exact comment a pre-format Agent Note carries in place of `## Alternatives considered`. */
 const GRANDFATHER = '<!-- agent-note-format: alternatives-not-recorded (pre-format Agent Note) -->'
@@ -48,8 +41,7 @@ for (const note of notes) {
   const fail = (msg: string): void => {
     errors.push(`format: ${note.rel} — ${msg}`)
   }
-  // CRLF-tolerant: Windows checkouts (core.autocrlf) or editor saves must not fail the grammar.
-  const lines = readFileSync(resolve(agentNoteRoot, note.rel), 'utf8').split(/\r?\n/)
+  const lines = readFileSync(resolve(agentNoteRoot, note.rel), 'utf8').split('\n')
   // Format tokens inside fenced examples are not document structure.
   let inFence = false
   const prose = lines.filter((l) => {
@@ -86,14 +78,14 @@ for (const note of notes) {
   const hasSection = h2s.includes('## Alternatives considered')
   const hasGrandfather = prose.includes(GRANDFATHER)
   if (hasSection && hasGrandfather) fail('carries both `## Alternatives considered` and the grandfather comment — drop the comment')
-  if (!hasSection && !hasGrandfather) fail('missing `## Alternatives considered` (a pre-format Agent Note whose alternatives are not reconstructible carries the grandfather comment instead — see .agent/notes/README.md § The file format)')
+  if (!hasSection && !hasGrandfather) fail('missing `## Alternatives considered` (a pre-format Agent Note whose alternatives are not reconstructible carries the grandfather comment instead — see .agents/notes/README.md § The file format)')
   if (hasGrandfather && note.date >= FORMAT_ADOPTED) fail(`the grandfather comment is only valid for Agent Notes dated before ${FORMAT_ADOPTED}`)
 
   if (prose.some(line => LEGACY_MARKERS.some(marker => line.includes(marker)))) fail('carries the retired legacy-format debt marker')
 }
 
 if (errors.length === 0) {
-  console.log(`verify-agent-note-format: ${notes.length} Agent Note(s) checked, all conform to .agent/notes/README.md § The file format.`)
+  console.log(`verify-agent-note-format: ${notes.length} Agent Note(s) checked, all conform to .agents/notes/README.md § The file format.`)
   process.exit(0)
 }
 

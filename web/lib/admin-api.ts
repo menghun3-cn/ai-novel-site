@@ -1,10 +1,13 @@
 // 管理 API 共享层:鉴权、JSON 响应、CoreError→HTTP 映射、zod 请求体解析
-// 鉴权模型(V2):环境变量 ADMIN_TOKEN + Bearer/x-admin-token 头;未配置则 API 整体停用
-// 完整用户系统属 V6;API 面向后台 UI 与未来的 Hermes/AI 引擎集成
+// 鉴权模型(V8.1):双轨——
+//   1) 机器令牌:环境变量 ADMIN_TOKEN(Bearer/x-admin-token 头),供调度器/集成脚本使用;
+//   2) 管理员账号会话:/admin/login 用账号密码换取 SQLite 会话令牌,
+//      初始账号 admin/Admin@123456 首登后必须改为复杂密码(must_change_password),
+//      未改密前除 /api/admin/auth/* 外的业务 API 一律 403 PASSWORD_CHANGE_REQUIRED。
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { NextRequest } from 'next/server';
-import { CoreError, type CoreErrorCode } from '@novel/core';
+import { CoreError, getAdminAccount, type CoreErrorCode } from '@novel/core';
 import { MediaError } from '@/lib/admin-media';
 import type { ZodType } from 'zod';
 
@@ -28,16 +31,27 @@ export function fail(status: number, code: string, message?: string): Response {
   return json({ error: code, message: message ?? null }, status);
 }
 
+/** 从请求头取调用方凭据(机器令牌或管理员会话令牌) */
+export function getProvidedToken(req: NextRequest): string {
+  return req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? req.headers.get(ADMIN_TOKEN_HEADER) ?? '';
+}
+
 /** 返回 null 表示通过;否则直接作为响应返回 */
 export function requireAdmin(req: NextRequest): Response | null {
+  const provided = getProvidedToken(req);
+  if (!provided) return fail(401, 'UNAUTHORIZED');
   const configured = process.env.ADMIN_TOKEN;
-  if (!configured) return fail(503, 'ADMIN_API_DISABLED', 'ADMIN_TOKEN is not configured');
-  const provided =
-    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ??
-    req.headers.get(ADMIN_TOKEN_HEADER) ??
-    '';
-  if (!provided || !safeEqual(provided, configured)) return fail(401, 'UNAUTHORIZED');
-  return null;
+  if (configured && safeEqual(provided, configured)) return null;
+  try {
+    const account = getAdminAccount(provided);
+    // 首登未改密:仅放行账号自身路由(auth/*),业务 API 一律要求先改密
+    if (account.mustChangePassword && !req.nextUrl.pathname.startsWith('/api/admin/auth/')) {
+      return fail(403, 'PASSWORD_CHANGE_REQUIRED', '首次登录,请先修改初始密码');
+    }
+    return null;
+  } catch {
+    return fail(401, 'UNAUTHORIZED');
+  }
 }
 
 const STATUS_BY_CODE: Record<CoreErrorCode, number> = {
@@ -55,6 +69,7 @@ const STATUS_BY_CODE: Record<CoreErrorCode, number> = {
   EMAIL_TAKEN: 409,
   INVALID_CREDENTIALS: 401,
   SESSION_EXPIRED: 401,
+  WEAK_PASSWORD: 400,
   AUTHOR_NOT_FOUND: 404,
   AUTHOR_NAME_TAKEN: 409,
   AUTHOR_IN_USE: 409,

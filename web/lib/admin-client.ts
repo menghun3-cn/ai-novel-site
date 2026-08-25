@@ -1,5 +1,6 @@
 // 管理后台浏览器端 API 客户端:令牌存取 + 统一错误
-// 令牌保存在 localStorage(x-admin-token 头携带);401 时自动清除并要求重新登录
+// 会话令牌保存在 localStorage(x-admin-token 头携带);401 时自动清除并要求重新登录
+// 403 PASSWORD_CHANGE_REQUIRED(首登待改密)不清令牌——改密页仍需它
 
 const TOKEN_KEY = 'novel:admin-token';
 
@@ -36,9 +37,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers['content-type'] = 'application/json';
   }
   const res = await fetch(path, { ...init, headers: { ...headers, ...(init?.headers as Record<string, string>) } });
-  if (res.status === 401 || res.status === 503) {
-    if (res.status === 401) clearToken();
-    throw new ApiError(res.status, 'UNAUTHORIZED', res.status === 401 ? '登录已失效,请重新输入访问令牌' : '管理接口未启用:服务端未配置 ADMIN_TOKEN');
+  if (res.status === 401) {
+    clearToken();
+    throw new ApiError(res.status, 'UNAUTHORIZED', '登录已失效,请重新登录');
   }
   if (!res.ok) {
     let code = 'ERROR';
