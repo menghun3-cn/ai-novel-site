@@ -80,7 +80,8 @@ CREATE TABLE IF NOT EXISTS books (
   chapter_review_max_rounds INTEGER NOT NULL DEFAULT 1,      -- 章节自动优化轮数(成本控制)
   arc_review_every_n INTEGER NOT NULL DEFAULT 5,             -- 每新增 N 章自动弧评;0=禁用
   last_arc_review_chapter INTEGER NOT NULL DEFAULT 0,        -- 上次弧评覆盖到的最大章号(用于半自动判定)
-  arc_review_enabled INTEGER NOT NULL DEFAULT 1              -- 是否允许弧评(总开关)
+  arc_review_enabled INTEGER NOT NULL DEFAULT 1,              -- 是否允许弧评(总开关)
+  kind TEXT NOT NULL DEFAULT 'long'                          -- 'long'=长篇连载;'short'=短篇物化
 );
 
 CREATE TABLE IF NOT EXISTS book_tags (
@@ -552,6 +553,9 @@ function migrateBooksReviewColumns(db: Database.Database): void {
   }
   if (!cols.includes('arc_review_enabled')) {
     db.exec('ALTER TABLE books ADD COLUMN arc_review_enabled INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!cols.includes('kind')) {
+    db.exec("ALTER TABLE books ADD COLUMN kind TEXT NOT NULL DEFAULT 'long'");
   }
 }
 

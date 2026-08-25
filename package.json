@@ -44,6 +44,7 @@
     "test:ai-serial-api": "tsx scripts/verify-ai-serial-api.ts",
     "test:short-story": "tsx scripts/verify-short-story-core.ts",
     "test:short-story-publication": "tsx scripts/verify-short-story-publication.ts",
+    "test:short-story-reader": "tsx scripts/verify-short-story-reader.ts",
     "test:review-rule": "tsx scripts/verify-review-rule.ts",
     "test:review-prompt": "tsx scripts/verify-review-prompt.ts",
     "test:structured-output": "tsx scripts/verify-structured-output.ts",

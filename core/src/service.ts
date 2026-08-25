@@ -71,6 +71,7 @@ interface BookRow {
   autopilot_last_date: string | null;
   created_at: string;
   updated_at: string;
+  kind: 'short' | 'long';
 }
 
 function toBook(r: BookRow): Book {
@@ -85,6 +86,7 @@ function toBook(r: BookRow): Book {
     categoryId: r.category_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    kind: r.kind,
   };
 }
 
@@ -179,6 +181,7 @@ function toBookWithMeta(r: BookMetaRow, tags: Map<string, string[]>): BookWithMe
     latestChapterNumber: r.latest_chapter_number,
     latestChapterTitle: r.latest_chapter_title,
     latestPublishedAt: r.latest_published_at,
+    kind: r.kind,
   };
 }
 
@@ -234,6 +237,7 @@ export function upsertBook(input: UpsertBookInput): Book {
   const authorId = upsertAuthor(input.authorName);
   const categoryId = upsertCategory(input.categoryName).id;
   const status: BookStatus = isBookStatus(input.status) ? input.status : 'serializing';
+  const kind: 'short' | 'long' = input.kind === 'short' ? 'short' : 'long';
 
   const existing = db.prepare('SELECT * FROM books WHERE slug = ?').get(input.slug) as BookRow | undefined;
   const id = existing ? existing.id : input.id || bookIdFromSlug(input.slug);
@@ -254,8 +258,8 @@ export function upsertBook(input: UpsertBookInput): Book {
     );
   } else {
     db.prepare(
-      `INSERT INTO books (id, slug, title, description, cover_path, status, author_id, category_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO books (id, slug, title, description, cover_path, status, author_id, category_id, created_at, updated_at, kind)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       input.slug,
@@ -266,7 +270,8 @@ export function upsertBook(input: UpsertBookInput): Book {
       authorId,
       categoryId,
       now,
-      now
+      now,
+      kind
     );
   }
 
@@ -525,6 +530,7 @@ export function createBook(input: CreateBookInput): BookWithMeta {
     authorName: input.authorName,
     categoryName: input.categoryName,
     tags: input.tags ?? [],
+    kind: input.kind,
   });
   return getAnyBookById(bookIdFromSlug(input.slug))!;
 }

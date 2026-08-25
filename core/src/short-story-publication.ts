@@ -102,7 +102,7 @@ export function publishShortStory(storyId: string, opts?: { versionId?: string }
   const slug = findFreeSlug(candidate);
   const description = buildDescription(story.brief as Record<string, unknown>);
 
-  // 1. 创建 Book(completed,不走 import upsert)
+  // 1. 创建 Book(completed,不走 import upsert;kind='short' 让 BookCard 显示短篇角标)
   const book = createBook({
     slug,
     title: story.title,
@@ -111,6 +111,7 @@ export function publishShortStory(storyId: string, opts?: { versionId?: string }
     authorName: SHORT_STORY_DEFAULT_AUTHOR,
     categoryName: SHORT_STORY_DEFAULT_CATEGORY,
     tags: [],
+    kind: 'short',
   });
 
   // 2. 创建 Chapter(已 published,publishedAt 由 importChapter 自动取 now)

@@ -436,6 +436,8 @@ export interface Book {
   categoryId: number;
   createdAt: string;
   updatedAt: string;
+  /** V9 阶段二:长篇连载 vs 短篇物化(读者站 BookCard 据此显示角标) */
+  kind: 'short' | 'long';
 }
 
 export interface Chapter {
@@ -466,6 +468,8 @@ export interface BookWithMeta extends Book {
   latestChapterNumber: number | null;
   latestChapterTitle: string | null;
   latestPublishedAt: string | null;
+  /** V9 阶段二:区分长篇连载与短篇物化;前端 BookCard 据此显示"短篇"角标 */
+  kind: 'short' | 'long';
 }
 
 export interface ChapterView {
@@ -507,6 +511,8 @@ export interface UpsertBookInput {
   authorName: string;
   categoryName: string;
   tags: string[];
+  /** V9 阶段二:显式指定 'short' 以物化短篇;缺省 'long' */
+  kind?: 'short' | 'long';
 }
 
 export interface ImportChapterInput {
@@ -545,6 +551,8 @@ export interface CreateBookInput {
   authorName: string;
   categoryName: string;
   tags?: string[];
+  /** V9 阶段二:短篇物化时传 'short';长篇(默认)不传 */
+  kind?: 'short' | 'long';
 }
 
 /** 按 id 编辑小说;仅提供的字段生效,tags 提供时全量重建 */
@@ -874,6 +882,8 @@ export interface DiscoveryItem {
   latestChapterNumber?: number | null;
   /** 最新发布时间 ISO 字符串(最新更新板块展示用) */
   lastPublishedAt?: string | null;
+  /** V9 阶段二:长篇 vs 短篇物化;BookCard 据此显示角标 */
+  kind: 'short' | 'long';
 }
 
 /** Discovery 板块 */
