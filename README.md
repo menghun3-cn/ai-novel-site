@@ -89,6 +89,19 @@ AI 生成小说的**内容管理 + Web 阅读**一体化平台：从小说源文
 - 生成任务队列（重试、错误记录、字数下限、模型指定）；手动触发与任务列表
 - 后台 LLM 设置：密钥掩码、连通性测试、OpenAI 兼容模型自动发现
 
+### ✅ V9 AI 小说创作与自动评审中心
+- **AI 创作中心**（`/admin/creation`）：一级 Tab 短篇 / 长篇
+  - 短篇 Tab：创作需求 18 字段（基础信息 / 故事结构 / 创作参数），每字段 ✨AI建议 / AI生成 / AI优化（异步任务 + 轮询）;整篇创作流水线（生成 → AI 质量检查 → 评审 → 自动优化 → 再评审，受规则版本轮数约束，达标即停 / 超过上限入低质量池）
+  - 长篇 Tab：第一阶段为占位，链接既有长篇工作台
+- **AI 评审中心**（`/admin/review-center`）：五视图
+  - 评审任务：AI 任务历史可重试 + 详情； 评审记录：每次评审全链路快照（小说 / 版本 / 规则版本 / Prompt 版本 / 模型 / 轮次 / 原始响应）
+  - 评审规则：维度化规则（权重 / 标准四档 / 阈值 / 最大优化轮数）版本化、全局唯一生效版本、published 不可改（必须新建版本）
+  - Prompt 版本：同名即迭代、历史不可覆盖、可关联规则版本
+  - 质量数据：基础统计（评审数 / 通过率 / 平均分 / 平均优化次数 / 作品状态分布）
+- **数据层**：短篇 + 版本（只增不改） + 评审规则/版本 + Prompt + 评审记录 + 统一 AI 任务（CREATE_NOVEL / 字段辅助 / 评审 / 手动优化）共 7 张新表
+- **结构化输出**：核心层 `structured-output.ts` 提示词约束 + 容错 JSON 提取 + zod-free 校验 + 自纠重试 ≤2 次，耗尽抛 `STRUCTURED_OUTPUT_FAILED`
+- 验证脚本：`test:short-story` / `test:review-rule` / `test:review-prompt` / `test:structured-output` / `test:review-engine` / `test:auto-optimize` / `test:ai-assist` / `test:creation-api` / `test:review-api` 全部通过
+
 ### ✅ V6 用户阅读
 - 读者注册 / 登录 / 登出（httpOnly Cookie 会话，30 天）
 - 书架（收藏 ∪ 订阅）、更新提示、订阅追更

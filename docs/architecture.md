@@ -70,6 +70,15 @@ AI 原创小说内容平台的系统架构参考。本文回答"系统由哪些�
 | `discovery.ts` | 热度信号记录（PV / 完读）与发现位推荐打分 |
 | `analytics.ts` | 阅读会话聚合、平台总览指标、单章指标与留存漏斗 |
 | `settings.ts` | 运行时配置（`app_settings` 键值表）：后台 LLM 配置读写与密钥掩码 |
+| `short-story.ts` | **V9** 短篇小说 CRUD + 版本只增不改 + 状态流转 |
+| `review-rule.ts` | **V9** 评审规则版本化、维度校验、默认规则 v1.0 幂等播种、全局唯一生效版本 |
+| `review-prompt.ts` | **V9** 评审 Prompt 同名迭代、不可覆盖 |
+| `ai-task.ts` | **V9** 统一 AI 任务（创建/领取/完成/失败/重试/查询） |
+| `structured-output.ts` | **V9** 结构化 JSON 输出层（容错提取 + 校验 + 自纠重试） |
+| `review-engine.ts` | **V9** 自动评审引擎：读生效规则 + Prompt → 加权计分定级 → 全链路评审记录落库 |
+| `optimize-engine.ts` | **V9** 评审驱动的针对性修订稿生成 |
+| `ai-assist.ts` | **V9** 字段级 AI 建议/生成/优化执行器 |
+| `short-story-pipeline.ts` | **V9** 创作闭环编排 + 任务分发器 |
 
 ### 3.2 错误模型
 
@@ -85,6 +94,7 @@ SQLite 表按子系统分组：
 | Story Core | `story_worlds` `story_characters` `story_relationships` `story_arcs` `story_outlines` `story_foreshadowing` |
 | 运行配置 | `app_settings`（键值） |
 | AI 连载 | `ai_serialization`（每书配置）`generation_jobs`（任务历史） |
+| **V9 短篇与评审** | `short_stories` `short_story_versions`（只增不改）`review_rules` `review_rule_versions`（维度 JSON 化）`review_prompts`（同名迭代）`review_records`（全链路快照）`ai_tasks`（统一任务） |
 | 读者 | `users` `sessions` `favorites` `subscriptions` `reading_progress` |
 | 分析 | `reading_sessions` |
 | 管理账号 | `admin_users` `admin_sessions` |
@@ -145,6 +155,69 @@ draft ──送审──▶ pending_review ──批准(now)──▶ published
 - **LLM 配置取源**（`settings.ts`）：后台配置（`app_settings`）逐字段优先，环境变量 `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` 回退；API Key 只以掩码形式出服务层，明文仅在服务端合并 Provider 时使用。
 - **自动连载流水线**（`ai-serial.ts`）：每书配置 `{ enabled, hour, count, autoPublish, minChars }` + 同样的本地日期守卫；到点按 count 入队 `generation_jobs`，随后逐任务执行"生成 → 质检 → 送审或直接批准"。任务状态：`pending → running → published | submitted | draft | rejected | held | failed`，带 attempt 重试计数与错误记录。
 - **执行位置**：两条路径触发同一套队列处理——调度器 tick 内直接处理；或 web 进程内 `kickProcessing()`（`web/lib/serial-worker.ts`）。后者立即返回、在进程内继续跑完（挂在 `globalThis` 上保证 HMR 多实例下也只有一个 worker），前端轮询任务列表取结果——这是为了不在反代默认 60s 超时内同步等待长 LLM 调用。
+
+---
+
+## 5.1 V9 短篇小说与自动评审中心
+
+完整的"AI 负责创作 / 评审 / 优化；系统负责记录、版本化、验证"闭环。核心设计：**一切 AI 写入皆建新版本，历史永不 UPDATE**。
+
+```text
+ 用户填写创作需求(18 字段)              用户在管理后台
+     │                                 启动/重跑/手动评审
+     ▼                                    │
+ enqueueAiTask(type='CREATE_NOVEL') ◀─────┘
+     │
+     ▼ kickStoryWorker(globalThis 单飞,与 ai-serial 同款)
+ processAiTasks() ── 串行逐任务执行
+     │
+     ▼ CREATE_NOVEL 任务
+ runCreationPipeline(storyId)
+     │
+     ├── transitionStory('generating')        ← 任何失败均落 failed,错误可见
+     ├── provider.complete() → V1 草稿 + qualityCheck
+     ├── appendVersion(creation_reason='generated')    ← 不可变
+     │
+     ▼ for each version
+     ├── transitionStory('reviewing')
+     ├── runAutoReview(version) → 加权计分定级 → review_records 全链路快照
+     │     └── 失败超过 max_auto_optimize_rounds → transitionStory('pool')
+     └── 达标 → setFinalVersion + transitionStory('passed')
+          未达标 → transitionStory('optimizing')
+                   runOptimization(version, record)  ← 针对性修订,保留主题/人物/核心
+                   bumpStoryProgress(optimizeDelta+=1)
+                   → 下一轮 review
+```
+
+### 模块分工（`core/src/`）
+
+| 模块 | 职责 |
+|---|---|
+| `short-story.ts` | 短篇 CRUD、brief 白名单归一化、版本只增不改、状态流转、轮次自增 |
+| `review-rule.ts` | 规则/版本 CRUD、维度校验（权重和=100）、全局唯一生效、默认 v1.0 幂等播种（7 维度 + 阈值 80 + 3 轮上限） |
+| `review-prompt.ts` | Prompt 同名迭代、不可覆盖 |
+| `ai-task.ts` | 统一任务账本：创建/领取/完成/失败/重试/取消；按类型/状态/关联 ID 查询 |
+| `structured-output.ts` | 提示词注入输出格式 → 容错 JSON 提取 → 校验 → 失败带反馈自纠重试 ≤2 次；耗尽抛 `STRUCTURED_OUTPUT_FAILED` |
+| `review-engine.ts` | 读生效规则 + Prompt → 结构化评审 → 服务端加权计分定级 → `review_records` 落库（快照 rule/prompt/model 版本、原始响应、结构化结果） |
+| `optimize-engine.ts` | 评审驱动的针对性修订，保留主题/人物/核心剧情硬约束写入提示词 |
+| `ai-assist.ts` | 字段级 suggest（多候选 + 自纠）/ generate / optimize 统一执行器 |
+| `short-story-pipeline.ts` | 整篇创作闭环 + `processAiTasks` 串行分发器（CREATE_NOVEL / 字段辅助 / 评审 / 手动优化） |
+
+### 与既有 V4 / V5 复用
+
+- `LlmProvider` 抽象 + OpenAI 兼容适配器 + `resolveProviderFromStore()`（无新增 Provider 抽象）
+- `core/src/db.ts` 的幂等 DDL + 轻量列迁移模式（`migrateShortStoryColumns` 补 `manual_optimize_round` 列）
+- `CoreError(code)` + web 层 `STATUS_BY_CODE` 穷举映射（新增 10 个错误码）
+- `web/lib/serial-worker.ts` 的 `globalThis` 单飞 kick 范式 → 镜像为 `web/lib/story-worker.ts`
+
+### Web API 分区
+
+全部挂 `/api/admin/*`，走 `withAdmin` + zod：
+- 短篇：`/short-stories`、`/short-stories/[id]/{create,review,optimize}`
+- 字段辅助与任务：`/ai/assist`、`/ai/tasks`、`/ai/tasks/[id]/retry`
+- 评审中心：`/review-rules`、`/review-rules/[id]/versions`、`/review-rule-versions/[vid]/{publish,disable,PUT}`、`/review-prompts`、`/review-records`、`/review/stats`
+
+写入端点统一入队 + `kickStoryWorker()`，前端每 3s 轮询 `GET /ai/tasks/[id]` 或 `GET /short-stories/[id]`（详情聚合含版本、各版最新评审、该作品近 20 条任务）。
 
 ---
 
