@@ -1,6 +1,6 @@
 /**
  * 管理后台 API 验证:直接以函数方式调用 Next Route Handler,
- * 覆盖鉴权(401/503)、CRUD、错误码到 HTTP 状态的映射(400/404/409)。
+ * 覆盖鉴权(401;V8.1 起无 503 停用态)、CRUD、错误码到 HTTP 状态的映射(400/404/409)。
  *
  * 运行:npm run test:api
  * 数据库使用临时目录(NOVEL_DATA_DIR),不触碰 data/novel.db。
@@ -58,7 +58,8 @@ async function status(p: Response | Promise<Response>): Promise<number> {
 assertOk(await status(booksRoute.GET(req('/api/admin/books', { token: null }))) === 401, '无令牌 401');
 assertOk(await status(booksRoute.GET(req('/api/admin/books', { token: 'wrong' }))) === 401, '错误令牌 401');
 process.env.ADMIN_TOKEN = '';
-assertOk(await status(booksRoute.GET(req('/api/admin/books'))) === 503, '未配置 ADMIN_TOKEN 时 503 停用');
+// V8.1 起移除 ADMIN_API_DISABLED 停用态:未配置机器令牌时仍可用管理员账号会话,凭据无效一律 401
+assertOk(await status(booksRoute.GET(req('/api/admin/books', { token: null }))) === 401, '未配置 ADMIN_TOKEN 时无效凭据仍 401(不再 503)');
 process.env.ADMIN_TOKEN = 'test-token-123';
 
 // ---------- 书籍 CRUD ----------

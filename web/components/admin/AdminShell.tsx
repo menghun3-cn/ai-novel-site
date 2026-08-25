@@ -4,11 +4,11 @@
 // 规格: 侧栏 200/64px · 顶栏/Logo区 56px · 菜单项40px · 内容区 p16 bg #eef4fb
 // 响应式: <768px 抽屉化 | 768-1024 默认收起 | ≥1024 默认展开
 
-import { BarChart3, BookOpen, FileCheck, FolderTree, ImageIcon, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, Tags, Users, X } from 'lucide-react';
+import { BarChart3, BookOpen, FileCheck, FolderTree, ImageIcon, KeyRound, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, Tags, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { api, clearToken, getToken } from '@/lib/admin-client';
+import { api, ApiError, clearToken, getToken } from '@/lib/admin-client';
 import appPackage from '../../package.json';
 
 const APP_VERSION = `v${appPackage.version}`;
@@ -72,14 +72,14 @@ export default function AdminShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('admin:review-changed', onRefresh);
   }, [refreshReviewCount, pathname]);
 
-  // 登录态守卫:无令牌或校验失败 → 登录页
+  // 登录态守卫:无令牌或校验失败 → 登录页;首登待改密 → 强制改密页
   useEffect(() => {
     if (!getToken()) {
       router.replace('/admin/login');
       return;
     }
-    api('/api/admin/categories').catch(() => {
-      router.replace('/admin/login');
+    api('/api/admin/categories').catch((err) => {
+      router.replace(err instanceof ApiError && err.code === 'PASSWORD_CHANGE_REQUIRED' ? '/admin/change-password' : '/admin/login');
     });
   }, [router]);
 
@@ -98,6 +98,11 @@ export default function AdminShell({ children }: { children: ReactNode }) {
   }
 
   async function logout(): Promise<void> {
+    try {
+      await api('/api/admin/auth/logout', { method: 'POST' });
+    } catch {
+      /* 服务端吊销失败也不阻断本地登出 */
+    }
     clearToken();
     router.replace('/admin/login');
   }
@@ -191,6 +196,14 @@ export default function AdminShell({ children }: { children: ReactNode }) {
             <span className="font-medium text-white">{breadcrumb(pathname)}</span>
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <Link
+              href="/admin/change-password"
+              title="修改密码"
+              aria-label="修改密码"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-white/90 transition-colors duration-150 hover:bg-white/20"
+            >
+              <KeyRound size={15} aria-hidden />
+            </Link>
             <button
               onClick={() => {
                 void logout();

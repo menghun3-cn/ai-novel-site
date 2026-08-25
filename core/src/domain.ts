@@ -35,6 +35,7 @@ export type CoreErrorCode =
   | 'EMAIL_TAKEN'
   | 'INVALID_CREDENTIALS'
   | 'SESSION_EXPIRED'
+  | 'WEAK_PASSWORD'
   | 'AUTHOR_NOT_FOUND'
   | 'AUTHOR_NAME_TAKEN'
   | 'AUTHOR_IN_USE'
@@ -592,4 +593,29 @@ export interface BookFunnel {
   baselinePv: number;
   /** 每章指标(按章号排序) */
   chapters: ChapterMetric[];
+}
+
+// ---------- V8.1 Admin 账号:默认账号初始化 + 首登强制改密 ----------
+
+export interface AdminAccount {
+  username: string;
+  /** true = 仍在使用初始密码,登录后必须先改密才能访问业务 API */
+  mustChangePassword: boolean;
+}
+
+export interface LoginAdminInput {
+  username: string;
+  password: string;
+}
+
+export interface ChangeAdminPasswordInput {
+  /** 当前有效会话令牌 */
+  token: string;
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface AdminSession extends AdminAccount {
+  token: string;
+  expiresAt: string;
 }

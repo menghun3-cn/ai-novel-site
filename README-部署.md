@@ -279,6 +279,15 @@ curl -X POST http://127.0.0.1:8320/api/sync -H 'Content-Type: application/json' 
      -d '{"book":"星海余烬"}'
 ```
 
+### 管理后台(`/admin`)账号
+
+- SQLite 初始化时自动播种初始管理员:**`admin` / `Admin@123456`**;
+- **首次登录强制改密**:必须修改为复杂密码才能进入后台(规则:≥10 位,同时包含大写字母、小写字母、数字、特殊字符,且不得包含账号名);
+- 改密完成前,除 `/api/admin/auth/*` 外的业务管理 API 一律返回 `403 PASSWORD_CHANGE_REQUIRED`;
+- 管理会话有效期 24 小时;后台顶栏钥匙图标可随时再次修改密码(改密会吊销该账号其他会话);
+- 机器令牌环境变量 `ADMIN_TOKEN` 仍受支持(`Authorization: Bearer …` / `x-admin-token`),供调度器与集成脚本向后兼容;
+- 验证:`npm run test:admin-auth`。
+
 ---
 
 ## 9. 自动构建机制

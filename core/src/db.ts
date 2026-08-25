@@ -264,6 +264,26 @@ CREATE TABLE IF NOT EXISTS reading_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_reading_sessions_book_chapter ON reading_sessions(book_id, chapter_number);
 CREATE INDEX IF NOT EXISTS idx_reading_sessions_started ON reading_sessions(started_at);
+
+-- V8.1 Admin 账号:库初始化即由 admin-auth 播种默认账号(admin/Admin@123456),
+-- must_change_password=1 时登录后强制改为复杂密码
+CREATE TABLE IF NOT EXISTS admin_users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  must_change_password INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_user ON admin_sessions(user_id);
 `;
 
 let sqlite: Database.Database | null = null;
