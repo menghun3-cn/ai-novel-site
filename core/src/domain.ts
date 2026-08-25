@@ -528,6 +528,14 @@ export interface DiscoveryItem {
   score: number;
   /** 推荐理由短语(如分类名),可空 */
   reason?: string;
+  /** 书级累计 PV(展示人气用) */
+  viewCount?: number;
+  /** 收藏数(展示人气用) */
+  favoriteCount?: number;
+  /** 最新已发布章节号(最新更新板块展示用) */
+  latestChapterNumber?: number | null;
+  /** 最新发布时间 ISO 字符串(最新更新板块展示用) */
+  lastPublishedAt?: string | null;
 }
 
 /** Discovery 板块 */

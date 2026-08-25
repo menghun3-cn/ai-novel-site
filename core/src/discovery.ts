@@ -72,6 +72,7 @@ export interface FeedBookRow {
   created_at: string;
   updated_at: string;
   last_published_at: string | null;
+  latest_chapter_number: number | null;
   published_count: number;
   view_count: number;
   favorite_count: number;
@@ -83,6 +84,7 @@ const FEED_SELECT = `SELECT b.id, b.slug, b.title, a.name AS author_name, b.desc
     b.category_id AS category_id,
     b.created_at, b.updated_at,
     (SELECT MAX(c.published_at) FROM chapters c WHERE c.book_id = b.id AND c.status = 'published') AS last_published_at,
+    (SELECT MAX(c.number) FROM chapters c WHERE c.book_id = b.id AND c.status = 'published') AS latest_chapter_number,
     (SELECT COUNT(*) FROM chapters c WHERE c.book_id = b.id AND c.status = 'published') AS published_count,
     b.view_count AS view_count,
     (SELECT COUNT(*) FROM favorites f WHERE f.book_id = b.id) AS favorite_count,
@@ -95,7 +97,7 @@ const FEED_SELECT = `SELECT b.id, b.slug, b.title, a.name AS author_name, b.desc
   JOIN authors a ON a.id = b.author_id
   JOIN categories k ON k.id = b.category_id`;
 
-function toSection(row: FeedBookRow, reason?: string): DiscoverySection['items'][number] {
+function toSection(row: FeedBookRow, score = 0, reason?: string): DiscoverySection['items'][number] {
   return {
     bookId: row.id,
     slug: row.slug,
@@ -106,8 +108,12 @@ function toSection(row: FeedBookRow, reason?: string): DiscoverySection['items']
     categoryName: row.category_name,
     status: row.status === 'completed' ? 'completed' : 'serializing',
     publishedCount: row.published_count,
-    score: 0,
+    score,
     reason,
+    viewCount: row.view_count,
+    favoriteCount: row.favorite_count,
+    latestChapterNumber: row.latest_chapter_number,
+    lastPublishedAt: row.last_published_at,
   };
 }
 
@@ -153,13 +159,17 @@ export function getDiscoveryFeed(userId?: string): { sections: DiscoverySection[
       key: 'today',
       title: '今日推荐',
       items: dedupe([...byHot.slice(0, 3), ...byRecent.filter((s) => !byHot.slice(0, 3).includes(s)).slice(0, 2)]).map((s) =>
-        toSection(s.row)
+        toSection(s.row, s.score)
       ),
     },
-    { key: 'hot', title: '热门小说', items: byHot.slice(0, 6).map((s) => toSection(s.row)) },
-    { key: 'recent', title: '最新更新', items: byRecent.slice(0, 6).map((s) => toSection(s.row)) },
-    { key: 'new', title: '新书推荐', items: (byNew.length > 0 ? byNew : byRecent).slice(0, 4).map((s) => toSection(s.row)) },
-    { key: 'completed', title: '完结好书', items: byCompleted.slice(0, 4).map((s) => toSection(s.row)) },
+    { key: 'hot', title: '热门小说', items: byHot.slice(0, 6).map((s) => toSection(s.row, s.score)) },
+    { key: 'recent', title: '最新更新', items: byRecent.slice(0, 6).map((s) => toSection(s.row, s.score)) },
+    {
+      key: 'new',
+      title: '新书推荐',
+      items: (byNew.length > 0 ? byNew : byRecent).slice(0, 4).map((s) => toSection(s.row, s.score)),
+    },
+    { key: 'completed', title: '完结好书', items: byCompleted.slice(0, 4).map((s) => toSection(s.row, s.score)) },
   ];
 
   if (userId) sections.push(buildForYou(db, userId, scored));
@@ -216,6 +226,6 @@ function buildForYou(db: Database, userId: string, scored: Array<{ row: FeedBook
   return {
     key: 'foryou',
     title: '猜你喜欢',
-    items: picks.map((s) => toSection(s.row, catNames.get(String(s.row.category_id)))),
+    items: picks.map((s) => toSection(s.row, s.score, catNames.get(String(s.row.category_id)))),
   };
 }
