@@ -49,6 +49,8 @@
     "test:review-engine": "tsx scripts/verify-review-engine.ts",
     "test:auto-optimize": "tsx scripts/verify-auto-optimize.ts",
     "test:ai-assist": "tsx scripts/verify-ai-assist.ts",
+    "test:creation-api": "tsx scripts/verify-creation-api.ts",
+    "test:review-api": "tsx scripts/verify-review-api.ts",
     "test:reader": "tsx scripts/verify-reader.ts",
     "test:reader-api": "tsx scripts/verify-reader-api.ts",
     "test:discovery": "tsx scripts/verify-discovery.ts",

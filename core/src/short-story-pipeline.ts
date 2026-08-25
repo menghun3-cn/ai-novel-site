@@ -87,9 +87,9 @@ export async function runCreationPipeline(
   if (!ruleVersion) {
     throw new CoreError('REVIEW_RULE_NOT_FOUND', '没有已发布的评审规则版本,无法启动自动评审闭环');
   }
-
-  const provider = opts?.provider ?? (await resolveProviderFromStore());
+  // 先进入 generating:此后任何一步(含 Provider 解析)失败都会被置为 failed,错误可见
   transitionStory(storyId, 'generating');
+  const provider = opts?.provider ?? (await resolveProviderFromStore());
 
   // 阶段一:整篇生成
   const prompt = buildCreationPrompt(story.brief);

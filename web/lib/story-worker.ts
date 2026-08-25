@@ -3,9 +3,9 @@
 // kick 后由前端轮询 /api/admin/ai/tasks 取结果。
 // 挂在 globalThis 上:开发模式 HMR 多实例间也只允许一个 worker。
 
-import { processAiTasks } from '@novel/core';
+import { processAiTasks, type ProcessedTaskResult } from '@novel/core';
 
-const g = globalThis as unknown as { __storyWorker?: Promise<ReturnType<typeof processAiTasks>> };
+const g = globalThis as unknown as { __storyWorker?: Promise<ProcessedTaskResult[]> };
 
 export interface KickStoryWorkerResult {
   started: boolean;

@@ -362,3 +362,49 @@ export function latestReviewForVersion(storyVersionId: string): ReviewRecord | n
     .get(storyVersionId) as RecordRow | undefined;
   return row ? toRecord(row) : null;
 }
+
+// ---------- 质量数据统计(评审中心基础版) ----------
+
+export interface ReviewStats {
+  totalRecords: number;
+  qualifiedRecords: number;
+  /** 通过率 0-100 */
+  passRate: number;
+  avgScore: number | null;
+  avgOptimizeRound: number | null;
+  totalStories: number;
+  passedStories: number;
+  poolStories: number;
+}
+
+/** 全局质量数据聚合(SQL 计数,不做逐行扫描) */
+export function getReviewStats(): ReviewStats {
+  const db = getDb();
+  const rec = db
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(qualified), 0) AS qualified,
+              COALESCE(AVG(score), NULL) AS avg_score,
+              COALESCE(AVG(optimization_round), NULL) AS avg_round
+       FROM review_records`
+    )
+    .get() as { total: number; qualified: number; avg_score: number | null; avg_round: number | null };
+  const st = db
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              COALESCE(SUM(CASE WHEN status = 'passed' THEN 1 ELSE 0 END), 0) AS passed,
+              COALESCE(SUM(CASE WHEN status = 'pool' THEN 1 ELSE 0 END), 0) AS pool
+       FROM short_stories`
+    )
+    .get() as { total: number; passed: number; pool: number };
+  return {
+    totalRecords: rec.total,
+    qualifiedRecords: rec.qualified,
+    passRate: rec.total > 0 ? Math.round((rec.qualified / rec.total) * 100) : 0,
+    avgScore: rec.avg_score === null ? null : Math.round(rec.avg_score),
+    avgOptimizeRound: rec.avg_round === null ? null : Math.round(rec.avg_round * 10) / 10,
+    totalStories: st.total,
+    passedStories: st.passed,
+    poolStories: st.pool,
+  };
+}
