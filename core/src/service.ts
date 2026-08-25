@@ -1,6 +1,7 @@
 // Content Core 服务层:所有内容读写都经由这里,统一发布可见性判定
 
 import { getDb } from './db';
+import { enqueueChapterReview } from './short-story-pipeline';
 import {
   CoreError,
   isBookStatus,
@@ -71,6 +72,12 @@ interface BookRow {
   autopilot_last_date: string | null;
   created_at: string;
   updated_at: string;
+  kind: 'short' | 'long';
+  chapter_review_enabled: number;
+  chapter_review_max_rounds: number;
+  arc_review_every_n: number;
+  last_arc_review_chapter: number;
+  arc_review_enabled: number;
 }
 
 function toBook(r: BookRow): Book {
@@ -85,6 +92,12 @@ function toBook(r: BookRow): Book {
     categoryId: r.category_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    kind: r.kind,
+    chapterReviewEnabled: r.chapter_review_enabled === 1,
+    chapterReviewMaxRounds: r.chapter_review_max_rounds,
+    arcReviewEveryN: r.arc_review_every_n,
+    lastArcReviewChapter: r.last_arc_review_chapter,
+    arcReviewEnabled: r.arc_review_enabled === 1,
   };
 }
 
@@ -179,6 +192,7 @@ function toBookWithMeta(r: BookMetaRow, tags: Map<string, string[]>): BookWithMe
     latestChapterNumber: r.latest_chapter_number,
     latestChapterTitle: r.latest_chapter_title,
     latestPublishedAt: r.latest_published_at,
+    kind: r.kind,
   };
 }
 
@@ -234,6 +248,7 @@ export function upsertBook(input: UpsertBookInput): Book {
   const authorId = upsertAuthor(input.authorName);
   const categoryId = upsertCategory(input.categoryName).id;
   const status: BookStatus = isBookStatus(input.status) ? input.status : 'serializing';
+  const kind: 'short' | 'long' = input.kind === 'short' ? 'short' : 'long';
 
   const existing = db.prepare('SELECT * FROM books WHERE slug = ?').get(input.slug) as BookRow | undefined;
   const id = existing ? existing.id : input.id || bookIdFromSlug(input.slug);
@@ -254,8 +269,8 @@ export function upsertBook(input: UpsertBookInput): Book {
     );
   } else {
     db.prepare(
-      `INSERT INTO books (id, slug, title, description, cover_path, status, author_id, category_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO books (id, slug, title, description, cover_path, status, author_id, category_id, created_at, updated_at, kind)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       input.slug,
@@ -266,7 +281,8 @@ export function upsertBook(input: UpsertBookInput): Book {
       authorId,
       categoryId,
       now,
-      now
+      now,
+      kind
     );
   }
 
@@ -306,11 +322,12 @@ export function importChapter(input: ImportChapterInput): ImportChapterResult {
   }
 
   const publishedAt = input.publishedAt ?? (status === 'published' ? now : null);
+  const newId = chapterId(input.bookId, input.number);
   db.prepare(
     `INSERT INTO chapters (id, book_id, number, title, slug, content_md, status, scheduled_at, published_at, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    chapterId(input.bookId, input.number),
+    newId,
     input.bookId,
     input.number,
     input.title,
@@ -322,7 +339,33 @@ export function importChapter(input: ImportChapterInput): ImportChapterResult {
     now,
     now
   );
+  // V9.5:发布时自动入队章节评审(若书开启)
+  if (status === 'published') {
+    enqueueChapterReviewIfEnabled(input.bookId, newId);
+  }
   return { added: true };
+}
+
+/** V9.5:章节发布后自动入队评审(若书开启 + 无重复任务) */
+function enqueueChapterReviewIfEnabled(bookId: string, chapterId: string): void {
+  const dbLocal = getDb();
+  const book = dbLocal.prepare('SELECT chapter_review_enabled FROM books WHERE id = ?').get(bookId) as
+    | { chapter_review_enabled: number }
+    | undefined;
+  if (!book || book.chapter_review_enabled !== 1) return;
+  const existing = dbLocal
+    .prepare(
+      `SELECT id FROM ai_tasks
+       WHERE type = 'AI_REVIEW_CHAPTER' AND ref_id = ? AND status IN ('PENDING', 'RUNNING')
+       LIMIT 1`
+    )
+    .get(chapterId) as { id: string } | undefined;
+  if (existing) return;
+  try {
+    enqueueChapterReview(chapterId);
+  } catch {
+    /* 入队失败不阻塞章节发布 */
+  }
 }
 
 // ---------- 查询 ----------
@@ -525,6 +568,7 @@ export function createBook(input: CreateBookInput): BookWithMeta {
     authorName: input.authorName,
     categoryName: input.categoryName,
     tags: input.tags ?? [],
+    kind: input.kind,
   });
   return getAnyBookById(bookIdFromSlug(input.slug))!;
 }
@@ -766,6 +810,8 @@ export function approveChapter(bookId: string, number: number, decision: Approve
       at,
       row.id
     );
+    // V9.5:发布时自动入队章节评审(若书开启)
+    enqueueChapterReviewIfEnabled(bookId, row.id);
   }
   touchBook(bookId, at);
   return getChapterByNumber(bookId, number)!;

@@ -49,6 +49,9 @@ AI 生成小说的**内容管理 + Web 阅读**一体化平台：从小说源文
 | `settings.ts` | 后台 LLM 配置（密钥掩码存储、连通性测试、模型发现） |
 | `admin-auth.ts` | 管理员账号体系：默认账号播种、登录、强制改密、24h 会话 |
 | `db.ts` | 连接管理 + 幂等 DDL + 轻量列迁移 |
+| `short-story-publication.ts` | V9.5 阶段二:passed 短篇物化为 Book+Chapter(读者站可读) |
+| `chapter-review.ts` | V9.5 阶段二:长篇单章自动评审(落 review_records ref_type='chapter') |
+| `arc-review.ts` | V9.5 阶段二:长篇弧级自动评审(落 arc_review_records;半自动阈值判定) |
 
 ### Web 页面结构（`web/app/`）
 
@@ -88,6 +91,35 @@ AI 生成小说的**内容管理 + Web 阅读**一体化平台：从小说源文
 - 每书每日自动生成 N 章：入队 → 生成 → 质检 → 自动送审 / 直接发布
 - 生成任务队列（重试、错误记录、字数下限、模型指定）；手动触发与任务列表
 - 后台 LLM 设置：密钥掩码、连通性测试、OpenAI 兼容模型自动发现
+
+### ✅ V9 AI 小说创作与自动评审中心
+- **AI 创作中心**（`/admin/creation`）：一级 Tab 短篇 / 长篇
+  - 短篇 Tab：创作需求 18 字段（基础信息 / 故事结构 / 创作参数），每字段 ✨AI建议 / AI生成 / AI优化（异步任务 + 轮询）;整篇创作流水线（生成 → AI 质量检查 → 评审 → 自动优化 → 再评审，受规则版本轮数约束，达标即停 / 超过上限入低质量池）
+  - 长篇 Tab：第一阶段为占位，链接既有长篇工作台
+- **AI 评审中心**（`/admin/review-center`）：五视图
+  - 评审任务：AI 任务历史可重试 + 详情； 评审记录：每次评审全链路快照（小说 / 版本 / 规则版本 / Prompt 版本 / 模型 / 轮次 / 原始响应）
+  - 评审规则：维度化规则（权重 / 标准四档 / 阈值 / 最大优化轮数）版本化、全局唯一生效版本、published 不可改（必须新建版本）
+  - Prompt 版本：同名即迭代、历史不可覆盖、可关联规则版本
+  - 质量数据：基础统计（评审数 / 通过率 / 平均分 / 平均优化次数 / 作品状态分布）
+- **数据层**：短篇 + 版本（只增不改） + 评审规则/版本 + Prompt + 评审记录 + 统一 AI 任务（CREATE_NOVEL / 字段辅助 / 评审 / 手动优化）共 7 张新表
+- **结构化输出**：核心层 `structured-output.ts` 提示词约束 + 容错 JSON 提取 + zod-free 校验 + 自纠重试 ≤2 次，耗尽抛 `STRUCTURED_OUTPUT_FAILED`
+- 验证脚本：`test:short-story` / `test:review-rule` / `test:review-prompt` / `test:structured-output` / `test:review-engine` / `test:auto-optimize` / `test:ai-assist` / `test:creation-api` / `test:review-api` 全部通过
+
+### ✅ V9.5 阶段二:短篇上线 + 长篇评审 + 语音朗读
+
+- **短篇发布到读者站**：通过评审的短篇在 `/admin/creation` 一键发布 → 物化为 `Book(kind='short')` + 1 章 + `short_story_publications` 记录。多次发布不同 version 各得独立 URL(同 version 重复发布拒绝)
+- **短篇发现位**：首页/分类/搜索 + 公开 API `/api/short-stories` & `/api/short-stories/[id]`。`BookCard` 绿色"短篇"角标
+- **短篇独立阅读页**：`/short/[storyId]` 轻量布局(标题 + 简介 + 渲染正文 + 回链)
+- **长篇单章自动评审**：`runChapterReview(chapterId)` → 复用评审引擎 → 落 `review_records(ref_type='chapter', chapter_id=...)`。`story_id`/`story_version_id` 改可空,以兼容长篇场景
+- **长篇弧级评审**：`runArcReview(bookId, fromChapter, toChapter, arcLabel)` → 拼接弧内章节(单章 6000 字/总 8000 字硬控)→ 落 `arc_review_records`(独立表,因实体边界不同)
+- **半自动弧评**：`books.arc_review_every_n`(默认 5,0=关)+ `last_arc_review_chapter` 记录游标;`shouldTriggerAutoArcReview(bookId)` 阈值判定
+- **长篇自动评审配置**：`books.chapter_review_enabled`(默认开)、`chapter_review_max_rounds`(默认 1 轮)、`arc_review_enabled`(默认开)
+- **统一 AI 任务扩展**：`AI_REVIEW_CHAPTER` / `AI_REVIEW_ARC` / `PUBLISH_SHORT_STORY` 三类新任务;调度器第三块 `processAiTasks({limit:5})` 拉起章节/弧评任务
+- **调度器互斥**:SQLite WAL 提供并发读写安全,但 ai_tasks 抢抢式 PENDING→RUNNING 在多实例下会重复处理——**生产环境仅启一个调度器实例**;多实例需加 advisory lock
+- **语音朗读(TTS)**:`/short/[id]` 与长篇章节阅读页挂载 `TtsPlayer` 客户端组件;基于 Web Speech API 零依赖,段落切片顺序朗读(play/pause/stop + 语速 0.5-2.0× + 语音下拉);偏好持久化 `novel:tts:rate` / `novel:tts:voiceURI`;朗读段自动滚动至视区
+- **新表**:`short_story_publications`、`arc_review_records`;`review_records` 加 `chapter_id` + `ref_type` 列;`books` 加 5 列长篇评审配置
+- **新公开端点**:`/api/short-stories`(列表)、`/api/short-stories/[id]`(详情)
+- 验证脚本:`test:short-story-publication` / `test:short-story-reader` / `test:chapter-review` / `test:arc-review` / `test:scheduler-tasks` / `test:tts-reader` 全部通过;`test:*` 共 15 套全绿
 
 ### ✅ V6 用户阅读
 - 读者注册 / 登录 / 登出（httpOnly Cookie 会话，30 天）

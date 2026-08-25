@@ -22,10 +22,10 @@ export default function BookCard({ book }: { book: BookWithMeta }) {
         )}
         <span
           className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-xs text-white ${
-            book.status === 'serializing' ? 'bg-sky-600/90' : 'bg-neutral-600/90'
+            book.kind === 'short' ? 'bg-emerald-600/90' : book.status === 'serializing' ? 'bg-sky-600/90' : 'bg-neutral-600/90'
           }`}
         >
-          {book.status === 'serializing' ? '连载中' : '完结'}
+          {book.kind === 'short' ? '短篇' : book.status === 'serializing' ? '连载中' : '完结'}
         </span>
       </div>
       <div className="p-3">

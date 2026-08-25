@@ -4,7 +4,7 @@
 // 规格: 侧栏 200/64px · 顶栏/Logo区 56px · 菜单项40px · 内容区 p16 bg #eef4fb
 // 响应式: <768px 抽屉化 | 768-1024 默认收起 | ≥1024 默认展开
 
-import { BarChart3, BookOpen, FileCheck, FolderTree, ImageIcon, KeyRound, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, Tags, Users, X } from 'lucide-react';
+import { BarChart3, BookOpen, FileCheck, FileSearch, FolderTree, ImageIcon, KeyRound, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, Tags, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
@@ -15,9 +15,11 @@ const APP_VERSION = `v${appPackage.version}`;
 
 const NAV = [
   { href: '/admin', label: '概览', icon: LayoutDashboard },
+  { href: '/admin/creation', label: 'AI 创作中心', icon: Sparkles },
+  { href: '/admin/review-center', label: 'AI 评审中心', icon: FileSearch },
   { href: '/admin/books', label: '小说管理', icon: BookOpen },
   { href: '/admin/review', label: '审核队列', icon: FileCheck },
-  { href: '/admin/story', label: 'AI 创作中心', icon: Sparkles },
+  { href: '/admin/story', label: '长篇工作台', icon: BookOpen },
   { href: '/admin/analytics', label: '数据分析', icon: BarChart3 },
   { href: '/admin/authors', label: '作者管理', icon: Users },
   { href: '/admin/categories', label: '分类管理', icon: FolderTree },
@@ -28,9 +30,11 @@ const NAV = [
 
 const PAGE_TITLE: Record<string, string> = {
   '/admin': '概览',
+  '/admin/creation': 'AI 创作中心',
+  '/admin/review-center': 'AI 评审中心',
   '/admin/books': '小说管理',
   '/admin/review': '审核队列',
-  '/admin/story': 'AI 创作中心',
+  '/admin/story': '长篇工作台',
   '/admin/analytics': '数据分析',
   '/admin/authors': '作者管理',
   '/admin/categories': '分类管理',
