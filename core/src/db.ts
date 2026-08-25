@@ -371,8 +371,8 @@ CREATE TABLE IF NOT EXISTS review_prompts (
 
 CREATE TABLE IF NOT EXISTS review_records (
   id TEXT PRIMARY KEY,
-  story_id TEXT NOT NULL,
-  story_version_id TEXT NOT NULL,
+  story_id TEXT,                                  -- V9 阶段二:章节/弧级评审时为 NULL
+  story_version_id TEXT,                          -- V9 阶段二:章节/弧级评审时为 NULL
   source_url TEXT,
   rule_id TEXT NOT NULL,
   rule_version TEXT NOT NULL,

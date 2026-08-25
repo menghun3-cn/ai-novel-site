@@ -45,6 +45,8 @@
     "test:short-story": "tsx scripts/verify-short-story-core.ts",
     "test:short-story-publication": "tsx scripts/verify-short-story-publication.ts",
     "test:short-story-reader": "tsx scripts/verify-short-story-reader.ts",
+    "test:chapter-review": "tsx scripts/verify-chapter-review.ts",
+    "test:arc-review": "tsx scripts/verify-arc-review.ts",
     "test:review-rule": "tsx scripts/verify-review-rule.ts",
     "test:review-prompt": "tsx scripts/verify-review-prompt.ts",
     "test:structured-output": "tsx scripts/verify-structured-output.ts",

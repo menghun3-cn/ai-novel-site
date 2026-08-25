@@ -255,8 +255,9 @@ export function levelForScore(score: number): 'S' | 'A' | 'B' | 'C' | 'D' {
 
 export interface ReviewRecord {
   id: string;
-  storyId: string;
-  storyVersionId: string;
+  /** 短篇评审时 = short_story.id;章节/弧级评审时 = null(见 chapter_id/arc_review_records) */
+  storyId: string | null;
+  storyVersionId: string | null;
   sourceUrl: string | null;
 
   ruleId: string;
@@ -438,6 +439,12 @@ export interface Book {
   updatedAt: string;
   /** V9 阶段二:长篇连载 vs 短篇物化(读者站 BookCard 据此显示角标) */
   kind: 'short' | 'long';
+  /** V9 阶段二:长篇自动评审配置(短篇物化时通常为 0/默认) */
+  chapterReviewEnabled: boolean;
+  chapterReviewMaxRounds: number;
+  arcReviewEveryN: number;
+  lastArcReviewChapter: number;
+  arcReviewEnabled: boolean;
 }
 
 export interface Chapter {

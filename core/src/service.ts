@@ -72,6 +72,11 @@ interface BookRow {
   created_at: string;
   updated_at: string;
   kind: 'short' | 'long';
+  chapter_review_enabled: number;
+  chapter_review_max_rounds: number;
+  arc_review_every_n: number;
+  last_arc_review_chapter: number;
+  arc_review_enabled: number;
 }
 
 function toBook(r: BookRow): Book {
@@ -87,6 +92,11 @@ function toBook(r: BookRow): Book {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     kind: r.kind,
+    chapterReviewEnabled: r.chapter_review_enabled === 1,
+    chapterReviewMaxRounds: r.chapter_review_max_rounds,
+    arcReviewEveryN: r.arc_review_every_n,
+    lastArcReviewChapter: r.last_arc_review_chapter,
+    arcReviewEnabled: r.arc_review_enabled === 1,
   };
 }
 
