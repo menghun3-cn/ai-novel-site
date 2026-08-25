@@ -79,6 +79,9 @@ AI 原创小说内容平台的系统架构参考。本文回答"系统由哪些�
 | `optimize-engine.ts` | **V9** 评审驱动的针对性修订稿生成 |
 | `ai-assist.ts` | **V9** 字段级 AI 建议/生成/优化执行器 |
 | `short-story-pipeline.ts` | **V9** 创作闭环编排 + 任务分发器 |
+| `short-story-publication.ts` | **V9.5** passed 短篇物化为 `Book(kind='short')` + 1 章 + `short_story_publications` 记录 |
+| `chapter-review.ts` | **V9.5** 长篇单章自动评审 → `review_records(ref_type='chapter', chapter_id=...)` |
+| `arc-review.ts` | **V9.5** 长篇弧级自动评审 → `arc_review_records`;半自动阈值判定 |
 
 ### 3.2 错误模型
 
@@ -94,7 +97,7 @@ SQLite 表按子系统分组：
 | Story Core | `story_worlds` `story_characters` `story_relationships` `story_arcs` `story_outlines` `story_foreshadowing` |
 | 运行配置 | `app_settings`（键值） |
 | AI 连载 | `ai_serialization`（每书配置）`generation_jobs`（任务历史） |
-| **V9 短篇与评审** | `short_stories` `short_story_versions`（只增不改）`review_rules` `review_rule_versions`（维度 JSON 化）`review_prompts`（同名迭代）`review_records`（全链路快照）`ai_tasks`（统一任务） |
+| **V9 短篇与评审** | `short_stories` `short_story_versions`（只增不改）`review_rules` `review_rule_versions`（维度 JSON 化）`review_prompts`（同名迭代）`review_records`（全链路快照，含 `chapter_id` / `ref_type` 兼容章节/弧级评审）`ai_tasks`（统一任务）`short_story_publications` `arc_review_records` |
 | 读者 | `users` `sessions` `favorites` `subscriptions` `reading_progress` |
 | 分析 | `reading_sessions` |
 | 管理账号 | `admin_users` `admin_sessions` |
@@ -218,6 +221,50 @@ draft ──送审──▶ pending_review ──批准(now)──▶ published
 - 评审中心：`/review-rules`、`/review-rules/[id]/versions`、`/review-rule-versions/[vid]/{publish,disable,PUT}`、`/review-prompts`、`/review-records`、`/review/stats`
 
 写入端点统一入队 + `kickStoryWorker()`，前端每 3s 轮询 `GET /ai/tasks/[id]` 或 `GET /short-stories/[id]`（详情聚合含版本、各版最新评审、该作品近 20 条任务）。
+
+---
+
+## 5.2 V9.5 阶段二:短篇上线 + 长篇评审 + 语音朗读
+
+**设计取向**：0 新增阅读组件（短篇复用长篇 Book+Chapter 读者站基础设施），AI 任务统一在 `ai_tasks` 账本里调度，单实例调度器约束。
+
+### 短篇发布物化
+
+```text
+  短篇通过评审 (status='passed')
+      │
+      ▼ publishShortStory(storyId)
+      ├── pickPublishVersion:is_final 优先 → currentVersionId → 最新版本
+      ├── 幂等守卫:同 (story_id, version_id) 已有 publication → 409
+      ├── 构造 slug = slugify(title) + '-<storyId 后 6 位>' → 冲突时数字后缀递增
+      ├── createBook({status:'completed', kind:'short', authorName:'AI 短篇', categoryName:'短篇小说'})
+      │     → upsertBook 自动 seeds 作者 + 分类
+      ├── createChapter(number:1, status:'published')
+      │     → importChapter 自动取 publishedAt=now
+      └── INSERT short_story_publications(id, story_id, book_id, version_id, published_at)
+            UNIQUE(story_id, version_id) — 多次发布不同 version 各自独立 URL
+```
+
+### 长篇单章 / 弧级评审
+
+- 落库:`chapter-review.ts` → `review_records(ref_type='chapter', chapter_id=..., story_id=NULL)`;`arc-review.ts` → 独立 `arc_review_records` 表(实体边界不同)
+- 字段共享:`review_records` 的 `story_id` / `story_version_id` 在阶段二改可空,以统一短篇/章节/弧的入口
+- 半自动弧评:`books.arc_review_every_n`(默认 5,0=关) + `last_arc_review_chapter` 游标;`shouldTriggerAutoArcReview(bookId)` 阈值判定
+- 队列接入:`enqueueChapterReview(chapterId)` / `enqueueArcReview({bookId, from, to, label})` → `ai_tasks` 任务被 `processAiTasks({limit:5})` 拾取并执行
+- 调度器第三块:`scripts/publish-scheduler.ts` 在 `runPublishCycle` + `runAiSerializationCycle` 之外追加 `await processAiTasks({limit:5})`,与另两块同样 try-catch 隔离
+
+### 单实例约束
+
+SQLite WAL 提供并发读写安全,但 `ai_tasks` 的 PENDING→RUNNING 转换是抢抢式——多调度器实例可能拉到同一任务并重复处理。**生产环境仅启一个调度器实例**(systemd / pm2 / docker single-replica);多实例需加 advisory lock(pg_try_advisory_lock 类能力,SQLite 可用 file lock 代替)后再启本调度器,或拆分任务类型给不同实例。
+
+### 语音朗读
+
+`web/components/TtsPlayer.tsx`:Web Speech API 零依赖客户端组件,段落切片顺序朗读(找文章容器下 `<p>` 元素),提供 play/pause/stop + 语速 0.5-2.0× + 语音下拉(优先中文 voice);偏好持久化 `localStorage` 的 `novel:tts:rate` / `novel:tts:voiceURI`;当前朗读段自动滚动至视区中央。挂载点:长篇 `/books/[slug]/chapter/[n]` 与短篇 `/short/[id]` 两类阅读页均挂载,selector 分别为 `#article-content` 与 `#short-story-content`。
+
+### 公开 API
+
+- `GET /api/short-stories`:短篇发布列表(按 published_at 倒序,limit 默认 50)
+- `GET /api/short-stories/[id]`:短篇详情(按 storyId 取最新 publication,返回 book meta + content + charCount);不公开 → 404
 
 ---
 
