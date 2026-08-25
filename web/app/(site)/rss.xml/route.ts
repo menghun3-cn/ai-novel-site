@@ -22,7 +22,7 @@ export async function GET() {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 <channel>
-<title>云雀小说 - 最新章节</title>
+<title>云燕阅读 - 最新章节</title>
 <link>${base}</link>
 <description>AI小说创作平台的最新章节更新</description>
 <language>zh-CN</language>
