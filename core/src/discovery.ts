@@ -78,6 +78,7 @@ export interface FeedBookRow {
   favorite_count: number;
   finish_rate: number;
   category_name: string;
+  kind: 'short' | 'long';
 }
 
 const FEED_SELECT = `SELECT b.id, b.slug, b.title, a.name AS author_name, b.description, b.cover_path, b.status,
@@ -114,6 +115,7 @@ function toSection(row: FeedBookRow, score = 0, reason?: string): DiscoverySecti
     favoriteCount: row.favorite_count,
     latestChapterNumber: row.latest_chapter_number,
     lastPublishedAt: row.last_published_at,
+    kind: row.kind,
   };
 }
 

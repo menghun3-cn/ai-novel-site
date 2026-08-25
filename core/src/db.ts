@@ -3,7 +3,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
+
+/** 业务表短前缀随机 ID(如 ss_ / ssv_ / rrule_),与 book_<slug> 的确定性主键区分 */
+export function genId(prefix: string): string {
+  return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+}
 
 // 兼容:开发模式 import.meta.url 指向 core/src,生产模式指向 .next/server/
 // 优先使用环境变量;其次从 cwd 向上查找 data/ 目录
@@ -68,7 +74,14 @@ CREATE TABLE IF NOT EXISTS books (
   autopilot_count INTEGER NOT NULL DEFAULT 1,
   autopilot_last_date TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  -- V9 阶段二:长篇自动评审配置
+  chapter_review_enabled INTEGER NOT NULL DEFAULT 1,         -- 单章评审默认开
+  chapter_review_max_rounds INTEGER NOT NULL DEFAULT 1,      -- 章节自动优化轮数(成本控制)
+  arc_review_every_n INTEGER NOT NULL DEFAULT 5,             -- 每新增 N 章自动弧评;0=禁用
+  last_arc_review_chapter INTEGER NOT NULL DEFAULT 0,        -- 上次弧评覆盖到的最大章号(用于半自动判定)
+  arc_review_enabled INTEGER NOT NULL DEFAULT 1,              -- 是否允许弧评(总开关)
+  kind TEXT NOT NULL DEFAULT 'long'                          -- 'long'=长篇连载;'short'=短篇物化
 );
 
 CREATE TABLE IF NOT EXISTS book_tags (
@@ -284,6 +297,172 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_user ON admin_sessions(user_id);
+
+-- V9 AI小说创作与自动评审中心:短篇小说版本化 + 评审规则/Prompt版本化 + 评审记录 + 统一AI任务
+-- 版本表只增不改:AI 写入一律新行,历史数据永不因规则升级被覆盖(规格书 §43)
+CREATE TABLE IF NOT EXISTS short_stories (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  brief_json TEXT NOT NULL DEFAULT '{}',
+  current_version_id TEXT,
+  source_url TEXT,
+  review_round INTEGER NOT NULL DEFAULT 0,
+  optimize_round INTEGER NOT NULL DEFAULT 0,
+  manual_optimize_round INTEGER NOT NULL DEFAULT 0,
+  last_score INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS short_story_versions (
+  id TEXT PRIMARY KEY,
+  story_id TEXT NOT NULL REFERENCES short_stories(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  char_count INTEGER NOT NULL,
+  creation_reason TEXT NOT NULL DEFAULT 'generated',
+  generation_prompt TEXT,
+  model_name TEXT,
+  is_final INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  UNIQUE (story_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_short_stories_status ON short_stories(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_short_story_versions_story ON short_story_versions(story_id, version);
+
+CREATE TABLE IF NOT EXISTS review_rules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  current_version_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS review_rule_versions (
+  id TEXT PRIMARY KEY,
+  rule_id TEXT NOT NULL REFERENCES review_rules(id) ON DELETE CASCADE,
+  version TEXT NOT NULL,
+  dimensions_json TEXT NOT NULL,
+  quality_threshold INTEGER NOT NULL DEFAULT 80,
+  max_auto_optimize_rounds INTEGER NOT NULL DEFAULT 3,
+  prompt_id TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_at TEXT NOT NULL,
+  published_at TEXT,
+  UNIQUE (rule_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_rule_versions_rule ON review_rule_versions(rule_id, status);
+
+CREATE TABLE IF NOT EXISTS review_prompts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  content TEXT NOT NULL,
+  rule_version_id TEXT,
+  model_hint TEXT,
+  change_note TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (name, version)
+);
+
+CREATE TABLE IF NOT EXISTS review_records (
+  id TEXT PRIMARY KEY,
+  story_id TEXT,                                  -- V9 阶段二:章节/弧级评审时为 NULL
+  story_version_id TEXT,                          -- V9 阶段二:章节/弧级评审时为 NULL
+  source_url TEXT,
+  rule_id TEXT NOT NULL,
+  rule_version TEXT NOT NULL,
+  prompt_id TEXT,
+  prompt_version TEXT,
+  model_id TEXT,
+  model_name TEXT,
+  model_version TEXT,
+  score INTEGER NOT NULL,
+  level TEXT NOT NULL,
+  qualified INTEGER NOT NULL,
+  dimension_scores_json TEXT NOT NULL,
+  strengths_json TEXT NOT NULL DEFAULT '[]',
+  weaknesses_json TEXT NOT NULL DEFAULT '[]',
+  suggestions_json TEXT NOT NULL DEFAULT '[]',
+  summary TEXT,
+  review_round INTEGER NOT NULL,
+  optimization_round INTEGER NOT NULL,
+  duration_ms INTEGER,
+  raw_response TEXT,
+  structured_result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_records_story ON review_records(story_id, story_version_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_review_records_rule ON review_records(rule_id, rule_version);
+
+-- 统一 AI 任务(规格书 §35):字段辅助/整篇生成/评审/优化的可观测任务历史
+CREATE TABLE IF NOT EXISTS ai_tasks (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  ref_type TEXT,
+  ref_id TEXT,
+  input_json TEXT,
+  prompt TEXT,
+  provider_name TEXT,
+  model_name TEXT,
+  output_json TEXT,
+  error TEXT,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT,
+  finished_at TEXT,
+  duration_ms INTEGER,
+  tokens_prompt INTEGER,
+  tokens_completion INTEGER,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_tasks_pick ON ai_tasks(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_tasks_ref ON ai_tasks(ref_type, ref_id, created_at);
+
+-- V9 阶段二:短篇发布追溯(passed 短篇物化为 Book+Chapter 的可追溯记录)
+CREATE TABLE IF NOT EXISTS short_story_publications (
+  id TEXT PRIMARY KEY,
+  story_id TEXT NOT NULL REFERENCES short_stories(id) ON DELETE CASCADE,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  version_id TEXT NOT NULL,
+  published_at TEXT NOT NULL,
+  UNIQUE(story_id, version_id)
+);
+CREATE INDEX IF NOT EXISTS idx_short_story_publications_story ON short_story_publications(story_id);
+
+-- V9 阶段二:长篇弧级评审记录(独立表:弧级评审的实体边界与短篇/章节不同)
+CREATE TABLE IF NOT EXISTS arc_review_records (
+  id TEXT PRIMARY KEY,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  arc_id TEXT,
+  arc_label TEXT NOT NULL,
+  from_chapter INTEGER NOT NULL,
+  to_chapter INTEGER NOT NULL,
+  rule_id TEXT NOT NULL,
+  rule_version TEXT NOT NULL,
+  prompt_id TEXT,
+  prompt_version TEXT,
+  model_name TEXT,
+  score INTEGER NOT NULL,
+  level TEXT NOT NULL,
+  qualified INTEGER NOT NULL,
+  dimension_scores_json TEXT NOT NULL,
+  strengths_json TEXT NOT NULL DEFAULT '[]',
+  weaknesses_json TEXT NOT NULL DEFAULT '[]',
+  suggestions_json TEXT NOT NULL DEFAULT '[]',
+  summary TEXT,
+  duration_ms INTEGER,
+  raw_response TEXT,
+  structured_result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_arc_review_records_book ON arc_review_records(book_id, created_at);
 `;
 
 let sqlite: Database.Database | null = null;
@@ -344,6 +523,55 @@ function migrateAnalyticsColumns(_db: Database.Database): void {
   // 此处保留为后续可能添加的新列预留迁移点。
 }
 
+/**
+ * 轻量迁移:V9——short_stories 补手动优化独立计数列
+ * (自动流水线受 max_auto_optimize_rounds 约束,手动优化单独计数)。
+ */
+function migrateShortStoryColumns(db: Database.Database): void {
+  const cols = (db.prepare('PRAGMA table_info(short_stories)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('manual_optimize_round')) {
+    db.exec('ALTER TABLE short_stories ADD COLUMN manual_optimize_round INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
+/**
+ * 轻量迁移:V9 阶段二 — books 表补长篇自动评审配置列(旧库升级)
+ */
+function migrateBooksReviewColumns(db: Database.Database): void {
+  const cols = (db.prepare('PRAGMA table_info(books)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('chapter_review_enabled')) {
+    db.exec('ALTER TABLE books ADD COLUMN chapter_review_enabled INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!cols.includes('chapter_review_max_rounds')) {
+    db.exec('ALTER TABLE books ADD COLUMN chapter_review_max_rounds INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!cols.includes('arc_review_every_n')) {
+    db.exec('ALTER TABLE books ADD COLUMN arc_review_every_n INTEGER NOT NULL DEFAULT 5');
+  }
+  if (!cols.includes('last_arc_review_chapter')) {
+    db.exec('ALTER TABLE books ADD COLUMN last_arc_review_chapter INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.includes('arc_review_enabled')) {
+    db.exec('ALTER TABLE books ADD COLUMN arc_review_enabled INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!cols.includes('kind')) {
+    db.exec("ALTER TABLE books ADD COLUMN kind TEXT NOT NULL DEFAULT 'long'");
+  }
+}
+
+/**
+ * 轻量迁移:V9 阶段二 — review_records 扩可空列,以统一短篇/章节/弧的评审记录入口
+ */
+function migrateReviewRecordsRefColumns(db: Database.Database): void {
+  const cols = (db.prepare('PRAGMA table_info(review_records)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('chapter_id')) {
+    db.exec('ALTER TABLE review_records ADD COLUMN chapter_id TEXT');
+  }
+  if (!cols.includes('ref_type')) {
+    db.exec("ALTER TABLE review_records ADD COLUMN ref_type TEXT NOT NULL DEFAULT 'short_story'");
+  }
+}
+
 export function getDb(): Database.Database {
   if (!sqlite) {
     ensureDataDir();
@@ -356,6 +584,9 @@ export function getDb(): Database.Database {
     migrateJobOptionColumns(sqlite);
     migrateDiscoveryColumns(sqlite);
     migrateAnalyticsColumns(sqlite);
+    migrateShortStoryColumns(sqlite);
+    migrateBooksReviewColumns(sqlite);
+    migrateReviewRecordsRefColumns(sqlite);
   }
   return sqlite;
 }
