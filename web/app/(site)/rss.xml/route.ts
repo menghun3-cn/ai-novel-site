@@ -22,9 +22,9 @@ export async function GET() {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 <channel>
-<title>AI文学 - 最新章节</title>
+<title>云雀小说 - 最新章节</title>
 <link>${base}</link>
-<description>AI 生成小说的最新章节更新</description>
+<description>AI小说创作平台的最新章节更新</description>
 <language>zh-CN</language>
 <atom:link href="${base}/rss.xml" rel="self" type="application/rss+xml"/>
 ${items

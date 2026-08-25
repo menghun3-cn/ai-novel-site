@@ -4,11 +4,11 @@ import Footer from '@/components/Footer';
 
 export const metadata: Metadata = {
   title: {
-    default: 'AI文学 - AI 生成小说阅读站',
-    template: '%s | AI文学',
+    default: '云雀小说 - AI小说创作平台',
+    template: '%s | 云雀小说',
   },
-  description: 'AI 生成小说的公开阅读平台:科幻、玄幻、都市、历史、悬疑……',
-  keywords: ['AI小说', '科幻小说', '网络小说', '在线阅读'],
+  description: '云雀小说 · AI小说创作平台:科幻、玄幻、都市、历史、悬疑……',
+  keywords: ['云雀小说', 'AI小说', '科幻小说', '网络小说', '在线阅读'],
 };
 
 /** 公开阅读站壳层:页头 + 内容 + 页脚(管理后台 /admin 使用独立壳层,不经此布局) */
