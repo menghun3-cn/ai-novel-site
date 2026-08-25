@@ -10,7 +10,7 @@ export default function Header() {
     <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/90 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/90">
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-4 md:gap-3">
         <Link href="/" className="shrink-0">
-          <span className="block text-lg font-bold leading-tight tracking-widest">云雀小说</span>
+          <span className="block text-lg font-bold leading-tight tracking-widest">云燕阅读</span>
           <span className="block text-[10px] leading-tight text-neutral-400 dark:text-neutral-500">
             AI小说创作平台
           </span>
