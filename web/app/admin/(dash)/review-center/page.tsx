@@ -170,7 +170,7 @@ function dimsToEditor(dimensions: DimensionSpec[]): EditorDim[] {
 }
 
 export default function AdminReviewCenterPage() {
-  const [tab, setTab] = useState<'tasks' | 'records' | 'rules' | 'prompts' | 'stats'>('tasks');
+  const [tab, setTab] = useState<'tasks' | 'records' | 'rules' | 'prompts' | 'stats' | 'chapterReviews' | 'arcReviews'>('tasks');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [storyTitles, setStoryTitles] = useState<Record<string, string>>({});
@@ -208,6 +208,25 @@ export default function AdminReviewCenterPage() {
     ruleVersionId: string;
   } | null>(null);
   const [savingPrompt, setSavingPrompt] = useState(false);
+
+  // V9.5:长篇评审管理(章节 + 弧级)
+  const [reviewBooks, setReviewBooks] = useState<Array<{ id: string; title: string; slug: string; kind: 'long' | 'short' }> | null>(null);
+  const [selectedBookId, setSelectedBookId] = useState<string>('');
+  const [chapterRows, setChapterRows] = useState<Array<{ id: string; number: number; title: string; status: string; latestScore: number | null; latestLevel: string | null; latestQualified: boolean | null; latestAt: string | null }> | null>(null);
+  const [arcRecords, setArcRecords] = useState<Array<{
+    id: string;
+    arcLabel: string;
+    fromChapter: number;
+    toChapter: number;
+    score: number;
+    level: string;
+    qualified: boolean;
+    createdAt: string;
+  }> | null>(null);
+  const [arcSuggestion, setArcSuggestion] = useState<{ should: boolean; fromChapter: number; toChapter: number; reason: string } | null>(null);
+  const [arcDraft, setArcDraft] = useState<{ arcLabel: string; fromChapter: number; toChapter: number }>({ arcLabel: '', fromChapter: 1, toChapter: 1 });
+  const [enqueuing, setEnqueuing] = useState(false);
+  const [loadingReview, setLoadingReview] = useState(false);
 
   const loadAll = useCallback(async (): Promise<void> => {
     setError(null);
@@ -375,6 +394,330 @@ export default function AdminReviewCenterPage() {
   };
 
   // ---------- 渲染 ----------
+
+  const loadReviewBooks = useCallback(async (): Promise<void> => {
+    try {
+      const res = await api<{ books: Array<{ id: string; title: string; slug: string; kind: string }> }>(
+        '/api/admin/books?limit=500&kind=long'
+      );
+      setReviewBooks(
+        res.books.map((b) => ({ id: b.id, title: b.title, slug: b.slug, kind: (b.kind === 'short' ? 'short' : 'long') as 'long' | 'short' }))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载长篇书目失败');
+    }
+  }, []);
+
+  const loadBookReviewData = useCallback(async (bookId: string): Promise<void> => {
+    setLoadingReview(true);
+    setChapterRows(null);
+    setArcRecords(null);
+    setArcSuggestion(null);
+    try {
+      // 1) 章节列表
+      const chRes = await api<{
+        chapters: Array<{ id: string; number: number; title: string; status: string }>;
+      }>(`/api/admin/books/${bookId}/chapters`);
+      // 2) 每个章节最近一次评审(ref_type='chapter')
+      const chapterReviewMap = new Map<string, { score: number; level: string; qualified: boolean; createdAt: string }>();
+      for (const c of chRes.chapters) {
+        try {
+          const r = await api<{
+            items: Array<{ score: number; level: string; qualified: boolean; createdAt: string }>;
+            latest: { score: number; level: string; qualified: boolean; createdAt: string } | null;
+          }>(`/api/admin/chapter-reviews?chapterId=${encodeURIComponent(c.id)}`);
+          const latest = r.latest ?? r.items[0] ?? null;
+          if (latest) chapterReviewMap.set(c.id, latest);
+        } catch {
+          /* 该章无评审 */
+        }
+      }
+      setChapterRows(
+        chRes.chapters.map((c) => {
+          const latest = chapterReviewMap.get(c.id);
+          return {
+            id: c.id,
+            number: c.number,
+            title: c.title,
+            status: c.status,
+            latestScore: latest?.score ?? null,
+            latestLevel: latest?.level ?? null,
+            latestQualified: latest?.qualified ?? null,
+            latestAt: latest?.createdAt ?? null,
+          };
+        })
+      );
+      // 3) 弧评列表 + 半自动建议
+      const arcRes = await api<{
+        items: Array<{
+          id: string;
+          arcLabel: string;
+          fromChapter: number;
+          toChapter: number;
+          score: number;
+          level: string;
+          qualified: boolean;
+          createdAt: string;
+        }>;
+        suggestion: { should: boolean; fromChapter: number; toChapter: number; reason: string };
+      }>(`/api/admin/arc-reviews?bookId=${encodeURIComponent(bookId)}`);
+      setArcRecords(arcRes.items);
+      setArcSuggestion(arcRes.suggestion);
+      setArcDraft({
+        arcLabel: arcRes.suggestion.should ? `自动弧评 ${arcRes.suggestion.fromChapter}-${arcRes.suggestion.toChapter}` : '',
+        fromChapter: arcRes.suggestion.fromChapter,
+        toChapter: arcRes.suggestion.toChapter,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载评审数据失败');
+    } finally {
+      setLoadingReview(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if ((tab === 'chapterReviews' || tab === 'arcReviews') && reviewBooks === null) {
+      void loadReviewBooks();
+    }
+  }, [tab, reviewBooks, loadReviewBooks]);
+
+  useEffect(() => {
+    if (selectedBookId && (tab === 'chapterReviews' || tab === 'arcReviews')) {
+      void loadBookReviewData(selectedBookId);
+    }
+  }, [selectedBookId, tab, loadBookReviewData]);
+
+  const enqueueChapterReviewAction = async (chapterId: string): Promise<void> => {
+    setEnqueuing(true);
+    try {
+      const res = await api<{ task: { id: string; status: string } }>('/api/admin/chapter-reviews', {
+        method: 'POST',
+        body: JSON.stringify({ chapterId }),
+      });
+      setNotice(`章节评审任务已入队(${res.task.id.slice(-6)})`);
+      setTimeout(() => selectedBookId && void loadBookReviewData(selectedBookId), 800);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '入队失败');
+    } finally {
+      setEnqueuing(false);
+    }
+  };
+
+  const enqueueArcReviewAction = async (): Promise<void> => {
+    if (!selectedBookId) return;
+    if (!arcDraft.arcLabel.trim() || arcDraft.fromChapter <= 0 || arcDraft.toChapter <= 0 || arcDraft.fromChapter > arcDraft.toChapter) {
+      setError('弧评参数无效:需填写 arcLabel,from≤to');
+      return;
+    }
+    setEnqueuing(true);
+    try {
+      const res = await api<{ task: { id: string }; arcLabel: string; range: { from: number; to: number } }>(
+        '/api/admin/arc-reviews',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            bookId: selectedBookId,
+            arcLabel: arcDraft.arcLabel.trim(),
+            fromChapter: arcDraft.fromChapter,
+            toChapter: arcDraft.toChapter,
+          }),
+        }
+      );
+      setNotice(`弧评已入队 ${res.arcLabel} ${res.range.from}-${res.range.to}`);
+      setTimeout(() => void loadBookReviewData(selectedBookId), 800);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '弧评入队失败');
+    } finally {
+      setEnqueuing(false);
+    }
+  };
+
+  const renderChapterReviews = (): React.ReactNode => (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="选择长篇书目">
+          <div className="min-w-[260px] flex-1">
+            <Select
+              value={selectedBookId}
+              onChange={(e) => setSelectedBookId(e.target.value)}
+              disabled={reviewBooks === null}
+            >
+              <option value="">— 请选择 —</option>
+              {(reviewBooks ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.title}（{b.slug}）
+                </option>
+              ))}
+            </Select>
+          </div>
+        </Field>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => selectedBookId && void loadBookReviewData(selectedBookId)}
+          disabled={!selectedBookId || loadingReview}
+        >
+          <RefreshCw size={14} /> 刷新
+        </Button>
+      </div>
+
+      {!selectedBookId ? (
+        <EmptyState icon={<FileSearch size={24} />} title="选择一本长篇开始管理" description="章节评审基于规则版本(默认全局唯一生效)对 published 章节打分;不合格的章节可继续在创作中心手动优化" />
+      ) : loadingReview ? (
+        <p className="py-10 text-center"><Spinner /></p>
+      ) : chapterRows === null ? null : chapterRows.length === 0 ? (
+        <EmptyState icon={<FileSearch size={24} />} title="该书暂无章节" description="先在「长篇工作台」新增章节并发布" />
+      ) : (
+        <div className="space-y-2">
+          {chapterRows.map((c) => (
+            <div key={c.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f1f5f9] px-4 py-3">
+              <span className="text-xs font-medium text-[#64748b]">第 {c.number} 章</span>
+              <span className="min-w-0 flex-1 truncate text-sm text-[#0f172a]">{c.title}</span>
+              <Badge tone={c.status === 'published' ? 'success' : 'info'}>
+                {c.status === 'published' ? '已发布' : c.status === 'pending_review' ? '待审' : c.status === 'draft' ? '草稿' : c.status}
+              </Badge>
+              {c.latestScore !== null ? (
+                <>
+                  <span className={`text-lg font-bold ${c.latestQualified ? 'text-[#047857]' : 'text-[#b45309]'}`}>
+                    {c.latestScore}
+                  </span>
+                  <Badge tone={c.latestLevel === 'S' || c.latestLevel === 'A' ? 'success' : c.latestLevel === 'B' ? 'info' : 'warning'}>
+                    {c.latestLevel}
+                  </Badge>
+                  <span className="text-xs text-[#94a3b8]">{c.latestAt ? formatChinaTime(c.latestAt) : ''}</span>
+                </>
+              ) : (
+                <span className="text-xs text-[#94a3b8]">未评审</span>
+              )}
+              <Button
+                variant="secondary"
+                size="xs"
+                disabled={c.status !== 'published' || enqueuing}
+                onClick={() => void enqueueChapterReviewAction(c.id)}
+                title={c.status !== 'published' ? '仅已发布章节可入队' : '入队一次评审任务'}
+              >
+                <Send size={12} /> 入队评审
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderArcReviews = (): React.ReactNode => (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="选择长篇书目">
+          <div className="min-w-[260px] flex-1">
+            <Select
+              value={selectedBookId}
+              onChange={(e) => setSelectedBookId(e.target.value)}
+              disabled={reviewBooks === null}
+            >
+              <option value="">— 请选择 —</option>
+              {(reviewBooks ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.title}（{b.slug}）
+                </option>
+              ))}
+            </Select>
+          </div>
+        </Field>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => selectedBookId && void loadBookReviewData(selectedBookId)}
+          disabled={!selectedBookId || loadingReview}
+        >
+          <RefreshCw size={14} /> 刷新
+        </Button>
+      </div>
+
+      {!selectedBookId ? (
+        <EmptyState icon={<FileSearch size={24} />} title="选择一本长篇开始管理" description="弧级评审对一组连续章节的整体结构、人物弧线、节奏做评估" />
+      ) : (
+        <>
+          {arcSuggestion ? (
+            <div
+              className={`rounded-lg border px-3 py-2 text-sm ${
+                arcSuggestion.should
+                  ? 'border-[#fde68a] bg-[#fffbeb] text-[#92400e]'
+                  : 'border-[#e2e8f0] bg-[#f8fafc] text-[#64748b]'
+              }`}
+            >
+              <strong>半自动判定:</strong>
+              {arcSuggestion.should ? (
+                <> 建议触发弧评(从第 {arcSuggestion.fromChapter} 章到第 {arcSuggestion.toChapter} 章)</>
+              ) : (
+                <> 当前不触发:{arcSuggestion.reason}</>
+              )}
+            </div>
+          ) : null}
+
+          <div className="rounded-xl border border-[#f1f5f9] p-4">
+            <h3 className="mb-3 text-sm font-semibold text-[#0f172a]">新建弧评任务</h3>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Field label="弧标签">
+                <Input
+                  value={arcDraft.arcLabel}
+                  onChange={(e) => setArcDraft({ ...arcDraft, arcLabel: e.target.value })}
+                  placeholder="如:开篇弧 / 决战章"
+                />
+              </Field>
+              <Field label="起始章号">
+                <Input
+                  type="number"
+                  min={1}
+                  value={String(arcDraft.fromChapter)}
+                  onChange={(e) => setArcDraft({ ...arcDraft, fromChapter: Math.max(1, Number(e.target.value) || 1) })}
+                />
+              </Field>
+              <Field label="结束章号">
+                <Input
+                  type="number"
+                  min={1}
+                  value={String(arcDraft.toChapter)}
+                  onChange={(e) => setArcDraft({ ...arcDraft, toChapter: Math.max(1, Number(e.target.value) || 1) })}
+                />
+              </Field>
+              <div className="flex items-end">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={enqueuing || !arcDraft.arcLabel.trim()}
+                  onClick={() => void enqueueArcReviewAction()}
+                >
+                  <Send size={14} /> 入队弧评
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="mb-3 text-sm font-semibold text-[#0f172a]">历史弧评({arcRecords?.length ?? 0})</h3>
+            {arcRecords === null ? (
+              <p className="py-6 text-center"><Spinner /></p>
+            ) : arcRecords.length === 0 ? (
+              <p className="rounded-lg bg-[#f8fafc] px-4 py-6 text-center text-sm text-[#94a3b8]">暂无弧评记录</p>
+            ) : (
+              <div className="space-y-2">
+                {arcRecords.map((a) => (
+                  <div key={a.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f1f5f9] px-4 py-3 text-sm">
+                    <span className="font-medium text-[#1677ff]">{a.arcLabel}</span>
+                    <span className="text-xs text-[#64748b]">第 {a.fromChapter}-{a.toChapter} 章</span>
+                    <span className={`text-lg font-bold ${a.qualified ? 'text-[#047857]' : 'text-[#b45309]'}`}>{a.score}</span>
+                    <Badge tone={a.level === 'S' || a.level === 'A' ? 'success' : a.level === 'B' ? 'info' : 'warning'}>{a.level}</Badge>
+                    <span className="text-xs text-[#94a3b8]">{formatChinaTime(a.createdAt)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   const renderTasks = (): React.ReactNode =>
     tasks === null ? (
@@ -571,6 +914,8 @@ export default function AdminReviewCenterPage() {
               { key: 'rules', label: '评审规则' },
               { key: 'prompts', label: 'Prompt 版本' },
               { key: 'stats', label: '质量数据' },
+              { key: 'chapterReviews', label: '章节评审' },
+              { key: 'arcReviews', label: '弧级评审' },
             ]}
             value={tab}
             onChange={setTab}
@@ -584,6 +929,8 @@ export default function AdminReviewCenterPage() {
         {tab === 'rules' ? renderRules() : null}
         {tab === 'prompts' ? renderPrompts() : null}
         {tab === 'stats' ? null : null}
+        {tab === 'chapterReviews' ? renderChapterReviews() : null}
+        {tab === 'arcReviews' ? renderArcReviews() : null}
       </div>
 
       {/* 任务详情 */}
