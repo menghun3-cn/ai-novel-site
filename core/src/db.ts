@@ -3,7 +3,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
+
+/** 业务表短前缀随机 ID(如 ss_ / ssv_ / rrule_),与 book_<slug> 的确定性主键区分 */
+export function genId(prefix: string): string {
+  return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+}
 
 // 兼容:开发模式 import.meta.url 指向 core/src,生产模式指向 .next/server/
 // 优先使用环境变量;其次从 cwd 向上查找 data/ 目录
@@ -284,6 +290,132 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_user ON admin_sessions(user_id);
+
+-- V9 AI小说创作与自动评审中心:短篇小说版本化 + 评审规则/Prompt版本化 + 评审记录 + 统一AI任务
+-- 版本表只增不改:AI 写入一律新行,历史数据永不因规则升级被覆盖(规格书 §43)
+CREATE TABLE IF NOT EXISTS short_stories (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  brief_json TEXT NOT NULL DEFAULT '{}',
+  current_version_id TEXT,
+  source_url TEXT,
+  review_round INTEGER NOT NULL DEFAULT 0,
+  optimize_round INTEGER NOT NULL DEFAULT 0,
+  last_score INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS short_story_versions (
+  id TEXT PRIMARY KEY,
+  story_id TEXT NOT NULL REFERENCES short_stories(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  char_count INTEGER NOT NULL,
+  creation_reason TEXT NOT NULL DEFAULT 'generated',
+  generation_prompt TEXT,
+  model_name TEXT,
+  is_final INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  UNIQUE (story_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_short_stories_status ON short_stories(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_short_story_versions_story ON short_story_versions(story_id, version);
+
+CREATE TABLE IF NOT EXISTS review_rules (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  current_version_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS review_rule_versions (
+  id TEXT PRIMARY KEY,
+  rule_id TEXT NOT NULL REFERENCES review_rules(id) ON DELETE CASCADE,
+  version TEXT NOT NULL,
+  dimensions_json TEXT NOT NULL,
+  quality_threshold INTEGER NOT NULL DEFAULT 80,
+  max_auto_optimize_rounds INTEGER NOT NULL DEFAULT 3,
+  prompt_id TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_at TEXT NOT NULL,
+  published_at TEXT,
+  UNIQUE (rule_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_rule_versions_rule ON review_rule_versions(rule_id, status);
+
+CREATE TABLE IF NOT EXISTS review_prompts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  content TEXT NOT NULL,
+  rule_version_id TEXT,
+  model_hint TEXT,
+  change_note TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (name, version)
+);
+
+CREATE TABLE IF NOT EXISTS review_records (
+  id TEXT PRIMARY KEY,
+  story_id TEXT NOT NULL,
+  story_version_id TEXT NOT NULL,
+  source_url TEXT,
+  rule_id TEXT NOT NULL,
+  rule_version TEXT NOT NULL,
+  prompt_id TEXT,
+  prompt_version TEXT,
+  model_id TEXT,
+  model_name TEXT,
+  model_version TEXT,
+  score INTEGER NOT NULL,
+  level TEXT NOT NULL,
+  qualified INTEGER NOT NULL,
+  dimension_scores_json TEXT NOT NULL,
+  strengths_json TEXT NOT NULL DEFAULT '[]',
+  weaknesses_json TEXT NOT NULL DEFAULT '[]',
+  suggestions_json TEXT NOT NULL DEFAULT '[]',
+  summary TEXT,
+  review_round INTEGER NOT NULL,
+  optimization_round INTEGER NOT NULL,
+  duration_ms INTEGER,
+  raw_response TEXT,
+  structured_result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_records_story ON review_records(story_id, story_version_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_review_records_rule ON review_records(rule_id, rule_version);
+
+-- 统一 AI 任务(规格书 §35):字段辅助/整篇生成/评审/优化的可观测任务历史
+CREATE TABLE IF NOT EXISTS ai_tasks (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  ref_type TEXT,
+  ref_id TEXT,
+  input_json TEXT,
+  prompt TEXT,
+  provider_name TEXT,
+  model_name TEXT,
+  output_json TEXT,
+  error TEXT,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT,
+  finished_at TEXT,
+  duration_ms INTEGER,
+  tokens_prompt INTEGER,
+  tokens_completion INTEGER,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_tasks_pick ON ai_tasks(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_tasks_ref ON ai_tasks(ref_type, ref_id, created_at);
 `;
 
 let sqlite: Database.Database | null = null;

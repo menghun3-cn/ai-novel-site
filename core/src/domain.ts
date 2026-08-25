@@ -51,7 +51,17 @@ export type CoreErrorCode =
   | 'OUTLINE_NOT_FOUND'
   | 'FORESHADOWING_NOT_FOUND'
   | 'AI_NOT_CONFIGURED'
-  | 'AI_PROVIDER_FAILED';
+  | 'AI_PROVIDER_FAILED'
+  | 'SHORT_STORY_NOT_FOUND'
+  | 'SHORT_STORY_VERSION_NOT_FOUND'
+  | 'REVIEW_RULE_NOT_FOUND'
+  | 'REVIEW_PROMPT_NOT_FOUND'
+  | 'REVIEW_RECORD_NOT_FOUND'
+  | 'AI_TASK_NOT_FOUND'
+  | 'RULE_VERSION_CONFLICT'
+  | 'RULE_VERSION_IMMUTABLE'
+  | 'INVALID_RULE_DIMENSIONS'
+  | 'STRUCTURED_OUTPUT_FAILED';
 
 export class CoreError extends Error {
   constructor(
@@ -62,6 +72,264 @@ export class CoreError extends Error {
     this.name = 'CoreError';
   }
 }
+
+// ---------- V9 AI小说创作与自动评审中心:短篇小说 / 评审规则 / Prompt / 任务 ----------
+
+/** 短篇小说状态:draft 编辑中;generating/reviewing/optimizing 流水线进行中;passed 已达标入库;pool 低质量池;failed 失败 */
+export const SHORT_STORY_STATUSES = ['draft', 'generating', 'reviewing', 'optimizing', 'passed', 'pool', 'failed'] as const;
+export type ShortStoryStatus = (typeof SHORT_STORY_STATUSES)[number];
+
+export function isShortStoryStatus(v: unknown): v is ShortStoryStatus {
+  return typeof v === 'string' && (SHORT_STORY_STATUSES as readonly string[]).includes(v);
+}
+
+/** 可删除(手动清理)的状态;流水线产物 passed 与进行中状态不可删 */
+export const SHORT_STORY_DELETABLE_STATUSES: readonly ShortStoryStatus[] = ['draft', 'pool', 'failed'];
+
+/**
+ * 创作需求三组字段(规格书 §5):全部可选填,存 short_stories.brief_json。
+ * 基础信息六项 + 故事结构六项 + 创作参数六项。
+ */
+export interface StoryBrief {
+  // 基础信息
+  theme?: string;
+  genre?: string;
+  direction?: string;
+  coreConflict?: string;
+  background?: string;
+  characters?: string;
+  // 故事结构
+  synopsis?: string;
+  beginning?: string;
+  development?: string;
+  conflictBeat?: string;
+  climax?: string;
+  endingPlot?: string;
+  // 创作参数
+  targetWords?: number;
+  narrativePerspective?: string;
+  languageStyle?: string;
+  emotionalTone?: string;
+  pacing?: string;
+  endingType?: string;
+}
+
+/** 版本产生原因 */
+export const VERSION_CREATION_REASONS = ['generated', 'ai_optimized', 'user_edited'] as const;
+export type VersionCreationReason = (typeof VERSION_CREATION_REASONS)[number];
+
+export function isVersionCreationReason(v: unknown): v is VersionCreationReason {
+  return typeof v === 'string' && (VERSION_CREATION_REASONS as readonly string[]).includes(v);
+}
+
+export interface ShortStory {
+  id: string;
+  title: string;
+  status: ShortStoryStatus;
+  brief: StoryBrief;
+  currentVersionId: string | null;
+  sourceUrl: string | null;
+  /** 累计评审次数 */
+  reviewRound: number;
+  /** 累计自动优化次数(手动优化单独计数,见 optimizeRoundManual 语义说明) */
+  optimizeRound: number;
+  lastScore: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShortStoryVersion {
+  id: string;
+  storyId: string;
+  version: number;
+  content: string;
+  charCount: number;
+  creationReason: VersionCreationReason;
+  generationPrompt: string | null;
+  modelName: string | null;
+  isFinal: boolean;
+  createdAt: string;
+}
+
+// ---------- V9 评审规则与 Prompt 版本化 ----------
+
+export const RULE_VERSION_STATUSES = ['draft', 'testing', 'published', 'disabled'] as const;
+export type RuleVersionStatus = (typeof RULE_VERSION_STATUSES)[number];
+
+export function isRuleVersionStatus(v: unknown): v is RuleVersionStatus {
+  return typeof v === 'string' && (RULE_VERSION_STATUSES as readonly string[]).includes(v);
+}
+
+/** 单档评分标准(如 90-100 档的描述) */
+export interface DimensionStandard {
+  min: number;
+  max: number;
+  description: string;
+}
+
+/** 评审维度配置:权重为百分比整数,同一规则版本内全部维度 weight 之和必须等于 100 */
+export interface ReviewDimensionSpec {
+  name: string;
+  weight: number;
+  definition: string;
+  standards: DimensionStandard[];
+  bonus: string;
+  penalty: string;
+  notes: string;
+}
+
+export interface ReviewRule {
+  id: string;
+  name: string;
+  description: string | null;
+  currentVersionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReviewRuleVersion {
+  id: string;
+  ruleId: string;
+  version: string;
+  dimensions: ReviewDimensionSpec[];
+  qualityThreshold: number;
+  maxAutoOptimizeRounds: number;
+  promptId: string | null;
+  status: RuleVersionStatus;
+  createdAt: string | null;
+  publishedAt: string | null;
+}
+
+export interface ReviewPrompt {
+  id: string;
+  name: string;
+  version: string;
+  content: string;
+  ruleVersionId: string | null;
+  modelHint: string | null;
+  changeNote: string | null;
+  createdAt: string;
+}
+
+// ---------- V9 结构化评审结果与记录 ----------
+
+/** 单维度评分:score 为 0-100 原始分,maxScore 为该维度权重(加权后展示分) */
+export interface DimensionScore {
+  name: string;
+  score: number;
+  maxScore: number;
+  reason: string;
+}
+
+/** AI 评审结构化输出(规格书 §16/§37) */
+export interface StructuredReviewResult {
+  score: number;
+  level: 'S' | 'A' | 'B' | 'C' | 'D';
+  qualified: boolean;
+  dimensions: DimensionScore[];
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  summary: string;
+}
+
+/** 质量等级分档(默认,可被规则版本覆盖预留) */
+export const QUALITY_LEVELS: ReadonlyArray<{ level: 'S' | 'A' | 'B' | 'C' | 'D'; min: number }> = [
+  { level: 'S', min: 90 },
+  { level: 'A', min: 80 },
+  { level: 'B', min: 70 },
+  { level: 'C', min: 60 },
+  { level: 'D', min: 0 },
+];
+
+export function levelForScore(score: number): 'S' | 'A' | 'B' | 'C' | 'D' {
+  return (QUALITY_LEVELS.find((l) => score >= l.min)?.level ?? 'D');
+}
+
+export interface ReviewRecord {
+  id: string;
+  storyId: string;
+  storyVersionId: string;
+  sourceUrl: string | null;
+
+  ruleId: string;
+  ruleVersion: string;
+
+  promptId: string | null;
+  promptVersion: string | null;
+
+  modelId: string | null;
+  modelName: string | null;
+  modelVersion: string | null;
+
+  score: number;
+  level: 'S' | 'A' | 'B' | 'C' | 'D';
+  qualified: boolean;
+
+  dimensionScores: DimensionScore[];
+
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  summary: string | null;
+
+  reviewRound: number;
+  optimizationRound: number;
+
+  durationMs: number | null;
+  rawResponse: string | null;
+  structuredResult: StructuredReviewResult;
+
+  createdAt: string;
+}
+
+// ---------- V9 统一 AI 任务(规格书 §35) ----------
+
+export const AI_TASK_TYPES = [
+  'CREATE_NOVEL',
+  'AI_SUGGEST',
+  'AI_GENERATE',
+  'AI_OPTIMIZE',
+  'AI_REVIEW',
+  'AI_REVIEW_RETRY',
+] as const;
+export type AiTaskType = (typeof AI_TASK_TYPES)[number];
+
+export function isAiTaskType(v: unknown): v is AiTaskType {
+  return typeof v === 'string' && (AI_TASK_TYPES as readonly string[]).includes(v);
+}
+
+export const AI_TASK_STATUSES = ['PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED'] as const;
+export type AiTaskStatus = (typeof AI_TASK_STATUSES)[number];
+
+export function isAiTaskStatus(v: unknown): v is AiTaskStatus {
+  return typeof v === 'string' && (AI_TASK_STATUSES as readonly string[]).includes(v);
+}
+
+export interface AiTask {
+  id: string;
+  type: AiTaskType;
+  status: AiTaskStatus;
+  refType: string | null;
+  refId: string | null;
+  input: Record<string, unknown> | null;
+  prompt: string | null;
+  providerName: string | null;
+  modelName: string | null;
+  output: Record<string, unknown> | null;
+  error: string | null;
+  attempt: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  tokensPrompt: number | null;
+  tokensCompletion: number | null;
+  createdAt: string;
+}
+
+/** 字段辅助动作(AI_SUGGEST/AI_GENERATE/AI_OPTIMIZE 三类任务的 input.action) */
+export const AI_ASSIST_ACTIONS = ['suggest', 'generate', 'optimize'] as const;
+export type AiAssistAction = (typeof AI_ASSIST_ACTIONS)[number];
 
 export interface Author {
   id: number;
