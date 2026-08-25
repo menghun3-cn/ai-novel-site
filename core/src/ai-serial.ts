@@ -10,7 +10,7 @@ import {
   type GenerationJob,
   type GenerationJobStatus,
 } from './domain';
-import { approveChapter, localDateKey } from './service';
+import { approveChapter, chinaDateKey, chinaHourOfDay } from './service';
 import { generateChapterDraft, type GenerateChapterResult } from './ai-writer';
 import { resolveProviderFromStore } from './settings';
 
@@ -283,11 +283,11 @@ export interface SerializationCycleResult {
 }
 
 /**
- * 每日 AI 连载周期:对每本启用且今日未跑、到达时刻的书:
+ * 每日 AI 连载周期:对每本启用且今日(北京日期)未跑、到达时刻(北京时间)的书:
  * 入队 count 个生成任务 → 记 last_run_date → 处理队列。日守卫幂等。
  */
 export async function runAiSerializationCycle(now = new Date()): Promise<SerializationCycleResult> {
-  const today = localDateKey(now);
+  const today = chinaDateKey(now);
   const rows = getDb()
     .prepare('SELECT * FROM ai_serialization WHERE enabled = 1 AND (last_run_date IS NULL OR last_run_date < ?)')
     .all(today) as SerialRow[];
@@ -295,7 +295,7 @@ export async function runAiSerializationCycle(now = new Date()): Promise<Seriali
   let triggered = 0;
   for (const row of rows) {
     const cfg = toConfig(row);
-    if (now.getHours() < cfg.hour) continue;
+    if (chinaHourOfDay(now) < cfg.hour) continue;
     enqueueGenerationJobs(cfg.bookId, cfg.count);
     getDb().prepare('UPDATE ai_serialization SET last_run_date = ?, updated_at = ? WHERE book_id = ?').run(today, nowIso(), cfg.bookId);
     triggered++;

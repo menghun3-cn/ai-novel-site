@@ -18,6 +18,7 @@ services:
       NOVEL_DATA_DIR: /app/data
       NOVEL_SITE_URL: http://localhost:33000   # 部署后改为实际域名
       PORT: "33000"
+      TZ: Asia/Shanghai                        # 容器日志/本地时间按北京时间
     volumes:
       - ./data:/app/data                                          # SQLite 数据库
       - ./web/public/covers:/app/web/public/covers               # 封面
@@ -33,6 +34,7 @@ services:
       NODE_ENV: production
       NOVEL_DATA_DIR: /app/data
       PUBLISH_TICK_SECONDS: "60"
+      TZ: Asia/Shanghai                        # 每日连载时刻按北京时间解释
     volumes:
       - ./data:/app/data                                          # 与 web 共享同一份 SQLite 数据库
     command: ["npx", "tsx", "scripts/publish-scheduler.ts"]

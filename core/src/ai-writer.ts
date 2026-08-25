@@ -26,6 +26,51 @@ export interface OpenAiCompatibleConfig {
   model: string;
 }
 
+/** 单次请求超时毫秒(AI_FETCH_TIMEOUT_MS 可覆盖);LLM 整章生成较慢,默认放宽到 5 分钟 */
+function fetchTimeoutMs(): number {
+  const n = Number(process.env.AI_FETCH_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : 300_000;
+}
+
+/**
+ * 展开 fetch 错误的 cause 链。undici 的 fetch 失败只报笼统的 "fetch failed",
+ * 根因(DNS 解析失败 / 连接超时 / TLS 证书 / Headers Timeout)藏在 err.cause 里,
+ * 不展开的话任务列表里只剩一句无法排查的 "network error: fetch failed"。
+ */
+function describeFetchError(err: unknown): string {
+  const parts: string[] = [];
+  let cur: unknown = err;
+  for (let depth = 0; cur instanceof Error && depth < 5; depth++) {
+    const code = (cur as NodeJS.ErrnoException).code;
+    parts.push(code ? `${cur.message} [${code}]` : cur.message);
+    cur = cur.cause;
+  }
+  return parts.length > 0 ? parts.join(' ← ') : String(err);
+}
+
+/** 网络层失败的尝试次数与退避间隔(1s、2s):瞬时抖动不再让当日任务直接 failed */
+const NETWORK_ATTEMPTS = 3;
+
+/**
+ * LLM 上游请求统一入口:每次尝试带超时,网络层失败(fetch 抛错)按退避重试;
+ * HTTP 状态码错误不在这里重试,由调用方按响应体给出语义化错误。
+ */
+async function fetchLlmResponse(url: string, buildInit: () => RequestInit, label = 'network error'): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= NETWORK_ATTEMPTS; attempt++) {
+    try {
+      return await fetch(url, { ...buildInit(), signal: AbortSignal.timeout(fetchTimeoutMs()) });
+    } catch (err) {
+      lastErr = err;
+      if (attempt < NETWORK_ATTEMPTS) await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+  }
+  throw new CoreError(
+    'AI_PROVIDER_FAILED',
+    `${label}: ${describeFetchError(lastErr)}(重试 ${NETWORK_ATTEMPTS} 次后仍失败)`
+  );
+}
+
 /**
  * OpenAI 兼容 chat completions 适配器(DeepSeek/OpenAI/本地网关均可)。
  * baseUrl 形如 https://api.deepseek.com(不含 /chat/completions)。
@@ -35,25 +80,20 @@ export function createOpenAiCompatibleProvider(cfg: OpenAiCompatibleConfig): Llm
   return {
     name: `openai-compatible:${cfg.model}`,
     async complete(req: LlmCompleteRequest): Promise<string> {
-      let res: Response;
-      try {
-        res = await fetch(`${base}/chat/completions`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.apiKey}` },
-          body: JSON.stringify({
-            model: cfg.model,
-            messages: [
-              ...(req.system ? [{ role: 'system', content: req.system }] : []),
-              { role: 'user', content: req.prompt },
-            ],
-            max_tokens: req.maxTokens ?? 8000,
-            temperature: req.temperature ?? 0.8,
-            stream: false,
-          }),
-        });
-      } catch (err) {
-        throw new CoreError('AI_PROVIDER_FAILED', `network error: ${err instanceof Error ? err.message : String(err)}`);
-      }
+      const res = await fetchLlmResponse(`${base}/chat/completions`, () => ({
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.apiKey}` },
+        body: JSON.stringify({
+          model: cfg.model,
+          messages: [
+            ...(req.system ? [{ role: 'system', content: req.system }] : []),
+            { role: 'user', content: req.prompt },
+          ],
+          max_tokens: req.maxTokens ?? 8000,
+          temperature: req.temperature ?? 0.8,
+          stream: false,
+        }),
+      }));
       if (!res.ok) {
         const body = await res.text().catch(() => '');
         throw new CoreError('AI_PROVIDER_FAILED', `provider ${res.status}: ${body.slice(0, 300)}`);
@@ -77,12 +117,11 @@ const NON_CHAT_MODEL_PATTERN = /embed|rerank|whisper|tts|audio|dall-e|image|mode
 /** 从 OpenAI 兼容上游 GET /models 拉取并选出第一个对话模型 */
 async function discoverFirstChatModel(baseUrl: string, apiKey: string): Promise<string> {
   const base = baseUrl.replace(/\/+$/, '');
-  let res: Response;
-  try {
-    res = await fetch(`${base}/models`, { headers: { authorization: `Bearer ${apiKey}` } });
-  } catch (err) {
-    throw new CoreError('AI_PROVIDER_FAILED', `model discovery network error: ${err instanceof Error ? err.message : String(err)}`);
-  }
+  const res = await fetchLlmResponse(
+    `${base}/models`,
+    () => ({ headers: { authorization: `Bearer ${apiKey}` } }),
+    'model discovery network error'
+  );
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new CoreError('AI_PROVIDER_FAILED', `model discovery ${res.status}: ${body.slice(0, 200)}`);
