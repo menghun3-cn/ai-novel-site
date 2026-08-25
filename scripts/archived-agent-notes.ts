@@ -85,7 +85,7 @@ interface Triplet {
 
 function pairMeta(content: string): Map<string, string> | undefined {
   const entries = new Map<string, string>()
-  for (const line of content.split(/\r?\n/)) {
+  for (const line of content.split('\n')) {
     if (line === '' || line.startsWith('#')) continue
     const match = /^([^:#]+\.md): ([0-9a-f]{40})$/.exec(line)
     if (match?.[1] === undefined || match[2] === undefined) return undefined
@@ -96,7 +96,7 @@ function pairMeta(content: string): Map<string, string> | undefined {
 
 function validateHeader(path: string, content: Buffer, sourceBase: string, chinese: boolean): string[] {
   const errors: string[] = []
-  const lines = content.toString('utf8').split(/\r?\n/)
+  const lines = content.toString('utf8').split('\n')
   if (!/^# Agent Note: \S/.test(lines[0] ?? '')) errors.push(`${path}: line 1 must be \`# Agent Note: <title>\``)
   if (lines[1] !== '') errors.push(`${path}: line 2 must be blank`)
   if (lines[2] !== 'Status: implemented') errors.push(`${path}: line 3 must be \`Status: implemented\``)

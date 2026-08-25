@@ -8,7 +8,7 @@ import {
   validateArchiveManifestExtension,
   type ArchiveManifest,
 } from './archived-agent-notes.ts'
-import { isArchivedNotePath } from './agent-note-tree.ts'
+import { isArchivedAgentNotePath } from './repo-files.ts'
 
 function fixture(): Map<string, Buffer> {
   const base = '2026-07-26-example'
@@ -24,9 +24,9 @@ function fixture(): Map<string, Buffer> {
 
 describe('archived Agent Notes', () => {
   it('recognizes archived paths with POSIX and Windows separators', () => {
-    expect(isArchivedNotePath('.agent/notes/archived/process/example.md')).toBe(true)
-    expect(isArchivedNotePath('.agent\\notes\\archived\\process\\example.md')).toBe(true)
-    expect(isArchivedNotePath('.agent/notes/implemented/process/example.md')).toBe(false)
+    expect(isArchivedAgentNotePath('.agents/notes/archived/process/example.md')).toBe(true)
+    expect(isArchivedAgentNotePath('.agents\\notes\\archived\\process\\example.md')).toBe(true)
+    expect(isArchivedAgentNotePath('.agents/notes/implemented/process/example.md')).toBe(false)
   })
 
   it('accepts one complete implemented triplet with matching archive metadata', () => {

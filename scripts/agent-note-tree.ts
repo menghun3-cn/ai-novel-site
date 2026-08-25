@@ -1,22 +1,14 @@
 /**
  * Shared structural source of truth for the Agent Note tree. Lifecycle and class
- * sets are closed under `.agent/notes/README.md`; importing this module is pure.
- *
- * The notes root resolves relative to this script's location, so keeping the
- * template layout — a `scripts/` directory next to `.agent/notes/` — works in
- * any repository without configuration.
+ * sets are closed under `.agents/notes/README.md`; importing this module is pure.
  */
 
 import { globSync, readdirSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 
-/** Repo-relative directory of the Agent Notes tree; keep `scripts/` and `.agent/notes/` siblings. */
-export const agentNoteRelDir = '.agent/notes'
+export const agentNoteRoot = resolve(import.meta.dirname, '../.agents/notes')
 
-/** Absolute root of the Agent Notes tree, derived from this script's own location. */
-export const agentNoteRoot = resolve(import.meta.dirname, '..', agentNoteRelDir)
-
-/** The closed set of active Agent Note lifecycles (top-level folders under the notes root). */
+/** The closed set of active Agent Note lifecycles (top-level folders under .agents/notes/). */
 const AGENT_NOTE_LIFECYCLES = ['proposed', 'implemented', 'rejected'] as const
 
 /**
@@ -35,15 +27,10 @@ const ROOT_ALLOWLIST = new Set(['AGENTS.md', 'CLAUDE.md'])
 /** One Agent Note file, as discovered by the walker. */
 export interface AgentNote {
   lifecycle: string
-  /** Path relative to the notes root. */
+  /** Path relative to .agents/notes. */
   rel: string
   /** `yyyy-mm-dd` from the filename. */
   date: string
-}
-
-/** Whether a repo-relative path belongs to the archived tree (POSIX or Windows separators). */
-export function isArchivedNotePath(path: string): boolean {
-  return path.replaceAll('\\', '/').startsWith(`${agentNoteRelDir}/${AGENT_NOTE_ARCHIVE}/`)
 }
 
 /**
@@ -54,7 +41,7 @@ export function isArchivedNotePath(path: string): boolean {
 export function walkAgentNoteTree(): { notes: AgentNote[]; errors: string[] } {
   const notes: AgentNote[] = []
   const errors: string[] = []
-  // The lifecycle set is closed too: any directory under the notes root that is not
+  // The lifecycle set is closed too: any directory under .agents/notes/ that is not
   // a known lifecycle would otherwise hold Agent Notes invisible to the walk below.
   for (const entry of readdirSync(agentNoteRoot, { withFileTypes: true })) {
     if (entry.name === 'INDEX.md') {
@@ -72,7 +59,7 @@ export function walkAgentNoteTree(): { notes: AgentNote[]; errors: string[] } {
       const segs = match.split('/')
       // Allowlisted file directly at the lifecycle root (e.g. implemented/AGENTS.md).
       if (segs.length === 2 && ROOT_ALLOWLIST.has(segs[1] ?? '')) continue
-      // A Chinese counterpart (foo.zh.md, under the i18n contract) is the SAME Agent Note,
+      // A Chinese counterpart (foo.zh.md, docs/i18n/README.md) is the SAME Agent Note,
       // indexed via its English filename; the pairing gate owns its consistency.
       if (match.endsWith('.zh.md')) continue
       const cls = segs[1]
