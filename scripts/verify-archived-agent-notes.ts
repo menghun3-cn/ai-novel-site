@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { AGENT_NOTE_CLASSES, agentNoteRoot } from './agent-note-tree.ts'
 import {
   extendArchiveManifest,
@@ -12,16 +12,6 @@ import {
   validateArchiveManifestExtension,
   type ArchiveManifest,
 } from './archived-agent-notes.ts'
-
-/**
- * Wire into your package.json as:
- *   "verify-archived-agent-notes": "tsx scripts/verify-archived-agent-notes.ts"
- *
- * The append-only seal compares against a committed baseline; CI may supply its
- * trusted pre-change commit through `AGENT_NOTE_ARCHIVE_BASE_REF`. Without an
- * explicit ref, the seal is enforced only when a baseline commit exists, so a
- * fresh repository can run the gate before its first commit.
- */
 
 const args = process.argv.slice(2)
 const writeMode = args.length === 1 && args[0] === '--write'
@@ -33,7 +23,7 @@ if (args.length > 0 && !writeMode) {
 const archiveRoot = resolve(agentNoteRoot, 'archived')
 const manifestPath = resolve(archiveRoot, 'manifest.json')
 const repoRoot = resolve(agentNoteRoot, '../..')
-const manifestRepoPath = relative(repoRoot, manifestPath).split('\\').join('/')
+const manifestRepoPath = '.agents/notes/archived/manifest.json'
 const errors: string[] = []
 const allowedRootFiles = new Set(['AGENTS.md', 'manifest.json'])
 const kinds = new Set<string>()
@@ -41,7 +31,6 @@ const kinds = new Set<string>()
 if (!existsSync(resolve(archiveRoot, 'AGENTS.md'))) errors.push('archived/AGENTS.md is required')
 const artifacts = new Map<string, Buffer>()
 for (const entry of readdirSync(archiveRoot, { withFileTypes: true })) {
-  if (entry.name.startsWith('.')) continue // Hidden placeholders (e.g. .gitkeep) are not artifacts.
   if (entry.isFile()) {
     if (!allowedRootFiles.has(entry.name)) errors.push(`archived/${entry.name}: unexpected root file`)
     continue
@@ -56,12 +45,13 @@ for (const entry of readdirSync(archiveRoot, { withFileTypes: true })) {
   }
   kinds.add(entry.name)
   for (const child of readdirSync(resolve(archiveRoot, entry.name), { withFileTypes: true })) {
-    if (child.name.startsWith('.')) continue // Hidden placeholders (e.g. .gitkeep) are not artifacts.
     const rel = `${entry.name}/${child.name}`
     if (!child.isFile()) {
       errors.push(`${rel}: archived kind directories contain regular files only`)
       continue
     }
+    // Placeholder files keep empty kind directories tracked by git; they are not archive artifacts.
+    if (child.name === '.gitkeep') continue
     artifacts.set(rel, readFileSync(resolve(archiveRoot, rel)))
   }
 }
@@ -84,12 +74,6 @@ function readBaselineManifest(ref: string): ArchiveManifest {
   return parseArchiveManifest(runGit(['show', `${ref}:${manifestRepoPath}`]))
 }
 
-/** Whether the given ref resolves to a commit; false when git or the ref is unavailable. */
-function baselineCommitExists(ref: string): boolean {
-  const result = spawnSync('git', ['cat-file', '-e', `${ref}^{commit}`], { cwd: repoRoot, encoding: 'utf8' })
-  return result.status === 0
-}
-
 let manifest: ArchiveManifest = { version: 1, files: {} }
 if (existsSync(manifestPath)) {
   try {
@@ -101,19 +85,13 @@ if (existsSync(manifestPath)) {
   errors.push('archived/manifest.json is required; seal new artifacts with `pnpm run verify-archived-agent-notes --write`')
 }
 
-// CI supplies its trusted pre-change commit through AGENT_NOTE_ARCHIVE_BASE_REF; a failure
-// with an explicit ref is a real problem. Without one, enforce the append-only extension
-// only when a baseline commit exists — a fresh repository (or a tree outside git) has no
-// committed baseline to protect, so the empty baseline is correct.
-const baselineRef = process.env.AGENT_NOTE_ARCHIVE_BASE_REF
-if (baselineRef !== undefined || baselineCommitExists('HEAD')) {
-  const ref = baselineRef ?? 'HEAD'
-  try {
-    const baseline = readBaselineManifest(ref)
-    errors.push(...validateArchiveManifestExtension(baseline, manifest))
-  } catch (error: unknown) {
-    errors.push(`archived/manifest.json: cannot read baseline ${JSON.stringify(ref)}: ${error instanceof Error ? error.message : String(error)}`)
-  }
+// CI supplies its trusted pre-change commit; local writes compare with committed HEAD.
+const baselineRef = process.env.DSH_ARCHIVE_BASE_REF ?? 'HEAD'
+try {
+  const baseline = readBaselineManifest(baselineRef)
+  errors.push(...validateArchiveManifestExtension(baseline, manifest))
+} catch (error: unknown) {
+  errors.push(`archived/manifest.json: cannot read baseline ${JSON.stringify(baselineRef)}: ${error instanceof Error ? error.message : String(error)}`)
 }
 
 const extended = extendArchiveManifest(manifest, artifacts)

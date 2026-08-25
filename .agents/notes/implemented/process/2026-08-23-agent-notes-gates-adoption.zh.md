@@ -14,8 +14,8 @@ AI agent 进行多轮长期开发。代码、提交信息与普通文档无法�
 
 ## Decision
 
-决策记录以 **Agent Note** 的形式存放在 `.agent/notes/`——由
-[.agent/notes/README.md](../../../.agent/notes/README.md) 规范的 RFC 式记录。
+决策记录以 **Agent Note** 的形式存放在 `.agents/notes/`——由
+[.agents/notes/README.md](../../../.agents/notes/README.md) 规范的 RFC 式记录。
 每个非平凡变更必须在同一个 PR 中新增或更新至少一份 Agent Note。笔记在
 `proposed/`、`implemented/`、`rejected/` 之间随生命周期移动；完全退役的
 implemented 笔记冻结到 `archived/`。
