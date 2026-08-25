@@ -19,3 +19,4 @@ export * from './review-engine';
 export * from './optimize-engine';
 export * from './ai-assist';
 export * from './short-story-pipeline';
+export * from './short-story-publication';

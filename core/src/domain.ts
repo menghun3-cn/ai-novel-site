@@ -60,6 +60,11 @@ export type CoreErrorCode =
   | 'AI_TASK_NOT_FOUND'
   | 'RULE_VERSION_CONFLICT'
   | 'RULE_VERSION_IMMUTABLE'
+  | 'SHORT_STORY_NOT_PUBLISHED'
+  | 'PUBLICATION_NOT_FOUND'
+  | 'ARC_REVIEW_RECORD_NOT_FOUND'
+  | 'ARC_NOT_FOUND'
+  | 'CHAPTER_NOT_FOUND_IN_ARC'
   | 'INVALID_RULE_DIMENSIONS'
   | 'STRUCTURED_OUTPUT_FAILED';
 
@@ -285,6 +290,42 @@ export interface ReviewRecord {
   createdAt: string;
 }
 
+// ---------- V9 阶段二:短篇发布追溯 + 长篇弧级评审 ----------
+
+export interface ShortStoryPublication {
+  id: string;
+  storyId: string;
+  bookId: string;
+  versionId: string;
+  publishedAt: string;
+}
+
+export interface ArcReviewRecord {
+  id: string;
+  bookId: string;
+  arcId: string | null;
+  arcLabel: string;
+  fromChapter: number;
+  toChapter: number;
+  ruleId: string;
+  ruleVersion: string;
+  promptId: string | null;
+  promptVersion: string | null;
+  modelName: string | null;
+  score: number;
+  level: 'S' | 'A' | 'B' | 'C' | 'D';
+  qualified: boolean;
+  dimensionScores: DimensionScore[];
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  summary: string | null;
+  durationMs: number | null;
+  rawResponse: string | null;
+  structuredResult: StructuredReviewResult;
+  createdAt: string;
+}
+
 // ---------- V9 统一 AI 任务(规格书 §35) ----------
 
 export const AI_TASK_TYPES = [
@@ -295,6 +336,9 @@ export const AI_TASK_TYPES = [
   'AI_OPTIMIZE_STORY',
   'AI_REVIEW',
   'AI_REVIEW_RETRY',
+  'AI_REVIEW_CHAPTER',
+  'AI_REVIEW_ARC',
+  'PUBLISH_SHORT_STORY',
 ] as const;
 export type AiTaskType = (typeof AI_TASK_TYPES)[number];
 

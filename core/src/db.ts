@@ -74,7 +74,13 @@ CREATE TABLE IF NOT EXISTS books (
   autopilot_count INTEGER NOT NULL DEFAULT 1,
   autopilot_last_date TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  -- V9 阶段二:长篇自动评审配置
+  chapter_review_enabled INTEGER NOT NULL DEFAULT 1,         -- 单章评审默认开
+  chapter_review_max_rounds INTEGER NOT NULL DEFAULT 1,      -- 章节自动优化轮数(成本控制)
+  arc_review_every_n INTEGER NOT NULL DEFAULT 5,             -- 每新增 N 章自动弧评;0=禁用
+  last_arc_review_chapter INTEGER NOT NULL DEFAULT 0,        -- 上次弧评覆盖到的最大章号(用于半自动判定)
+  arc_review_enabled INTEGER NOT NULL DEFAULT 1              -- 是否允许弧评(总开关)
 );
 
 CREATE TABLE IF NOT EXISTS book_tags (
@@ -417,6 +423,45 @@ CREATE TABLE IF NOT EXISTS ai_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_ai_tasks_pick ON ai_tasks(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_tasks_ref ON ai_tasks(ref_type, ref_id, created_at);
+
+-- V9 阶段二:短篇发布追溯(passed 短篇物化为 Book+Chapter 的可追溯记录)
+CREATE TABLE IF NOT EXISTS short_story_publications (
+  id TEXT PRIMARY KEY,
+  story_id TEXT NOT NULL REFERENCES short_stories(id) ON DELETE CASCADE,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  version_id TEXT NOT NULL,
+  published_at TEXT NOT NULL,
+  UNIQUE(story_id, version_id)
+);
+CREATE INDEX IF NOT EXISTS idx_short_story_publications_story ON short_story_publications(story_id);
+
+-- V9 阶段二:长篇弧级评审记录(独立表:弧级评审的实体边界与短篇/章节不同)
+CREATE TABLE IF NOT EXISTS arc_review_records (
+  id TEXT PRIMARY KEY,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  arc_id TEXT,
+  arc_label TEXT NOT NULL,
+  from_chapter INTEGER NOT NULL,
+  to_chapter INTEGER NOT NULL,
+  rule_id TEXT NOT NULL,
+  rule_version TEXT NOT NULL,
+  prompt_id TEXT,
+  prompt_version TEXT,
+  model_name TEXT,
+  score INTEGER NOT NULL,
+  level TEXT NOT NULL,
+  qualified INTEGER NOT NULL,
+  dimension_scores_json TEXT NOT NULL,
+  strengths_json TEXT NOT NULL DEFAULT '[]',
+  weaknesses_json TEXT NOT NULL DEFAULT '[]',
+  suggestions_json TEXT NOT NULL DEFAULT '[]',
+  summary TEXT,
+  duration_ms INTEGER,
+  raw_response TEXT,
+  structured_result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_arc_review_records_book ON arc_review_records(book_id, created_at);
 `;
 
 let sqlite: Database.Database | null = null;
@@ -488,6 +533,41 @@ function migrateShortStoryColumns(db: Database.Database): void {
   }
 }
 
+/**
+ * 轻量迁移:V9 阶段二 — books 表补长篇自动评审配置列(旧库升级)
+ */
+function migrateBooksReviewColumns(db: Database.Database): void {
+  const cols = (db.prepare('PRAGMA table_info(books)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('chapter_review_enabled')) {
+    db.exec('ALTER TABLE books ADD COLUMN chapter_review_enabled INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!cols.includes('chapter_review_max_rounds')) {
+    db.exec('ALTER TABLE books ADD COLUMN chapter_review_max_rounds INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!cols.includes('arc_review_every_n')) {
+    db.exec('ALTER TABLE books ADD COLUMN arc_review_every_n INTEGER NOT NULL DEFAULT 5');
+  }
+  if (!cols.includes('last_arc_review_chapter')) {
+    db.exec('ALTER TABLE books ADD COLUMN last_arc_review_chapter INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.includes('arc_review_enabled')) {
+    db.exec('ALTER TABLE books ADD COLUMN arc_review_enabled INTEGER NOT NULL DEFAULT 1');
+  }
+}
+
+/**
+ * 轻量迁移:V9 阶段二 — review_records 扩可空列,以统一短篇/章节/弧的评审记录入口
+ */
+function migrateReviewRecordsRefColumns(db: Database.Database): void {
+  const cols = (db.prepare('PRAGMA table_info(review_records)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('chapter_id')) {
+    db.exec('ALTER TABLE review_records ADD COLUMN chapter_id TEXT');
+  }
+  if (!cols.includes('ref_type')) {
+    db.exec("ALTER TABLE review_records ADD COLUMN ref_type TEXT NOT NULL DEFAULT 'short_story'");
+  }
+}
+
 export function getDb(): Database.Database {
   if (!sqlite) {
     ensureDataDir();
@@ -501,6 +581,8 @@ export function getDb(): Database.Database {
     migrateDiscoveryColumns(sqlite);
     migrateAnalyticsColumns(sqlite);
     migrateShortStoryColumns(sqlite);
+    migrateBooksReviewColumns(sqlite);
+    migrateReviewRecordsRefColumns(sqlite);
   }
   return sqlite;
 }
