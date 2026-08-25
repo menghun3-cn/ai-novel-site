@@ -13,6 +13,8 @@ process.env.NOVEL_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'novel-serial
 
 const {
   CoreError,
+  chinaDateKey,
+  chinaHourOfDay,
   createBook,
   getChapterByNumber,
   listChapters,
@@ -134,6 +136,10 @@ configureAiSerialization(bookA.id, { autoPublish: true, minChars: 20000 });
 
 // ---------- 日守卫幂等 + 时刻门槛 + 停用跳过 ----------
 {
+  // 时区换算:调度按北京时间(UTC+8),与宿主机时区无关
+  assertOk(chinaDateKey(new Date('2024-01-01T15:59:59Z')) === '2024-01-01' && chinaDateKey(new Date('2024-01-01T16:00:00Z')) === '2024-01-02', '北京日期键在 UTC 16:00 翻天');
+  assertOk(chinaHourOfDay(new Date('2024-06-01T00:30:00Z')) === 8 && chinaHourOfDay(new Date('2024-06-01T17:00:00Z')) === 1, '北京小时 = UTC+8');
+
   // 隔离:第一本书(serialA)在配置块里启用过,先停用,保证本块只有 bookA/bookB 参与周期
   configureAiSerialization(serialA.id, { enabled: false });
   configureAiSerialization(bookA.id, { enabled: true, hour: 0, count: 2 });

@@ -70,6 +70,7 @@ async function assertThrows(code: string, fn: () => unknown | Promise<unknown>, 
 // ---------- 本地 HTTP 模拟 OpenAI 兼容端点(含 /models 自动发现) ----------
 let modelList: string[] = ['text-embedding-mock', 'mock-chat', 'mock-vision'];
 const server = http.createServer((req, res) => {
+  if (req.url?.includes('/hang')) return; // 挂起不响应:供请求超时测试
   if (req.method === 'GET' && req.url?.includes('/models')) {
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ data: modelList.map((id) => ({ id })) }));
@@ -165,10 +166,40 @@ await assertThrows('CHAPTER_NUMBER_CONFLICT', () => generateChapterDraft(book.id
   assertOk(getChapterByNumber(book.id, 5) === null, '被拦截章号未占用');
 }
 
-// Provider 网络失败 → AI_PROVIDER_FAILED
+// Provider 网络失败 → AI_PROVIDER_FAILED,且错误信息展开根因(不再是笼统的 "fetch failed")
 {
-  const dead = createOpenAiCompatibleProvider({ baseUrl: 'http://127.0.0.1:9', apiKey: 'x', model: 'x' });
-  await assertThrows('AI_PROVIDER_FAILED', () => generateChapterDraft(book.id, { provider: dead }), '网络失败 → AI_PROVIDER_FAILED');
+  // 借一个确定已关闭的端口,拿到真实的连接拒绝(ECONNREFUSED)
+  const deadServer = http.createServer();
+  const deadPort = await new Promise<number>((res) =>
+    deadServer.listen(0, '127.0.0.1', () => res((deadServer.address() as { port: number }).port))
+  );
+  await new Promise<void>((res) => deadServer.close(() => res()));
+  const dead = createOpenAiCompatibleProvider({ baseUrl: `http://127.0.0.1:${deadPort}`, apiKey: 'x', model: 'x' });
+  try {
+    await generateChapterDraft(book.id, { provider: dead });
+    assertOk(false, '网络失败 → AI_PROVIDER_FAILED(未抛错)');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    assertOk(err instanceof CoreError && err.code === 'AI_PROVIDER_FAILED', '网络失败 → AI_PROVIDER_FAILED');
+    assertOk(msg.includes('ECONNREFUSED'), `错误信息含连接拒绝根因(${msg.slice(0, 90)})`);
+  }
+}
+
+// 上游挂起 → 请求超时中断(AI_FETCH_TIMEOUT_MS),不再无限等待拖死队列
+{
+  process.env.AI_FETCH_TIMEOUT_MS = '400';
+  const slow = createOpenAiCompatibleProvider({ baseUrl: `${MOCK_BASE}/hang`, apiKey: 'x', model: 'x' });
+  const t0 = Date.now();
+  try {
+    await generateChapterDraft(book.id, { provider: slow });
+    assertOk(false, '上游挂起 → 超时中断(未抛错)');
+  } catch (err) {
+    assertOk(err instanceof CoreError && err.code === 'AI_PROVIDER_FAILED', '上游挂起 → 超时中断为 AI_PROVIDER_FAILED');
+    const elapsed = Date.now() - t0;
+    assertOk(elapsed < 15_000, `超时在退避重试后返回(${elapsed}ms)`);
+  } finally {
+    delete process.env.AI_FETCH_TIMEOUT_MS;
+  }
 }
 
 server.close();

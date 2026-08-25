@@ -128,7 +128,7 @@ export default function AdminShell({ children }: { children: ReactNode }) {
             <BookOpen size={20} aria-hidden />
           </span>
           <span className={`min-w-0 ${collapsed ? 'md:hidden' : ''}`}>
-            <span className="block truncate text-[15px] font-semibold leading-tight text-[#1e293b]">AI文学·内容中台</span>
+            <span className="block truncate text-[15px] font-semibold leading-tight text-[#1e293b]">云雀小说·内容中台</span>
             <span className="block text-[10px] leading-tight text-[#94a3b8]">{APP_VERSION}</span>
           </span>
           <button aria-label="关闭菜单" className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-[#94a3b8] hover:bg-[#f1f5f9] md:hidden" onClick={() => setDrawer(false)}>

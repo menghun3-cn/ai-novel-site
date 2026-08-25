@@ -200,7 +200,10 @@ PUBLISH_TICK_SECONDS=60 NOVEL_DATA_DIR=/var/lib/novel npm run scheduler &
 | `PORT` | Web 监听端口 | `3000`(compose 内为 33000) |
 | `NOVEL_SITE_URL` | RSS/Sitemap 站点地址 | `http://localhost:33000` |
 | `PUBLISH_TICK_SECONDS` | 调度器扫描间隔(≥5) | `60` |
+| `AI_FETCH_TIMEOUT_MS` | LLM 上游单次请求超时 | `300000`(5 分钟) |
 | `ADMIN_TOKEN` | 可选机器令牌(Bearer/x-admin-token),供脚本集成;账号会话不受影响 | 未配置 |
+
+> 每日连载/自动发布的「时刻」均按**北京时间**(UTC+8)解释,与宿主机时区无关;compose 已为容器设置 `TZ=Asia/Shanghai`。
 
 ### 上线核对清单
 
