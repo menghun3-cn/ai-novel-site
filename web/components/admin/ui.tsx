@@ -230,3 +230,40 @@ export function Spinner({ size = 16 }: { size?: number }): ReactNode {
     </svg>
   );
 }
+
+// ---------- 分段标签(Tabs) ----------
+
+export interface TabItem<K extends string> {
+  key: K;
+  label: string;
+}
+
+/** 轻量分段控件(V9 创作中心/评审中心一级·二级导航用) */
+export function Tabs<K extends string>({
+  tabs,
+  value,
+  onChange,
+}: {
+  tabs: Array<TabItem<K>>;
+  value: K;
+  onChange: (key: K) => void;
+}) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-lg bg-[#f1f5f9] p-1" role="tablist">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          role="tab"
+          aria-selected={value === t.key}
+          onClick={() => onChange(t.key)}
+          className={`h-8 rounded-md px-4 text-sm font-medium transition-all duration-150 ${
+            value === t.key ? 'bg-white text-[#1677ff] shadow-sm' : 'text-[#64748b] hover:text-[#0f172a]'
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
