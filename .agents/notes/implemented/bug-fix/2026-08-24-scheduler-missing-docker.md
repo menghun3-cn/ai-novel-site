@@ -40,6 +40,24 @@ Add a `scheduler` service to `docker-compose.yml` as a sidecar:
 Dockerfile Stage 3 gains `COPY scripts/publish-scheduler.ts ./scripts/` so
 the entry point is present in the scheduler container.
 
+## Alternatives considered
+
+**Host crontab outside Docker.** A crontab on the deploy host running
+`npm run scheduler` avoids a second container, but the deployment contract
+is `docker-compose.yml` alone — node version, cwd, and env on the host
+become invisible parts of the system, and redeploys no longer carry the
+timer configuration.
+
+**HTTP-triggered cycle inside web.** An authenticated admin route calling
+`runAiSerializationCycle()` on demand reuses the running web process, but
+the cycle is timer-driven by design and still needs something to own the
+clock while widening the public surface for what is an internal batch job.
+
+**Background timer inside the web process.** Running the tick loop next to
+Next.js in one container drops the second service, yet couples unrelated
+lifecycles: a web crash or redeploy silently stops serialization, so the
+sidecar split keeps each concern independently restartable and observable.
+
 ## Consequences
 
 - `docker compose up -d` now starts **two** containers: `novel-web` and

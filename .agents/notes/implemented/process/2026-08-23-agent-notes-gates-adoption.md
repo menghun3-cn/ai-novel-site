@@ -16,8 +16,8 @@ records stay well-formed, classified, bilingual, and never silently rewritten.
 
 ## Decision
 
-Decision records live in `.agent/notes/` as **Agent Notes** — RFC-style notes
-governed by [.agent/notes/README.md](../../../.agent/notes/README.md). Every
+Decision records live in `.agents/notes/` as **Agent Notes** — RFC-style notes
+governed by [.agents/notes/README.md](../../../.agents/notes/README.md). Every
 non-trivial change adds or updates at least one Agent Note in the same PR.
 Notes move between `proposed/`, `implemented/`, and `rejected/`; fully retired
 implemented notes are frozen under `archived/`.
