@@ -6,6 +6,7 @@
 import { Bot, CalendarClock, Flame, ListChecks, Pencil, Plus, Sparkles, Trash2, Users } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api } from '@/lib/admin-client';
+import { formatChinaTime } from '@/lib/format';
 import {
   Badge,
   Button,
@@ -775,7 +776,7 @@ export default function AdminStoryPage() {
                     <option value="on">启用</option>
                   </Select>
                 </Field>
-                <Field label="每日时刻(0-23 点)">
+                <Field label="每日时刻(北京时间 0-23 点)">
                   <Input type="number" min={0} max={23} value={serialCfg.hour} onChange={(e) => setSerialCfg({ ...serialCfg, hour: e.target.value })} />
                 </Field>
                 <Field label="每日生成章数(1-20)">
@@ -830,7 +831,7 @@ export default function AdminStoryPage() {
                 </Button>
               </div>
               <p className="mt-3 text-xs leading-relaxed text-[#94a3b8]">
-                启用后由常驻调度器(npm run scheduler)每日到点自动执行;「立即处理队列」与调度器同一执行器。发布模式选「自动发布」即视为路线图中的人工确认放行。
+                启用后由常驻调度器(npm run scheduler)每日到点自动执行,「每日时刻」与任务列表时间均按北京时间;「立即处理队列」与调度器同一执行器。发布模式选「自动发布」即视为路线图中的人工确认放行。
               </p>
 
               <div className="mt-5 overflow-x-auto">
@@ -861,7 +862,7 @@ export default function AdminStoryPage() {
                           <td className="px-3 py-2.5 text-[#334155]">{j.chapterNumber ?? '—'}</td>
                           <td className="px-3 py-2.5 text-[#334155]">{j.chars ?? '—'}</td>
                           <td className="px-3 py-2.5 text-[#64748b]">{j.model ?? '—'}</td>
-                          <td className="px-3 py-2.5 text-[#64748b]">{j.updatedAt.slice(11, 19)}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-[#64748b]" title="北京时间">{formatChinaTime(j.updatedAt)}</td>
                           <td className="max-w-[220px] truncate px-3 py-2.5 text-[#b45309]" title={j.error ?? undefined}>
                             {j.error ?? '—'}
                           </td>

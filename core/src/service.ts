@@ -993,12 +993,21 @@ export function deleteTag(id: number): boolean {
 
 // ---------- V3:自动发布配置与发布周期 ----------
 
-/** 本地时区 YYYY-MM-DD 键(V5 AI 连载日守卫复用) */
-export function localDateKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+/**
+ * 中国时区(Asia/Shanghai,固定 UTC+8,无夏令时)换算。
+ * 调度器常跑在 Docker/海外服务器上,系统时区不可控(默认 UTC),
+ * 「每日 8 点」这类配置必须按北京时间解释;显式 +8 换算不依赖宿主机 TZ。
+ */
+const CHINA_UTC_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/** 中国时区 YYYY-MM-DD 键(V5 AI 连载日守卫复用) */
+export function chinaDateKey(d: Date): string {
+  return new Date(d.getTime() + CHINA_UTC_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** 中国时区小时(0-23) */
+export function chinaHourOfDay(d: Date): number {
+  return new Date(d.getTime() + CHINA_UTC_OFFSET_MS).getUTCHours();
 }
 
 /** 读取某书的自动发布配置;书不存在抛 BOOK_NOT_FOUND */
@@ -1066,14 +1075,14 @@ export function publishDueChapters(now = new Date()): number {
 }
 
 /**
- * 每日自动发布:对启用 autopilot 的书,当本地时刻已到配置小时且今天尚未触发时,
- * 从最旧的 draft 章节起发布 count 章,并记 lastRunDate(本地 YYYY-MM-DD)。
+ * 每日自动发布:对启用 autopilot 的书,当北京时间已到配置小时且今天(北京日期)尚未触发时,
+ * 从最旧的 draft 章节起发布 count 章,并记 lastRunDate(北京 YYYY-MM-DD)。
  */
 export function runAutopilot(now = new Date()): { books: number; published: number } {
   const db = getDb();
   const at = now.toISOString();
-  const today = localDateKey(now);
-  const hour = now.getHours();
+  const today = chinaDateKey(now);
+  const hour = chinaHourOfDay(now);
   const books = db
     .prepare('SELECT id, autopilot_hour, autopilot_count, autopilot_last_date FROM books WHERE autopilot_enabled = 1')
     .all() as Pick<BookRow, 'id' | 'autopilot_hour' | 'autopilot_count' | 'autopilot_last_date'>[];

@@ -31,6 +31,7 @@ FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=33000
+ENV TZ=Asia/Shanghai
 
 # 根 package.json(npm 工作区解析需要)
 COPY package.json     ./
