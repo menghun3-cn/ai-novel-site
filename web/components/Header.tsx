@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import ThemeToggle from './ThemeToggle';
 import ReaderMenu from './ReaderMenu';
-import pkg from '../package.json';
 
 const navLink =
   'rounded-md px-2 py-1.5 text-sm text-neutral-600 transition hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100 md:px-3';
@@ -11,9 +10,9 @@ export default function Header() {
     <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/90 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/90">
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-4 md:gap-3">
         <Link href="/" className="shrink-0">
-          <span className="block text-lg font-bold leading-tight tracking-widest">AI文学</span>
+          <span className="block text-lg font-bold leading-tight tracking-widest">云雀小说</span>
           <span className="block text-[10px] leading-tight text-neutral-400 dark:text-neutral-500">
-            v{pkg.version}
+            AI小说创作平台
           </span>
         </Link>
         <nav className="flex min-w-0 items-center gap-1">
