@@ -131,8 +131,10 @@ export interface ShortStory {
   sourceUrl: string | null;
   /** 累计评审次数 */
   reviewRound: number;
-  /** 累计自动优化次数(手动优化单独计数,见 optimizeRoundManual 语义说明) */
+  /** 累计自动优化次数(流水线内受 max_auto_optimize_rounds 约束) */
   optimizeRound: number;
+  /** 手动优化累计次数(不受自动轮数上限约束,独立计数) */
+  manualOptimizeRound: number;
   lastScore: number | null;
   createdAt: string;
   updatedAt: string;
@@ -290,6 +292,7 @@ export const AI_TASK_TYPES = [
   'AI_SUGGEST',
   'AI_GENERATE',
   'AI_OPTIMIZE',
+  'AI_OPTIMIZE_STORY',
   'AI_REVIEW',
   'AI_REVIEW_RETRY',
 ] as const;
@@ -330,6 +333,29 @@ export interface AiTask {
 /** 字段辅助动作(AI_SUGGEST/AI_GENERATE/AI_OPTIMIZE 三类任务的 input.action) */
 export const AI_ASSIST_ACTIONS = ['suggest', 'generate', 'optimize'] as const;
 export type AiAssistAction = (typeof AI_ASSIST_ACTIONS)[number];
+
+/** 短篇创作字段标签:评审/辅助提示词与前端 UI 共用,键与 StoryBrief 对齐 */
+export const SHORT_STORY_FIELD_LABELS: Readonly<Record<string, string>> = {
+  title: '标题',
+  theme: '小说主题',
+  genre: '小说类型',
+  direction: '故事方向',
+  coreConflict: '核心冲突',
+  background: '故事背景',
+  characters: '人物设定',
+  synopsis: '故事梗概',
+  beginning: '开端',
+  development: '发展',
+  conflictBeat: '冲突(情节节拍)',
+  climax: '高潮',
+  endingPlot: '结局',
+  targetWords: '目标字数',
+  narrativePerspective: '叙事视角',
+  languageStyle: '语言风格',
+  emotionalTone: '情绪基调',
+  pacing: '故事节奏',
+  endingType: '结局类型',
+};
 
 export interface Author {
   id: number;

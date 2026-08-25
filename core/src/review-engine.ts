@@ -51,6 +51,7 @@ function renderDimensions(dims: ReviewDimensionSpec[]): string {
 export interface BuiltReviewPrompt {
   system: string;
   prompt: string;
+  schemaDescription: string;
 }
 
 /** 组装评审 Prompt:模板 + 维度标准块 + 小说全文 */
@@ -74,6 +75,7 @@ export function buildReviewPrompt(input: {
   return {
     system: '你是严格的短篇小说评审专家,只输出符合格式要求的 JSON,不做任何解释。',
     prompt,
+    schemaDescription: SCHEMA_DESCRIPTION,
   };
 }
 

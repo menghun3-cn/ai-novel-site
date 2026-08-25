@@ -47,6 +47,8 @@
     "test:review-prompt": "tsx scripts/verify-review-prompt.ts",
     "test:structured-output": "tsx scripts/verify-structured-output.ts",
     "test:review-engine": "tsx scripts/verify-review-engine.ts",
+    "test:auto-optimize": "tsx scripts/verify-auto-optimize.ts",
+    "test:ai-assist": "tsx scripts/verify-ai-assist.ts",
     "test:reader": "tsx scripts/verify-reader.ts",
     "test:reader-api": "tsx scripts/verify-reader-api.ts",
     "test:discovery": "tsx scripts/verify-discovery.ts",

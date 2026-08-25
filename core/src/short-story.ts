@@ -72,6 +72,7 @@ interface StoryRow {
   source_url: string | null;
   review_round: number;
   optimize_round: number;
+  manual_optimize_round: number;
   last_score: number | null;
   created_at: string;
   updated_at: string;
@@ -96,6 +97,7 @@ function toStory(row: StoryRow): ShortStory {
     sourceUrl: row.source_url,
     reviewRound: row.review_round,
     optimizeRound: row.optimize_round,
+    manualOptimizeRound: row.manual_optimize_round,
     lastScore: row.last_score,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -313,7 +315,7 @@ export function transitionStory(id: string, status: ShortStoryStatus): ShortStor
 /** 评审/优化轮次自增(引擎每次执行后调用),并回写最近评分 */
 export function bumpStoryProgress(
   id: string,
-  patch: { reviewDelta?: number; optimizeDelta?: number; lastScore?: number }
+  patch: { reviewDelta?: number; optimizeDelta?: number; manualOptimizeDelta?: number; lastScore?: number }
 ): ShortStory {
   getShortStory(id);
   const db = getDb();
@@ -321,10 +323,18 @@ export function bumpStoryProgress(
     `UPDATE short_stories SET
        review_round = review_round + ?,
        optimize_round = optimize_round + ?,
+       manual_optimize_round = manual_optimize_round + ?,
        last_score = COALESCE(?, last_score),
        updated_at = ?
      WHERE id = ?`
-  ).run(patch.reviewDelta ?? 0, patch.optimizeDelta ?? 0, patch.lastScore ?? null, new Date().toISOString(), id);
+  ).run(
+    patch.reviewDelta ?? 0,
+    patch.optimizeDelta ?? 0,
+    patch.manualOptimizeDelta ?? 0,
+    patch.lastScore ?? null,
+    new Date().toISOString(),
+    id
+  );
   return getShortStory(id);
 }
 

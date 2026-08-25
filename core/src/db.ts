@@ -302,6 +302,7 @@ CREATE TABLE IF NOT EXISTS short_stories (
   source_url TEXT,
   review_round INTEGER NOT NULL DEFAULT 0,
   optimize_round INTEGER NOT NULL DEFAULT 0,
+  manual_optimize_round INTEGER NOT NULL DEFAULT 0,
   last_score INTEGER,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -476,6 +477,17 @@ function migrateAnalyticsColumns(_db: Database.Database): void {
   // 此处保留为后续可能添加的新列预留迁移点。
 }
 
+/**
+ * 轻量迁移:V9——short_stories 补手动优化独立计数列
+ * (自动流水线受 max_auto_optimize_rounds 约束,手动优化单独计数)。
+ */
+function migrateShortStoryColumns(db: Database.Database): void {
+  const cols = (db.prepare('PRAGMA table_info(short_stories)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('manual_optimize_round')) {
+    db.exec('ALTER TABLE short_stories ADD COLUMN manual_optimize_round INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
 export function getDb(): Database.Database {
   if (!sqlite) {
     ensureDataDir();
@@ -488,6 +500,7 @@ export function getDb(): Database.Database {
     migrateJobOptionColumns(sqlite);
     migrateDiscoveryColumns(sqlite);
     migrateAnalyticsColumns(sqlite);
+    migrateShortStoryColumns(sqlite);
   }
   return sqlite;
 }

@@ -16,3 +16,6 @@ export * from './review-prompt';
 export * from './ai-task';
 export * from './structured-output';
 export * from './review-engine';
+export * from './optimize-engine';
+export * from './ai-assist';
+export * from './short-story-pipeline';
