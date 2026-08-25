@@ -47,6 +47,7 @@ export default function ShortStoryReader({
       </header>
 
       <div
+        id="short-story-content"
         className="prose prose-neutral max-w-none dark:prose-invert prose-p:leading-loose prose-p:my-4"
         dangerouslySetInnerHTML={{ __html: html }}
       />

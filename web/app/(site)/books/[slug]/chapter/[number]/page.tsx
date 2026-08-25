@@ -4,6 +4,7 @@ import { getChapterView } from '@novel/core';
 import { mdToHtml } from '@/lib/markdown';
 import { chapterLabel } from '@/lib/format';
 import ReaderControls from '@/components/ReaderControls';
+import TtsPlayer from '@/components/TtsPlayer';
 import ReadingProgress from '@/components/ReadingProgress';
 import RememberRead from '@/components/RememberRead';
 import ScrollRestore from '@/components/ScrollRestore';
@@ -62,9 +63,10 @@ export default async function ChapterPage({
       </div>
 
       <ReaderControls bookSlug={book.slug} chapterNumber={chapter.number} />
+      <TtsPlayer contentSelector="#article-content" />
 
       {/* 正文 - 移动端自适应 */}
-      <article className="article" dangerouslySetInnerHTML={{ __html: html }} />
+      <article id="article-content" className="article" dangerouslySetInnerHTML={{ __html: html }} />
 
       {/* 底部导航 - 移动端更大的触控目标 */}
       <nav className="mt-8 flex items-center justify-between border-t border-neutral-200 pt-4 text-sm dark:border-neutral-800 sm:mt-12 sm:pt-5">

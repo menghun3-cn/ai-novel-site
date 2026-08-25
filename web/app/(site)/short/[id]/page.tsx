@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { getShortStory, getBookById, latestPublicationByStory, getStoryVersion, CoreError } from '@novel/core';
 import { mdToHtml } from '@/lib/markdown';
 import ShortStoryReader from '@/components/ShortStoryReader';
+import TtsPlayer from '@/components/TtsPlayer';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,5 +32,10 @@ export default async function ShortStoryPage({ params }: { params: Promise<{ id:
   if (!book || book.status === 'hidden') notFound();
   const version = getStoryVersion(pub.versionId);
   const html = await mdToHtml(version.content);
-  return <ShortStoryReader book={book} story={story} publication={pub} html={html} />;
+  return (
+    <>
+      <TtsPlayer contentSelector="#short-story-content" />
+      <ShortStoryReader book={book} story={story} publication={pub} html={html} />
+    </>
+  );
 }
