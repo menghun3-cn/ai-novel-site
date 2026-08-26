@@ -1171,11 +1171,32 @@ export default function AdminReviewCenterPage() {
 
 // ---------- 质量数据子组件 ----------
 
+interface TrendPoint {
+  date: string;
+  chapterCount: number;
+  arcCount: number;
+  chapterAvgScore: number | null;
+}
+interface DimensionAvg {
+  name: string;
+  avg: number;
+  count: number;
+}
+interface TrendStats {
+  days: TrendPoint[];
+  chapterDimensionAverages: DimensionAvg[];
+  arcSummary: { total: number; qualified: number; avgScore: number | null };
+}
+
 function QualityStats(): React.ReactElement {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [trend, setTrend] = useState<TrendStats | null>(null);
   useEffect(() => {
-    api<{ stats: Stats }>('/api/admin/review/stats')
-      .then((res) => setStats(res.stats))
+    api<{ stats: Stats; trend: TrendStats | null }>('/api/admin/review/stats')
+      .then((res) => {
+        setStats(res.stats);
+        setTrend(res.trend);
+      })
       .catch(() => setStats(null));
   }, []);
   const cards: Array<{ label: string; value: string; hint?: string }> = stats
@@ -1188,19 +1209,81 @@ function QualityStats(): React.ReactElement {
         { label: '低质量池', value: String(stats.poolStories), hint: '三轮优化仍未达标的篇目' },
       ]
     : [];
+  const maxDaily = trend ? Math.max(1, ...trend.days.map((d) => Math.max(d.chapterCount, d.arcCount))) : 1;
   return (
-    <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-      {stats === null ? (
-        <p className="col-span-full py-8 text-center text-sm text-[#94a3b8]">统计加载中…</p>
-      ) : (
-        cards.map((c) => (
-          <div key={c.label} className="rounded-xl border border-[#f1f5f9] p-4">
-            <p className="text-xs text-[#94a3b8]">{c.label}</p>
-            <p className="mt-1 text-2xl font-bold text-[#0f172a]">{c.value}</p>
-            {c.hint ? <p className="mt-1 text-[11px] text-[#cbd5e1]">{c.hint}</p> : null}
+    <div className="mt-5 space-y-5">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+        {stats === null ? (
+          <p className="col-span-full py-8 text-center text-sm text-[#94a3b8]">统计加载中…</p>
+        ) : (
+          cards.map((c) => (
+            <div key={c.label} className="rounded-xl border border-[#f1f5f9] p-4">
+              <p className="text-xs text-[#94a3b8]">{c.label}</p>
+              <p className="mt-1 text-2xl font-bold text-[#0f172a]">{c.value}</p>
+              {c.hint ? <p className="mt-1 text-[11px] text-[#cbd5e1]">{c.hint}</p> : null}
+            </div>
+          ))
+        )}
+      </div>
+
+      {trend ? (
+        <>
+          {/* 7 日评审量趋势(章节 + 弧级) */}
+          <div className="rounded-xl border border-[#f1f5f9] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[#0f172a]">近 7 日评审量</h3>
+              <span className="flex items-center gap-3 text-xs text-[#94a3b8]">
+                <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-sm bg-[#1677ff]" />章节</span>
+                <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-sm bg-[#8b5cf6]" />弧级</span>
+                <span>弧评累计 {trend.arcSummary.total} 次 · 均分 {trend.arcSummary.avgScore ?? '—'}</span>
+              </span>
+            </div>
+            <div className="flex items-end gap-2" style={{ height: 120 }}>
+              {trend.days.map((d) => (
+                <div key={d.date} className="flex flex-1 flex-col items-center gap-1">
+                  <div className="flex h-[96px] w-full items-end justify-center gap-0.5">
+                    <div
+                      className="w-1/3 rounded-t bg-[#1677ff]/85"
+                      style={{ height: `${(d.chapterCount / maxDaily) * 100}%`, minHeight: d.chapterCount > 0 ? 4 : 0 }}
+                      title={`${d.date} 章节评审 ${d.chapterCount} 次${d.chapterAvgScore !== null ? `,均分 ${d.chapterAvgScore}` : ''}`}
+                    />
+                    <div
+                      className="w-1/3 rounded-t bg-[#8b5cf6]/85"
+                      style={{ height: `${(d.arcCount / maxDaily) * 100}%`, minHeight: d.arcCount > 0 ? 4 : 0 }}
+                      title={`${d.date} 弧级评审 ${d.arcCount} 次`}
+                    />
+                  </div>
+                  <span className="text-[10px] text-[#94a3b8]">{d.date.slice(5)}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        ))
-      )}
+
+          {/* 章节维度均分(薄弱在前) */}
+          {trend.chapterDimensionAverages.length > 0 ? (
+            <div className="rounded-xl border border-[#f1f5f9] p-4">
+              <h3 className="mb-3 text-sm font-semibold text-[#0f172a]">
+                章节维度均分<span className="ml-2 text-xs font-normal text-[#94a3b8]">按均分升序(薄弱在前)</span>
+              </h3>
+              <div className="space-y-2">
+                {trend.chapterDimensionAverages.map((dim) => (
+                  <div key={dim.name} className="flex items-center gap-3">
+                    <span className="w-24 shrink-0 truncate text-xs text-[#64748b]">{dim.name}</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded bg-[#f1f5f9]">
+                      <div
+                        className={`h-full rounded ${dim.avg >= 80 ? 'bg-[#10b981]' : dim.avg >= 60 ? 'bg-[#1677ff]' : 'bg-[#f59e0b]'}`}
+                        style={{ width: `${Math.min(100, dim.avg)}%` }}
+                      />
+                    </div>
+                    <span className="w-16 shrink-0 text-right text-xs font-medium text-[#0f172a]">{dim.avg}<span className="text-[10px] text-[#94a3b8]">/100</span></span>
+                    <span className="w-16 shrink-0 text-right text-[10px] text-[#cbd5e1]">{dim.count} 样本</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 }

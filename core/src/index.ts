@@ -23,3 +23,4 @@ export * from './short-story-publication';
 export * from './chapter-review';
 export * from './arc-review';
 export * from './chapter-optimize';
+export * from './review-stats';
