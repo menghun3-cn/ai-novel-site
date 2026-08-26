@@ -3,7 +3,7 @@
 // AI 评审中心(V9 规格书 §23-§31):二级 Tab——评审任务 / 评审记录 / 评审规则 / Prompt 版本 / 质量数据。
 // 全链路可追溯:小说哪个版本、规则与 Prompt 哪一版、哪个模型、第几次优化、原始响应。
 
-import { FileSearch, Pencil, Plus, RefreshCw, Send, Trash2 } from 'lucide-react';
+import { FileSearch, GitCompare, Pencil, Plus, RefreshCw, Send, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/admin-client';
 import { formatChinaTime } from '@/lib/format';
@@ -69,6 +69,12 @@ interface RecordItem {
   durationMs: number | null;
   rawResponse: string | null;
   createdAt: string;
+}
+/** V9.5 补丁:章节评审记录(差异对比用);storyId 为 null */
+interface ChapterReviewDetail extends Omit<RecordItem, 'storyId' | 'storyVersionId'> {
+  storyId: string | null;
+  storyVersionId: string | null;
+  chapterId: string | null;
 }
 interface DimensionSpec {
   name: string;
@@ -227,6 +233,11 @@ export default function AdminReviewCenterPage() {
   const [arcDraft, setArcDraft] = useState<{ arcLabel: string; fromChapter: number; toChapter: number }>({ arcLabel: '', fromChapter: 1, toChapter: 1 });
   const [enqueuing, setEnqueuing] = useState(false);
   const [loadingReview, setLoadingReview] = useState(false);
+  // V9.5 补丁:同章多次评审差异对比
+  const [compareTarget, setCompareTarget] = useState<{ id: string; title: string; number: number } | null>(null);
+  const [compareRecords, setCompareRecords] = useState<ChapterReviewDetail[] | null>(null);
+  // V9.5 补丁:章节批量入队
+  const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
 
   const loadAll = useCallback(async (): Promise<void> => {
     setError(null);
@@ -413,6 +424,7 @@ export default function AdminReviewCenterPage() {
     setChapterRows(null);
     setArcRecords(null);
     setArcSuggestion(null);
+    setSelectedChapterIds(new Set());
     try {
       // 1) 章节列表
       const chRes = await api<{
@@ -503,6 +515,59 @@ export default function AdminReviewCenterPage() {
     }
   };
 
+  // V9.5 补丁:打开同章多评差异对比
+  const openCompare = async (chapter: { id: string; title: string; number: number }): Promise<void> => {
+    setCompareTarget(chapter);
+    setCompareRecords(null);
+    try {
+      const res = await api<{ items: ChapterReviewDetail[] }>(
+        `/api/admin/chapter-reviews?chapterId=${encodeURIComponent(chapter.id)}`
+      );
+      setCompareRecords([...res.items].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载对比数据失败');
+      setCompareTarget(null);
+    }
+  };
+
+  // V9.5 补丁:批量入队章节评审(逐章校验,失败不阻塞)
+  const batchEnqueueChapterReviews = async (): Promise<void> => {
+    if (selectedChapterIds.size === 0) return;
+    setEnqueuing(true);
+    try {
+      const res = await api<{
+        enqueuedCount: number;
+        skippedCount: number;
+        skipped: Array<{ chapterId: string; reason: string }>;
+      }>('/api/admin/chapter-reviews', {
+        method: 'POST',
+        body: JSON.stringify({ chapterIds: [...selectedChapterIds] }),
+      });
+      const skipHint =
+        res.skippedCount > 0 ? `,${res.skippedCount} 跳过(${res.skipped[0]?.reason ?? ''}${res.skippedCount > 1 ? ' 等' : ''})` : '';
+      setNotice(`批量入队完成:${res.enqueuedCount} 成功${skipHint}`);
+      setSelectedChapterIds(new Set());
+      setTimeout(() => selectedBookId && void loadBookReviewData(selectedBookId), 800);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '批量入队失败');
+    } finally {
+      setEnqueuing(false);
+    }
+  };
+
+  // 弧评区间模板(V9.5 补丁):按当前书目数据预填 from/to
+  const applyArcTemplate = (kind: 'all' | 'since-last' | 'recent'): void => {
+    const total = chapterRows?.length ?? 1;
+    if (kind === 'all') {
+      setArcDraft({ ...arcDraft, fromChapter: 1, toChapter: total });
+    } else if (kind === 'since-last') {
+      const lastTo = arcRecords && arcRecords.length > 0 ? Math.max(...arcRecords.map((a) => a.toChapter)) : 0;
+      setArcDraft({ ...arcDraft, fromChapter: Math.min(lastTo + 1, total), toChapter: total });
+    } else {
+      setArcDraft({ ...arcDraft, fromChapter: Math.max(1, total - 4), toChapter: total });
+    }
+  };
+
   const enqueueArcReviewAction = async (): Promise<void> => {
     if (!selectedBookId) return;
     if (!arcDraft.arcLabel.trim() || arcDraft.fromChapter <= 0 || arcDraft.toChapter <= 0 || arcDraft.fromChapter > arcDraft.toChapter) {
@@ -569,8 +634,45 @@ export default function AdminReviewCenterPage() {
         <EmptyState icon={<FileSearch size={24} />} title="该书暂无章节" description="先在「长篇工作台」新增章节并发布" />
       ) : (
         <div className="space-y-2">
+          {/* 批量入队工具条(V9.5 补丁) */}
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#f1f5f9] bg-[#f8fafc] px-4 py-2.5 text-sm">
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[#64748b]">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-[#1677ff]"
+                checked={selectedChapterIds.size === chapterRows.filter((c) => c.status === 'published').length && selectedChapterIds.size > 0}
+                onChange={(e) =>
+                  setSelectedChapterIds(e.target.checked ? new Set(chapterRows.filter((c) => c.status === 'published').map((c) => c.id)) : new Set())
+                }
+              />
+              全选已发布
+            </label>
+            <span className="text-xs text-[#94a3b8]">已选 {selectedChapterIds.size} 章</span>
+            <Button
+              variant="primary"
+              size="xs"
+              disabled={selectedChapterIds.size === 0 || enqueuing}
+              onClick={() => void batchEnqueueChapterReviews()}
+              title="对选中章节逐章入队评审任务(已有待处理任务的章节自动跳过)"
+            >
+              <Send size={12} /> 批量入队评审
+            </Button>
+          </div>
           {chapterRows.map((c) => (
             <div key={c.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f1f5f9] px-4 py-3">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-[#1677ff]"
+                checked={selectedChapterIds.has(c.id)}
+                disabled={c.status !== 'published'}
+                onChange={(e) => {
+                  const next = new Set(selectedChapterIds);
+                  if (e.target.checked) next.add(c.id);
+                  else next.delete(c.id);
+                  setSelectedChapterIds(next);
+                }}
+                title={c.status !== 'published' ? '仅已发布章节可入队' : undefined}
+              />
               <span className="text-xs font-medium text-[#64748b]">第 {c.number} 章</span>
               <span className="min-w-0 flex-1 truncate text-sm text-[#0f172a]">{c.title}</span>
               <Badge tone={c.status === 'published' ? 'success' : 'info'}>
@@ -598,6 +700,15 @@ export default function AdminReviewCenterPage() {
               >
                 <Send size={12} /> 入队评审
               </Button>
+              {c.latestScore !== null ? (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => void openCompare({ id: c.id, title: c.title, number: c.number })}
+                >
+                  <GitCompare size={12} /> 对比
+                </Button>
+              ) : null}
             </div>
           ))}
         </div>
@@ -656,7 +767,26 @@ export default function AdminReviewCenterPage() {
           ) : null}
 
           <div className="rounded-xl border border-[#f1f5f9] p-4">
-            <h3 className="mb-3 text-sm font-semibold text-[#0f172a]">新建弧评任务</h3>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[#0f172a]">新建弧评任务</h3>
+              <span className="flex items-center gap-1.5 text-xs text-[#94a3b8]">
+                快速填区间:
+                <Button variant="ghost" size="xs" onClick={() => applyArcTemplate('all')} title="第 1 章 → 最新章">
+                  全书
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => applyArcTemplate('since-last')}
+                  title="上次弧评结束的下一章 → 最新章"
+                >
+                  上次弧评后
+                </Button>
+                <Button variant="ghost" size="xs" onClick={() => applyArcTemplate('recent')} title="最近 5 章">
+                  最近 5 章
+                </Button>
+              </span>
+            </div>
             <div className="grid gap-3 sm:grid-cols-4">
               <Field label="弧标签">
                 <Input
@@ -1163,6 +1293,104 @@ export default function AdminReviewCenterPage() {
         onCancel={() => setDisableTarget(null)}
       />
 
+      {/* 同章多评差异对比(V9.5 补丁) */}
+      <Modal
+        open={compareTarget !== null}
+        title={`评审对比 · 第 ${compareTarget?.number ?? ''} 章 ${compareTarget?.title ?? ''}`}
+        onClose={() => setCompareTarget(null)}
+      >
+        {compareRecords === null ? (
+          <p className="py-8 text-center"><Spinner /></p>
+        ) : compareRecords.length === 0 ? (
+          <p className="py-8 text-center text-sm text-[#94a3b8]">暂无评审记录</p>
+        ) : compareRecords.length === 1 ? (
+          <p className="py-6 text-center text-sm text-[#94a3b8]">
+            该章仅有 1 次评审({compareRecords[0].score} 分,{formatChinaTime(compareRecords[0].createdAt)});再入队一次评审后即可对比
+          </p>
+        ) : (
+          <div className="space-y-5">
+            {/* 分数轨迹 */}
+            <div>
+              <h4 className="mb-2 text-xs font-semibold text-[#64748b]">分数轨迹({compareRecords.length} 次评审)</h4>
+              <div className="flex flex-wrap items-end gap-1.5">
+                {compareRecords.map((r, i) => {
+                  const prev = i > 0 ? compareRecords[i - 1] : null;
+                  const delta = prev ? r.score - prev.score : 0;
+                  return (
+                    <div key={r.id} className="flex items-center gap-1.5">
+                      {i > 0 ? (
+                        <span
+                          className={`text-[11px] font-medium ${
+                            delta > 0 ? 'text-[#047857]' : delta < 0 ? 'text-[#b45309]' : 'text-[#94a3b8]'
+                          }`}
+                        >
+                          {delta > 0 ? `+${delta}` : delta < 0 ? String(delta) : '±0'}
+                        </span>
+                      ) : null}
+                      <div
+                        className={`flex min-w-[64px] flex-col items-center rounded-lg border px-2 py-1.5 ${
+                          r.qualified ? 'border-[#a7f3d0] bg-[#ecfdf5]' : 'border-[#fde68a] bg-[#fffbeb]'
+                        }`}
+                        title={`规则 ${r.ruleVersion} · ${r.modelName ?? '—'} · 第${r.reviewRound}评`}
+                      >
+                        <span className={`text-lg font-bold leading-none ${r.qualified ? 'text-[#047857]' : 'text-[#b45309]'}`}>
+                          {r.score}
+                        </span>
+                        <Badge tone={r.level === 'S' || r.level === 'A' ? 'success' : r.level === 'B' ? 'info' : 'warning'}>{r.level}</Badge>
+                        <span className="mt-0.5 text-[10px] text-[#94a3b8]">{formatChinaTime(r.createdAt)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 维度对比:首评 vs 最新 */}
+            <div>
+              <h4 className="mb-2 text-xs font-semibold text-[#64748b]">维度对比(首评 → 最新)</h4>
+              <div className="space-y-1.5">
+                {(compareRecords[compareRecords.length - 1]?.dimensionScores ?? []).map((latestDim) => {
+                  const first = compareRecords[0].dimensionScores.find((d) => d.name === latestDim.name);
+                  const delta = first ? latestDim.score - first.score : null;
+                  return (
+                    <div key={latestDim.name} className="flex items-center gap-3 text-sm">
+                      <span className="w-24 shrink-0 truncate text-xs text-[#64748b]">{latestDim.name}</span>
+                      <span className="w-12 text-right text-xs text-[#94a3b8]">{first?.score ?? '—'}</span>
+                      <span className="text-[10px] text-[#cbd5e1]">→</span>
+                      <span className="w-12 text-right text-xs font-medium text-[#0f172a]">{latestDim.score}</span>
+                      <span
+                        className={`w-12 text-right text-xs font-semibold ${
+                          delta === null ? 'text-[#cbd5e1]' : delta > 0 ? 'text-[#047857]' : delta < 0 ? 'text-[#b45309]' : 'text-[#94a3b8]'
+                        }`}
+                      >
+                        {delta === null ? '—' : delta > 0 ? `↑${delta}` : delta < 0 ? `↓${Math.abs(delta)}` : '—'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 最新一次的问题与建议 */}
+            {(() => {
+              const latestRec = compareRecords[compareRecords.length - 1];
+              if (!latestRec || (latestRec.weaknesses.length === 0 && latestRec.suggestions.length === 0)) return null;
+              return (
+                <div className="rounded-lg bg-[#f8fafc] p-3 text-xs">
+                  <p className="mb-1 font-semibold text-[#64748b]">最新评审遗留问题(优化任务将逐条解决)</p>
+                  {latestRec.weaknesses.map((w, i) => (
+                    <p key={`w${i}`} className="text-[#b45309]">· 问题:{w}</p>
+                  ))}
+                  {latestRec.suggestions.map((s, i) => (
+                    <p key={`s${i}`} className="text-[#1677ff]">· 建议:{s}</p>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </Modal>
+
       {/* 质量数据 */}
       {tab === 'stats' ? <QualityStats /> : null}
     </div>
@@ -1171,11 +1399,32 @@ export default function AdminReviewCenterPage() {
 
 // ---------- 质量数据子组件 ----------
 
+interface TrendPoint {
+  date: string;
+  chapterCount: number;
+  arcCount: number;
+  chapterAvgScore: number | null;
+}
+interface DimensionAvg {
+  name: string;
+  avg: number;
+  count: number;
+}
+interface TrendStats {
+  days: TrendPoint[];
+  chapterDimensionAverages: DimensionAvg[];
+  arcSummary: { total: number; qualified: number; avgScore: number | null };
+}
+
 function QualityStats(): React.ReactElement {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [trend, setTrend] = useState<TrendStats | null>(null);
   useEffect(() => {
-    api<{ stats: Stats }>('/api/admin/review/stats')
-      .then((res) => setStats(res.stats))
+    api<{ stats: Stats; trend: TrendStats | null }>('/api/admin/review/stats')
+      .then((res) => {
+        setStats(res.stats);
+        setTrend(res.trend);
+      })
       .catch(() => setStats(null));
   }, []);
   const cards: Array<{ label: string; value: string; hint?: string }> = stats
@@ -1188,19 +1437,81 @@ function QualityStats(): React.ReactElement {
         { label: '低质量池', value: String(stats.poolStories), hint: '三轮优化仍未达标的篇目' },
       ]
     : [];
+  const maxDaily = trend ? Math.max(1, ...trend.days.map((d) => Math.max(d.chapterCount, d.arcCount))) : 1;
   return (
-    <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-      {stats === null ? (
-        <p className="col-span-full py-8 text-center text-sm text-[#94a3b8]">统计加载中…</p>
-      ) : (
-        cards.map((c) => (
-          <div key={c.label} className="rounded-xl border border-[#f1f5f9] p-4">
-            <p className="text-xs text-[#94a3b8]">{c.label}</p>
-            <p className="mt-1 text-2xl font-bold text-[#0f172a]">{c.value}</p>
-            {c.hint ? <p className="mt-1 text-[11px] text-[#cbd5e1]">{c.hint}</p> : null}
+    <div className="mt-5 space-y-5">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+        {stats === null ? (
+          <p className="col-span-full py-8 text-center text-sm text-[#94a3b8]">统计加载中…</p>
+        ) : (
+          cards.map((c) => (
+            <div key={c.label} className="rounded-xl border border-[#f1f5f9] p-4">
+              <p className="text-xs text-[#94a3b8]">{c.label}</p>
+              <p className="mt-1 text-2xl font-bold text-[#0f172a]">{c.value}</p>
+              {c.hint ? <p className="mt-1 text-[11px] text-[#cbd5e1]">{c.hint}</p> : null}
+            </div>
+          ))
+        )}
+      </div>
+
+      {trend ? (
+        <>
+          {/* 7 日评审量趋势(章节 + 弧级) */}
+          <div className="rounded-xl border border-[#f1f5f9] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[#0f172a]">近 7 日评审量</h3>
+              <span className="flex items-center gap-3 text-xs text-[#94a3b8]">
+                <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-sm bg-[#1677ff]" />章节</span>
+                <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-sm bg-[#8b5cf6]" />弧级</span>
+                <span>弧评累计 {trend.arcSummary.total} 次 · 均分 {trend.arcSummary.avgScore ?? '—'}</span>
+              </span>
+            </div>
+            <div className="flex items-end gap-2" style={{ height: 120 }}>
+              {trend.days.map((d) => (
+                <div key={d.date} className="flex flex-1 flex-col items-center gap-1">
+                  <div className="flex h-[96px] w-full items-end justify-center gap-0.5">
+                    <div
+                      className="w-1/3 rounded-t bg-[#1677ff]/85"
+                      style={{ height: `${(d.chapterCount / maxDaily) * 100}%`, minHeight: d.chapterCount > 0 ? 4 : 0 }}
+                      title={`${d.date} 章节评审 ${d.chapterCount} 次${d.chapterAvgScore !== null ? `,均分 ${d.chapterAvgScore}` : ''}`}
+                    />
+                    <div
+                      className="w-1/3 rounded-t bg-[#8b5cf6]/85"
+                      style={{ height: `${(d.arcCount / maxDaily) * 100}%`, minHeight: d.arcCount > 0 ? 4 : 0 }}
+                      title={`${d.date} 弧级评审 ${d.arcCount} 次`}
+                    />
+                  </div>
+                  <span className="text-[10px] text-[#94a3b8]">{d.date.slice(5)}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        ))
-      )}
+
+          {/* 章节维度均分(薄弱在前) */}
+          {trend.chapterDimensionAverages.length > 0 ? (
+            <div className="rounded-xl border border-[#f1f5f9] p-4">
+              <h3 className="mb-3 text-sm font-semibold text-[#0f172a]">
+                章节维度均分<span className="ml-2 text-xs font-normal text-[#94a3b8]">按均分升序(薄弱在前)</span>
+              </h3>
+              <div className="space-y-2">
+                {trend.chapterDimensionAverages.map((dim) => (
+                  <div key={dim.name} className="flex items-center gap-3">
+                    <span className="w-24 shrink-0 truncate text-xs text-[#64748b]">{dim.name}</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded bg-[#f1f5f9]">
+                      <div
+                        className={`h-full rounded ${dim.avg >= 80 ? 'bg-[#10b981]' : dim.avg >= 60 ? 'bg-[#1677ff]' : 'bg-[#f59e0b]'}`}
+                        style={{ width: `${Math.min(100, dim.avg)}%` }}
+                      />
+                    </div>
+                    <span className="w-16 shrink-0 text-right text-xs font-medium text-[#0f172a]">{dim.avg}<span className="text-[10px] text-[#94a3b8]">/100</span></span>
+                    <span className="w-16 shrink-0 text-right text-[10px] text-[#cbd5e1]">{dim.count} 样本</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 }

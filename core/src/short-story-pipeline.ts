@@ -20,11 +20,13 @@ import {
   startAiTask,
 } from './ai-task';
 import { getActiveRuleVersion } from './review-rule';
+import { getDb } from './db';
 import { getReviewRecord, latestReviewForVersion, runAutoReview } from './review-engine';
 import { runOptimization } from './optimize-engine';
 import { executeAssistTask, type AssistTaskInput } from './ai-assist';
 import { runChapterReview } from './chapter-review';
 import { runArcReview } from './arc-review';
+import { runChapterOptimization } from './chapter-optimize';
 import {
   appendVersion,
   getShortStory,
@@ -195,6 +197,19 @@ export function enqueueChapterReview(chapterId: string): AiTask {
 }
 
 /**
+ * V9.5 阶段二补丁:章节优化入队 — 由 AI_REVIEW_CHAPTER 不合格时自动触发,也可手动调用
+ * reviewRecordId 存入 task.input;执行时读该记录的 weaknesses/suggestions 作为改写指引
+ */
+export function enqueueChapterOptimization(chapterId: string, reviewRecordId: string): AiTask {
+  return createAiTask({
+    type: 'AI_OPTIMIZE_CHAPTER',
+    refType: 'chapter',
+    refId: chapterId,
+    input: { reviewRecordId },
+  });
+}
+
+/**
  * V9 阶段二:弧级评审入队 — 调度器/管理后台通用入口
  * 区间与弧标签存在 task.input 中(因为 refId 只能单值)
  */
@@ -268,7 +283,45 @@ export async function executeAiTask(task: AiTask, opts?: ExecuteTaskOptions): Pr
     case 'AI_REVIEW_CHAPTER': {
       if (!task.refId) throw new CoreError('INVALID_INPUT', 'AI_REVIEW_CHAPTER 任务缺少 refId(chapterId)');
       const rec = await runChapterReview(task.refId, opts?.provider ? { provider: opts.provider } : {});
+      // V9.5 阶段二补丁:不合格时若未到 chapter_review_max_rounds 上限 → 自动入队优化任务
+      // 优化完成后由 AI_OPTIMIZE_CHAPTER case 再入队一次重评,形成评审→优化→重评闭环
+      if (!rec.qualified) {
+        const row = getDb()
+          .prepare(
+            `SELECT c.optimize_round, b.chapter_review_max_rounds, b.chapter_review_enabled
+             FROM chapters c JOIN books b ON b.id = c.book_id
+             WHERE c.id = ?`
+          )
+          .get(task.refId) as
+          | { optimize_round: number; chapter_review_max_rounds: number; chapter_review_enabled: number }
+          | undefined;
+        if (row && row.chapter_review_enabled === 1 && row.optimize_round < row.chapter_review_max_rounds) {
+          // 去重守卫:同章节已有 PENDING/RUNNING 优化任务时不再入队
+          const dup = getDb()
+            .prepare(
+              `SELECT id FROM ai_tasks WHERE type = 'AI_OPTIMIZE_CHAPTER' AND ref_id = ? AND status IN ('PENDING','RUNNING') LIMIT 1`
+            )
+            .get(task.refId);
+          if (!dup) enqueueChapterOptimization(task.refId, rec.id);
+        }
+      }
       return { recordId: rec.id, score: rec.score, level: rec.level, qualified: rec.qualified };
+    }
+    case 'AI_OPTIMIZE_CHAPTER': {
+      if (!task.refId) throw new CoreError('INVALID_INPUT', 'AI_OPTIMIZE_CHAPTER 任务缺少 refId(chapterId)');
+      const reviewRecordId = (task.input as { reviewRecordId?: string } | null)?.reviewRecordId;
+      if (!reviewRecordId) throw new CoreError('INVALID_INPUT', 'AI_OPTIMIZE_CHAPTER 任务缺少 reviewRecordId');
+      const record = getReviewRecord(reviewRecordId);
+      const opt = await runChapterOptimization(task.refId, record, opts?.provider ? { provider: opts.provider } : {});
+      // 优化完成后自动入队一次重评(闭环;重评仍不合格时受轮数上限约束不再入队优化)
+      // 去重守卫:已有 PENDING/RUNNING 重评任务时跳过
+      const dupReview = getDb()
+        .prepare(
+          `SELECT id FROM ai_tasks WHERE type = 'AI_REVIEW_CHAPTER' AND ref_id = ? AND status IN ('PENDING','RUNNING') LIMIT 1`
+        )
+        .get(task.refId);
+      if (!dupReview) enqueueChapterReview(task.refId);
+      return { chapterId: opt.chapterId, optimizeRound: opt.newOptimizeRound, charCount: opt.charCount };
     }
     case 'AI_REVIEW_ARC': {
       const input = task.input as { bookId: string; arcLabel: string; fromChapter: number; toChapter: number } | null;

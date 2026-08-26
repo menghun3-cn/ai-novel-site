@@ -106,3 +106,20 @@ body {
   font-size: 0.75rem;
   color: #22c55e;
 }
+
+/* ---------- TTS 当前朗读段高亮(V9.5)---------- */
+.tts-current-paragraph {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(250, 204, 21, 0.18) 12%,
+    rgba(250, 204, 21, 0.18) 88%,
+    transparent 100%
+  );
+  border-radius: 0.375rem;
+  box-shadow: inset 3px 0 0 0 #facc15;
+  transition: background 0.4s ease, box-shadow 0.4s ease;
+}
+.dark .tts-current-paragraph {
+  box-shadow: inset 3px 0 0 0 #eab308;
+}

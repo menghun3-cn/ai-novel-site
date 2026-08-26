@@ -180,11 +180,16 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
     }
   }, []);
 
-  // 高亮当前朗读段
+  // 高亮当前朗读段:加 class + 滚动跟随;切换时清掉上一段的 class
   useEffect(() => {
     const ps = queueRef.current;
     if (activeIndex >= 0 && ps[activeIndex]) {
-      ps[activeIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const el = ps[activeIndex];
+      el.classList.add('tts-current-paragraph');
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return () => {
+        el.classList.remove('tts-current-paragraph');
+      };
     }
   }, [activeIndex]);
 

@@ -9,18 +9,23 @@
  *   NOVEL_DATA_DIR         数据目录(默认仓库 data/)
  *   PUBLISH_TICK_SECONDS   扫描间隔,默认 60 秒(下限 5)
  *
- * ⚠️ 单实例约束:本调度器与 web/admin 进程共享 SQLite WAL。
- *   SQLite 提供并发读写安全,但 ai_tasks 是抢抢式 PENDING→RUNNING 转换,可能
- *   出现两个调度器同时拉到同一任务并重复处理。生产环境请仅启动一个调度器实例
- *   (systemd / pm2 / docker single-replica);如需多实例,请加 advisory lock(pg_try_advisory_lock
- *   类能力,SQLite 可用 file lock 代替)后再启本调度器,或拆分任务类型给不同实例。
+ * 单实例互斥:启动时获取 <数据目录>/scheduler.lock(O_EXCL + pid 存活检测,崩溃残留自动接管)。
+ * 第二个实例会启动失败退出;NOVEL_SCHEDULER_LOCK=0 可跳过锁(自行保证单实例时使用)。
  */
-import { processAiTasks, runAiSerializationCycle, runPublishCycle, type SerializationCycleResult } from '@novel/core';
+import { getDataDir, processAiTasks, runAiSerializationCycle, runPublishCycle, type SerializationCycleResult } from '@novel/core';
+import { ensureSchedulerSingleInstance } from './scheduler-lock';
 
 const tickSeconds = Number(process.env.PUBLISH_TICK_SECONDS ?? 60);
 if (!Number.isFinite(tickSeconds) || tickSeconds < 5) {
   console.error(`[scheduler] PUBLISH_TICK_SECONDS must be a number >= 5, got: ${process.env.PUBLISH_TICK_SECONDS}`);
   process.exit(1);
+}
+
+// 单实例互斥(可用 NOVEL_SCHEDULER_LOCK=0 显式关闭)
+if (process.env.NOVEL_SCHEDULER_LOCK !== '0') {
+  if (!ensureSchedulerSingleInstance(getDataDir())) {
+    process.exit(1);
+  }
 }
 
 let running = true;
