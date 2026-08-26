@@ -47,6 +47,7 @@
     "test:short-story-reader": "tsx scripts/verify-short-story-reader.ts",
     "test:chapter-review": "tsx scripts/verify-chapter-review.ts",
     "test:chapter-review-auto-enqueue": "tsx scripts/verify-chapter-review-auto-enqueue.ts",
+    "test:chapter-optimize": "tsx scripts/verify-chapter-optimize.ts",
     "test:arc-review": "tsx scripts/verify-arc-review.ts",
     "test:scheduler-tasks": "tsx scripts/verify-scheduler-tasks.ts",
     "test:tts-reader": "tsx scripts/verify-tts-reader.ts",

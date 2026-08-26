@@ -269,6 +269,7 @@ function toRecordFromAnyRow(row: Record<string, unknown>): ReviewRecord {
     id: get<string>('id', ''),
     storyId: get<string | null>('story_id', null),
     storyVersionId: get<string | null>('story_version_id', null),
+    chapterId: get<string | null>('chapter_id', null),
     sourceUrl: get<string | null>('source_url', null),
     ruleId: get<string>('rule_id', ''),
     ruleVersion: get<string>('rule_version', ''),

@@ -123,6 +123,7 @@ interface ChapterRow {
   scheduled_at: string | null;
   published_at: string | null;
   review_note: string | null;
+  optimize_round: number;
   created_at: string;
   updated_at: string;
 }
@@ -139,6 +140,7 @@ function toChapter(r: ChapterRow): Chapter {
     scheduledAt: r.scheduled_at,
     publishedAt: r.published_at,
     reviewNote: r.review_note ?? null,
+    optimizeRound: r.optimize_round,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

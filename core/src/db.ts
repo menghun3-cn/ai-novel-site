@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS chapters (
   scheduled_at TEXT,
   published_at TEXT,
   review_note TEXT,
+  optimize_round INTEGER NOT NULL DEFAULT 0,  -- V9.5:章节自动优化轮数(由 chapter_review_max_rounds 约束)
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (book_id, number)
@@ -535,6 +536,16 @@ function migrateShortStoryColumns(db: Database.Database): void {
 }
 
 /**
+ * 轻量迁移:V9.5 阶段二补丁 — chapters 表补自动优化轮数列(用于 chapter_review_max_rounds 阈值判定)
+ */
+function migrateChapterColumns(db: Database.Database): void {
+  const cols = (db.prepare('PRAGMA table_info(chapters)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('optimize_round')) {
+    db.exec('ALTER TABLE chapters ADD COLUMN optimize_round INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
+/**
  * 轻量迁移:V9 阶段二 — books 表补长篇自动评审配置列(旧库升级)
  */
 function migrateBooksReviewColumns(db: Database.Database): void {
@@ -585,6 +596,7 @@ export function getDb(): Database.Database {
     migrateDiscoveryColumns(sqlite);
     migrateAnalyticsColumns(sqlite);
     migrateShortStoryColumns(sqlite);
+    migrateChapterColumns(sqlite);
     migrateBooksReviewColumns(sqlite);
     migrateReviewRecordsRefColumns(sqlite);
   }
