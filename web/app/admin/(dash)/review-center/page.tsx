@@ -3,7 +3,7 @@
 // AI 评审中心(V9 规格书 §23-§31):二级 Tab——评审任务 / 评审记录 / 评审规则 / Prompt 版本 / 质量数据。
 // 全链路可追溯:小说哪个版本、规则与 Prompt 哪一版、哪个模型、第几次优化、原始响应。
 
-import { FileSearch, Pencil, Plus, RefreshCw, Send, Trash2 } from 'lucide-react';
+import { FileSearch, GitCompare, Pencil, Plus, RefreshCw, Send, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/admin-client';
 import { formatChinaTime } from '@/lib/format';
@@ -69,6 +69,12 @@ interface RecordItem {
   durationMs: number | null;
   rawResponse: string | null;
   createdAt: string;
+}
+/** V9.5 补丁:章节评审记录(差异对比用);storyId 为 null */
+interface ChapterReviewDetail extends Omit<RecordItem, 'storyId' | 'storyVersionId'> {
+  storyId: string | null;
+  storyVersionId: string | null;
+  chapterId: string | null;
 }
 interface DimensionSpec {
   name: string;
@@ -227,6 +233,9 @@ export default function AdminReviewCenterPage() {
   const [arcDraft, setArcDraft] = useState<{ arcLabel: string; fromChapter: number; toChapter: number }>({ arcLabel: '', fromChapter: 1, toChapter: 1 });
   const [enqueuing, setEnqueuing] = useState(false);
   const [loadingReview, setLoadingReview] = useState(false);
+  // V9.5 补丁:同章多次评审差异对比
+  const [compareTarget, setCompareTarget] = useState<{ id: string; title: string; number: number } | null>(null);
+  const [compareRecords, setCompareRecords] = useState<ChapterReviewDetail[] | null>(null);
 
   const loadAll = useCallback(async (): Promise<void> => {
     setError(null);
@@ -503,6 +512,21 @@ export default function AdminReviewCenterPage() {
     }
   };
 
+  // V9.5 补丁:打开同章多评差异对比
+  const openCompare = async (chapter: { id: string; title: string; number: number }): Promise<void> => {
+    setCompareTarget(chapter);
+    setCompareRecords(null);
+    try {
+      const res = await api<{ items: ChapterReviewDetail[] }>(
+        `/api/admin/chapter-reviews?chapterId=${encodeURIComponent(chapter.id)}`
+      );
+      setCompareRecords([...res.items].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载对比数据失败');
+      setCompareTarget(null);
+    }
+  };
+
   const enqueueArcReviewAction = async (): Promise<void> => {
     if (!selectedBookId) return;
     if (!arcDraft.arcLabel.trim() || arcDraft.fromChapter <= 0 || arcDraft.toChapter <= 0 || arcDraft.fromChapter > arcDraft.toChapter) {
@@ -598,6 +622,15 @@ export default function AdminReviewCenterPage() {
               >
                 <Send size={12} /> 入队评审
               </Button>
+              {c.latestScore !== null ? (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => void openCompare({ id: c.id, title: c.title, number: c.number })}
+                >
+                  <GitCompare size={12} /> 对比
+                </Button>
+              ) : null}
             </div>
           ))}
         </div>
@@ -1162,6 +1195,104 @@ export default function AdminReviewCenterPage() {
         onConfirm={() => void disableVersion()}
         onCancel={() => setDisableTarget(null)}
       />
+
+      {/* 同章多评差异对比(V9.5 补丁) */}
+      <Modal
+        open={compareTarget !== null}
+        title={`评审对比 · 第 ${compareTarget?.number ?? ''} 章 ${compareTarget?.title ?? ''}`}
+        onClose={() => setCompareTarget(null)}
+      >
+        {compareRecords === null ? (
+          <p className="py-8 text-center"><Spinner /></p>
+        ) : compareRecords.length === 0 ? (
+          <p className="py-8 text-center text-sm text-[#94a3b8]">暂无评审记录</p>
+        ) : compareRecords.length === 1 ? (
+          <p className="py-6 text-center text-sm text-[#94a3b8]">
+            该章仅有 1 次评审({compareRecords[0].score} 分,{formatChinaTime(compareRecords[0].createdAt)});再入队一次评审后即可对比
+          </p>
+        ) : (
+          <div className="space-y-5">
+            {/* 分数轨迹 */}
+            <div>
+              <h4 className="mb-2 text-xs font-semibold text-[#64748b]">分数轨迹({compareRecords.length} 次评审)</h4>
+              <div className="flex flex-wrap items-end gap-1.5">
+                {compareRecords.map((r, i) => {
+                  const prev = i > 0 ? compareRecords[i - 1] : null;
+                  const delta = prev ? r.score - prev.score : 0;
+                  return (
+                    <div key={r.id} className="flex items-center gap-1.5">
+                      {i > 0 ? (
+                        <span
+                          className={`text-[11px] font-medium ${
+                            delta > 0 ? 'text-[#047857]' : delta < 0 ? 'text-[#b45309]' : 'text-[#94a3b8]'
+                          }`}
+                        >
+                          {delta > 0 ? `+${delta}` : delta < 0 ? String(delta) : '±0'}
+                        </span>
+                      ) : null}
+                      <div
+                        className={`flex min-w-[64px] flex-col items-center rounded-lg border px-2 py-1.5 ${
+                          r.qualified ? 'border-[#a7f3d0] bg-[#ecfdf5]' : 'border-[#fde68a] bg-[#fffbeb]'
+                        }`}
+                        title={`规则 ${r.ruleVersion} · ${r.modelName ?? '—'} · 第${r.reviewRound}评`}
+                      >
+                        <span className={`text-lg font-bold leading-none ${r.qualified ? 'text-[#047857]' : 'text-[#b45309]'}`}>
+                          {r.score}
+                        </span>
+                        <Badge tone={r.level === 'S' || r.level === 'A' ? 'success' : r.level === 'B' ? 'info' : 'warning'}>{r.level}</Badge>
+                        <span className="mt-0.5 text-[10px] text-[#94a3b8]">{formatChinaTime(r.createdAt)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 维度对比:首评 vs 最新 */}
+            <div>
+              <h4 className="mb-2 text-xs font-semibold text-[#64748b]">维度对比(首评 → 最新)</h4>
+              <div className="space-y-1.5">
+                {(compareRecords[compareRecords.length - 1]?.dimensionScores ?? []).map((latestDim) => {
+                  const first = compareRecords[0].dimensionScores.find((d) => d.name === latestDim.name);
+                  const delta = first ? latestDim.score - first.score : null;
+                  return (
+                    <div key={latestDim.name} className="flex items-center gap-3 text-sm">
+                      <span className="w-24 shrink-0 truncate text-xs text-[#64748b]">{latestDim.name}</span>
+                      <span className="w-12 text-right text-xs text-[#94a3b8]">{first?.score ?? '—'}</span>
+                      <span className="text-[10px] text-[#cbd5e1]">→</span>
+                      <span className="w-12 text-right text-xs font-medium text-[#0f172a]">{latestDim.score}</span>
+                      <span
+                        className={`w-12 text-right text-xs font-semibold ${
+                          delta === null ? 'text-[#cbd5e1]' : delta > 0 ? 'text-[#047857]' : delta < 0 ? 'text-[#b45309]' : 'text-[#94a3b8]'
+                        }`}
+                      >
+                        {delta === null ? '—' : delta > 0 ? `↑${delta}` : delta < 0 ? `↓${Math.abs(delta)}` : '—'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 最新一次的问题与建议 */}
+            {(() => {
+              const latestRec = compareRecords[compareRecords.length - 1];
+              if (!latestRec || (latestRec.weaknesses.length === 0 && latestRec.suggestions.length === 0)) return null;
+              return (
+                <div className="rounded-lg bg-[#f8fafc] p-3 text-xs">
+                  <p className="mb-1 font-semibold text-[#64748b]">最新评审遗留问题(优化任务将逐条解决)</p>
+                  {latestRec.weaknesses.map((w, i) => (
+                    <p key={`w${i}`} className="text-[#b45309]">· 问题:{w}</p>
+                  ))}
+                  {latestRec.suggestions.map((s, i) => (
+                    <p key={`s${i}`} className="text-[#1677ff]">· 建议:{s}</p>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </Modal>
 
       {/* 质量数据 */}
       {tab === 'stats' ? <QualityStats /> : null}
