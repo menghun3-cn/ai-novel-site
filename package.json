@@ -50,6 +50,7 @@
     "test:chapter-optimize": "tsx scripts/verify-chapter-optimize.ts",
     "test:arc-review": "tsx scripts/verify-arc-review.ts",
     "test:scheduler-tasks": "tsx scripts/verify-scheduler-tasks.ts",
+    "test:scheduler-lock": "tsx scripts/verify-scheduler-lock.ts",
     "test:tts-reader": "tsx scripts/verify-tts-reader.ts",
     "test:review-rule": "tsx scripts/verify-review-rule.ts",
     "test:review-prompt": "tsx scripts/verify-review-prompt.ts",

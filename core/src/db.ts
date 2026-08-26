@@ -29,6 +29,11 @@ function resolveDataDir(): string {
   return path.join(process.cwd(), 'data');
 }
 
+/** 解析后的数据目录(scheduler lock 等进程级文件与数据库同目录) */
+export function getDataDir(): string {
+  return dataDir;
+}
+
 const dataDir = resolveDataDir();
 const dbPath = path.join(dataDir, 'novel.db');
 
