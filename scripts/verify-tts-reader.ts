@@ -3,8 +3,9 @@
  * - 长篇 chapter view 可读(getChapterView)— TTS 客户端将基于此容器切片
  * - 短篇物化后 latestPublicationByStory 仍可取到,字符计数 > 0
  * - 短篇 article 容器会带 id="short-story-content",与 TtsPlayer selector 匹配
+ * - 移动端适配纯函数(web/lib/tts):按句切片不超上限、语速定长单调、iOS 检测在 Node 下安全返回 false
  *
- * 浏览器端 TTS(Window.speechSynthesis)需客户端 JS,本脚本只验证挂载点选择器可达。
+ * 浏览器端 TTS(Window.speechSynthesis)需客户端 JS,本脚本只验证挂载点选择器与纯函数。
  * 运行:npm run test:tts-reader
  */
 import fs from 'node:fs';
@@ -27,6 +28,8 @@ const {
   getChapterView,
 } = await import('@novel/core');
 
+const { detectIOS, maxChunkLength, splitIntoChunks } = await import('../web/lib/tts');
+
 let failed = 0;
 function assertOk(cond: boolean, name: string): void {
   if (cond) console.log(`✓ ${name}`);
@@ -37,6 +40,25 @@ function assertOk(cond: boolean, name: string): void {
 }
 
 async function main(): Promise<void> {
+  // 移动端适配纯函数(web/lib/tts)
+  const long = '这是第一句。这是第二句!这是第三句?' + '无标点超长内容'.repeat(30);
+  const chunks = splitIntoChunks(long, 50);
+  assertOk(chunks.length > 1, '长文本会被切成多片');
+  assertOk(chunks.every((c) => c.length <= 50), '每片不超过 maxLen');
+  assertOk(chunks.join('') === long, '切片不丢字');
+  assertOk(
+    splitIntoChunks('短句。', 50).length === 1,
+    '短文本保持单片'
+  );
+  assertOk(splitIntoChunks('', 50).length === 0, '空文本产出空列表');
+  assertOk(
+    splitIntoChunks('。 。 ', 50).every((c) => c.trim().length > 0),
+    '纯空白片被过滤'
+  );
+  assertOk(maxChunkLength(0.5) < maxChunkLength(1) && maxChunkLength(1) < maxChunkLength(2), '语速越慢单片上限越小');
+  assertOk(maxChunkLength(9) >= maxChunkLength(2), '语速上限受钳制不缩水');
+  assertOk(detectIOS() === false, 'iOS 检测在 Node 环境安全返回 false');
+
   // 长篇:可经 getChapterView 取到 chapter.contentMd
   upsertAuthor('长篇作者');
   upsertCategory('长篇分类');
