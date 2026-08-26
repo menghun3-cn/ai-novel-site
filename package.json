@@ -53,6 +53,7 @@
     "test:scheduler-lock": "tsx scripts/verify-scheduler-lock.ts",
     "test:review-stats": "tsx scripts/verify-review-stats.ts",
     "test:tts-reader": "tsx scripts/verify-tts-reader.ts",
+    "test:e2e": "playwright test",
     "test:review-rule": "tsx scripts/verify-review-rule.ts",
     "test:review-prompt": "tsx scripts/verify-review-prompt.ts",
     "test:structured-output": "tsx scripts/verify-structured-output.ts",
@@ -87,6 +88,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/archiver": "^6.0.3",
     "@types/node": "^22.13.1",
     "tsx": "^4.19.2",

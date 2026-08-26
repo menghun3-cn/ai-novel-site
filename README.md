@@ -190,9 +190,10 @@ npm run scheduler           # 前台运行调度器(默认 60s 一 tick)
 | `npm run test:ai-api` / `test:ai-serial-api` | AI 写手 / 自动连载 API 回归 |
 | `npm run test:reader` / `test:reader-api` | 读者核心 / 读者 API 回归 |
 | `npm run test:media` / `test:settings` / `test:analytics` / `test:discovery-api` | 对应子系统回归 |
+| `npm run test:e2e` | Playwright 浏览器冒烟(登录/评审 Tab/TTS 阅读页;独立数据目录 `e2e/.tmpdata`,默认用系统 Edge,首次需 `npx playwright install chromium` 或自备 Chrome/Edge) |
 | `npm run build:web` && `npm run start:web` | 生产构建与启动 |
 
-所有验证脚本使用临时数据库(`NOVEL_DATA_DIR`),不触碰 `data/novel.db`。
+所有验证脚本使用临时数据库(`NOVEL_DATA_DIR`),不触碰 `data/novel.db`;E2E 使用独立目录 `e2e/.tmpdata`(每次运行重置,`E2E_KEEP_DATA=1` 可复用)。
 
 ### 管理后台首次使用
 
@@ -234,8 +235,16 @@ PUBLISH_TICK_SECONDS=60 NOVEL_DATA_DIR=/var/lib/novel npm run scheduler &
 | `PUBLISH_TICK_SECONDS` | 调度器扫描间隔(≥5) | `60` |
 | `AI_FETCH_TIMEOUT_MS` | LLM 上游单次请求超时 | `300000`(5 分钟) |
 | `ADMIN_TOKEN` | 可选机器令牌(Bearer/x-admin-token),供脚本集成;账号会话不受影响 | 未配置 |
+| `NOVEL_SCHEDULER_LOCK` | 设为 `0` 跳过调度器单实例文件锁(自行保证单实例时) | 启用锁 |
 
 > 每日连载/自动发布的「时刻」均按**北京时间**(UTC+8)解释,与宿主机时区无关;compose 已为容器设置 `TZ=Asia/Shanghai`。
+
+### V9.5 评审行为与调度器互斥
+
+- **调度器单实例锁**:启动时在数据目录创建 `scheduler.lock`(记录 pid,存活检测,崩溃残留自动接管)。同一数据目录下第二个调度器会拒绝启动并打印持有者诊断;确认无实例后删除该文件或停掉旧进程即可。跨主机共享网络盘的部署此锁不适用。
+- **章节自动评审**:书籍默认 `chapter_review_enabled=1`,章节发布后自动入队一次 AI 评审(由调度器消化);不想要的书在管理后台关闭。
+- **章节自动改写**:评审不合格且 `chapter_review_max_rounds > 0`(默认 1)时,**每章最多自动消耗 N 次 LLM 改写并重评**,直到达标或轮数耗尽;只评分不改稿的书请把轮数设为 `0`。
+- **弧级半自动评审**:`arc_review_every_n`(默认 5,0=关),每发布 N 章在评审中心提示触发一次区间评审。
 
 ### 上线核对清单
 
