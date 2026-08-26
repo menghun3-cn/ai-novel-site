@@ -261,6 +261,8 @@ SQLite WAL 提供并发读写安全,但 `ai_tasks` 的 PENDING→RUNNING 转换�
 
 `web/components/TtsPlayer.tsx`:Web Speech API 零依赖客户端组件,段落切片顺序朗读(找文章容器下 `<p>` 元素),提供 play/pause/stop + 语速 0.5-2.0× + 语音下拉(优先中文 voice);偏好持久化 `localStorage` 的 `novel:tts:rate` / `novel:tts:voiceURI`;当前朗读段自动滚动至视区中央。挂载点:长篇 `/books/[slug]/chapter/[n]` 与短篇 `/short/[id]` 两类阅读页均挂载,selector 分别为 `#article-content` 与 `#short-story-content`。
 
+移动端适配(纯函数在 `web/lib/tts.ts`):首次播放必须在用户手势内完成——先以静音 utterance 预热解锁,再 `resume()`+`cancel()` 清掉卡住的内部暂停态,否则 iOS Safari/WKWebView(含微信内置浏览器)点击后无声;iOS 的原生 `pause()/resume()` 恢复后无声,改用取消式暂停(`cancel()` 并保留进度,恢复时从当前片重说);段落文本按句切成随语速动态定长的朗读片(`maxChunkLength`/`splitIntoChunks`),规避安卓 Chrome 对单条超长朗读的约 15 秒静音截断;语音列表在 `voiceschanged`、轮询、回前台与首次朗读手势内多次获取(iOS 首次 speak 后才填充),下拉框常显不再因空列表隐藏,无保存偏好时自动选中首个中文语音。
+
 ### 公开 API
 
 - `GET /api/short-stories`:短篇发布列表(按 published_at 倒序,limit 默认 50)

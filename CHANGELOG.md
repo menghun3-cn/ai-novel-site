@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **TTS 移动端播放修复**:首次「朗读」在手势内静音预热解锁并 `resume()`+`cancel()` 清掉卡住的暂停态(iOS Safari/WKWebView 点击无声);iOS 改用取消式暂停(原生 pause 后恢复无声,改为 cancel 并保留进度);段落按句二次切片、单片字符上限随语速动态钳制,规避安卓 Chrome 对单条超长朗读的静音截断;语音下拉常显,语音列表经 `voiceschanged`/轮询/回前台/首次朗读手势多次重试获取(iOS 首次朗读后才返回列表),无保存偏好时自动选中首个中文语音
+
 ### V9.5 阶段二补丁(feat/v9.5-tailing)
 
 - **长篇单章自动优化闭环**:章节评审不合格时自动入队 `AI_OPTIMIZE_CHAPTER`,按评审问题清单改写正文后自动重评,直到达标或达到 `chapter_review_max_rounds` 上限;`chapters.optimize_round` 记录已用轮数
