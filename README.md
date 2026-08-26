@@ -116,7 +116,7 @@ AI 生成小说的**内容管理 + Web 阅读**一体化平台：从小说源文
 - **长篇自动评审配置**：`books.chapter_review_enabled`(默认开)、`chapter_review_max_rounds`(默认 1 轮)、`arc_review_enabled`(默认开)
 - **统一 AI 任务扩展**：`AI_REVIEW_CHAPTER` / `AI_REVIEW_ARC` / `PUBLISH_SHORT_STORY` 三类新任务;调度器第三块 `processAiTasks({limit:5})` 拉起章节/弧评任务
 - **调度器互斥**:SQLite WAL 提供并发读写安全,但 ai_tasks 抢抢式 PENDING→RUNNING 在多实例下会重复处理——**生产环境仅启一个调度器实例**;多实例需加 advisory lock
-- **语音朗读(TTS)**:`/short/[id]` 与长篇章节阅读页挂载 `TtsPlayer` 客户端组件;基于 Web Speech API 零依赖,段落切片顺序朗读(play/pause/stop + 语速 0.5-2.0× + 语音下拉);偏好持久化 `novel:tts:rate` / `novel:tts:voiceURI`;朗读段自动滚动至视区
+- **语音朗读(TTS)**:`/short/[id]` 与长篇章节阅读页挂载 `TtsPlayer` 客户端组件;基于 Web Speech API 零依赖,段落切片顺序朗读(play/pause/stop + 语速 0.5-2.0× + 语音下拉);偏好持久化 `novel:tts:rate` / `novel:tts:voiceURI`;朗读段自动滚动至视区;移动端适配:手势内预热解锁、iOS 取消式暂停、按句二次切片防安卓超长截断、语音列表多重试且下拉常显
 - **新表**:`short_story_publications`、`arc_review_records`;`review_records` 加 `chapter_id` + `ref_type` 列;`books` 加 5 列长篇评审配置
 - **新公开端点**:`/api/short-stories`(列表)、`/api/short-stories/[id]`(详情)
 - 验证脚本:`test:short-story-publication` / `test:short-story-reader` / `test:chapter-review` / `test:arc-review` / `test:scheduler-tasks` / `test:tts-reader` 全部通过;`test:*` 共 15 套全绿

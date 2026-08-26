@@ -156,6 +156,8 @@ interface RecordRow {
   id: string;
   story_id: string;
   story_version_id: string;
+  /** V9.5:ref_type='chapter' 的评审记录带 chapter_id(短篇记录为 NULL) */
+  chapter_id?: string | null;
   source_url: string | null;
   rule_id: string;
   rule_version: string;
@@ -195,6 +197,7 @@ function toRecord(row: RecordRow): ReviewRecord {
     id: row.id,
     storyId: row.story_id,
     storyVersionId: row.story_version_id,
+    chapterId: row.chapter_id ?? null,
     sourceUrl: row.source_url,
     ruleId: row.rule_id,
     ruleVersion: row.rule_version,

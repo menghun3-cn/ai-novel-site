@@ -258,6 +258,8 @@ export interface ReviewRecord {
   /** 短篇评审时 = short_story.id;章节/弧级评审时 = null(见 chapter_id/arc_review_records) */
   storyId: string | null;
   storyVersionId: string | null;
+  /** V9.5:ref_type='chapter' 时 = chapter.id;短篇评审时为 null */
+  chapterId: string | null;
   sourceUrl: string | null;
 
   ruleId: string;
@@ -339,6 +341,7 @@ export const AI_TASK_TYPES = [
   'AI_REVIEW_RETRY',
   'AI_REVIEW_CHAPTER',
   'AI_REVIEW_ARC',
+  'AI_OPTIMIZE_CHAPTER',
   'PUBLISH_SHORT_STORY',
 ] as const;
 export type AiTaskType = (typeof AI_TASK_TYPES)[number];
@@ -457,6 +460,8 @@ export interface Chapter {
   status: ChapterStatus;
   scheduledAt: string | null;
   publishedAt: string | null;
+  /** V9.5:章节自动优化轮数(由 chapter_review_max_rounds 阈值约束) */
+  optimizeRound: number;
   /** 最近一次驳回备注;送审/批准时清空 */
   reviewNote?: string | null;
   createdAt: string;
