@@ -236,6 +236,8 @@ export default function AdminReviewCenterPage() {
   // V9.5 补丁:同章多次评审差异对比
   const [compareTarget, setCompareTarget] = useState<{ id: string; title: string; number: number } | null>(null);
   const [compareRecords, setCompareRecords] = useState<ChapterReviewDetail[] | null>(null);
+  // V9.5 补丁:章节批量入队
+  const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
 
   const loadAll = useCallback(async (): Promise<void> => {
     setError(null);
@@ -422,6 +424,7 @@ export default function AdminReviewCenterPage() {
     setChapterRows(null);
     setArcRecords(null);
     setArcSuggestion(null);
+    setSelectedChapterIds(new Set());
     try {
       // 1) 章节列表
       const chRes = await api<{
@@ -527,6 +530,44 @@ export default function AdminReviewCenterPage() {
     }
   };
 
+  // V9.5 补丁:批量入队章节评审(逐章校验,失败不阻塞)
+  const batchEnqueueChapterReviews = async (): Promise<void> => {
+    if (selectedChapterIds.size === 0) return;
+    setEnqueuing(true);
+    try {
+      const res = await api<{
+        enqueuedCount: number;
+        skippedCount: number;
+        skipped: Array<{ chapterId: string; reason: string }>;
+      }>('/api/admin/chapter-reviews', {
+        method: 'POST',
+        body: JSON.stringify({ chapterIds: [...selectedChapterIds] }),
+      });
+      const skipHint =
+        res.skippedCount > 0 ? `,${res.skippedCount} 跳过(${res.skipped[0]?.reason ?? ''}${res.skippedCount > 1 ? ' 等' : ''})` : '';
+      setNotice(`批量入队完成:${res.enqueuedCount} 成功${skipHint}`);
+      setSelectedChapterIds(new Set());
+      setTimeout(() => selectedBookId && void loadBookReviewData(selectedBookId), 800);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '批量入队失败');
+    } finally {
+      setEnqueuing(false);
+    }
+  };
+
+  // 弧评区间模板(V9.5 补丁):按当前书目数据预填 from/to
+  const applyArcTemplate = (kind: 'all' | 'since-last' | 'recent'): void => {
+    const total = chapterRows?.length ?? 1;
+    if (kind === 'all') {
+      setArcDraft({ ...arcDraft, fromChapter: 1, toChapter: total });
+    } else if (kind === 'since-last') {
+      const lastTo = arcRecords && arcRecords.length > 0 ? Math.max(...arcRecords.map((a) => a.toChapter)) : 0;
+      setArcDraft({ ...arcDraft, fromChapter: Math.min(lastTo + 1, total), toChapter: total });
+    } else {
+      setArcDraft({ ...arcDraft, fromChapter: Math.max(1, total - 4), toChapter: total });
+    }
+  };
+
   const enqueueArcReviewAction = async (): Promise<void> => {
     if (!selectedBookId) return;
     if (!arcDraft.arcLabel.trim() || arcDraft.fromChapter <= 0 || arcDraft.toChapter <= 0 || arcDraft.fromChapter > arcDraft.toChapter) {
@@ -593,8 +634,45 @@ export default function AdminReviewCenterPage() {
         <EmptyState icon={<FileSearch size={24} />} title="该书暂无章节" description="先在「长篇工作台」新增章节并发布" />
       ) : (
         <div className="space-y-2">
+          {/* 批量入队工具条(V9.5 补丁) */}
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#f1f5f9] bg-[#f8fafc] px-4 py-2.5 text-sm">
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[#64748b]">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-[#1677ff]"
+                checked={selectedChapterIds.size === chapterRows.filter((c) => c.status === 'published').length && selectedChapterIds.size > 0}
+                onChange={(e) =>
+                  setSelectedChapterIds(e.target.checked ? new Set(chapterRows.filter((c) => c.status === 'published').map((c) => c.id)) : new Set())
+                }
+              />
+              全选已发布
+            </label>
+            <span className="text-xs text-[#94a3b8]">已选 {selectedChapterIds.size} 章</span>
+            <Button
+              variant="primary"
+              size="xs"
+              disabled={selectedChapterIds.size === 0 || enqueuing}
+              onClick={() => void batchEnqueueChapterReviews()}
+              title="对选中章节逐章入队评审任务(已有待处理任务的章节自动跳过)"
+            >
+              <Send size={12} /> 批量入队评审
+            </Button>
+          </div>
           {chapterRows.map((c) => (
             <div key={c.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f1f5f9] px-4 py-3">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-[#1677ff]"
+                checked={selectedChapterIds.has(c.id)}
+                disabled={c.status !== 'published'}
+                onChange={(e) => {
+                  const next = new Set(selectedChapterIds);
+                  if (e.target.checked) next.add(c.id);
+                  else next.delete(c.id);
+                  setSelectedChapterIds(next);
+                }}
+                title={c.status !== 'published' ? '仅已发布章节可入队' : undefined}
+              />
               <span className="text-xs font-medium text-[#64748b]">第 {c.number} 章</span>
               <span className="min-w-0 flex-1 truncate text-sm text-[#0f172a]">{c.title}</span>
               <Badge tone={c.status === 'published' ? 'success' : 'info'}>
@@ -689,7 +767,26 @@ export default function AdminReviewCenterPage() {
           ) : null}
 
           <div className="rounded-xl border border-[#f1f5f9] p-4">
-            <h3 className="mb-3 text-sm font-semibold text-[#0f172a]">新建弧评任务</h3>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[#0f172a]">新建弧评任务</h3>
+              <span className="flex items-center gap-1.5 text-xs text-[#94a3b8]">
+                快速填区间:
+                <Button variant="ghost" size="xs" onClick={() => applyArcTemplate('all')} title="第 1 章 → 最新章">
+                  全书
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => applyArcTemplate('since-last')}
+                  title="上次弧评结束的下一章 → 最新章"
+                >
+                  上次弧评后
+                </Button>
+                <Button variant="ghost" size="xs" onClick={() => applyArcTemplate('recent')} title="最近 5 章">
+                  最近 5 章
+                </Button>
+              </span>
+            </div>
             <div className="grid gap-3 sm:grid-cols-4">
               <Field label="弧标签">
                 <Input
