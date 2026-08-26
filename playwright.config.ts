@@ -2,11 +2,10 @@
  * Playwright E2E 冒烟配置(仓库首个 e2e 装置)。
  *
  * 运行:npm run test:e2e
- *   - 数据目录:e2e/.tmpdata(独立于开发库;首次运行自动播种,见 e2e/seed.ts)
- *   - Web 服务器:next dev -p 3100(复用已开实例时跳过启动)
+ *   - 数据目录:e2e/.tmpdata(独立于开发库;每次运行重置播种,见 e2e/seed.ts)
+ *   - Web 服务器:生产模式 next start -p 3100(需先 npm run build -w web;复用已开实例时跳过启动)
  *
- * 说明:冒烟走 dev 服务器(按需编译,免整包 build);如需验证生产产物,
- * 把 webServer.command 换成 `npm run build -w web && npm run start -w web -- -p 3100`。
+ * 说明:曾用 dev 模式出现 readiness 后被静默杀掉的假死,故固定走生产服务器。
  */
 import { defineConfig } from '@playwright/test';
 import path from 'node:path';
@@ -34,8 +33,9 @@ export default defineConfig({
   outputDir: 'test-results',
   use: {
     baseURL: BASE_URL,
-    // 优先系统 Edge(Chromium 内核,免下载);CI 或无 Edge 环境删掉此行后 `npx playwright install chromium`
-    channel: 'msedge',
+    // 默认 Playwright 自带 Chromium(首次需 `npx playwright install chromium`);
+    // 无下载条件时可设 E2E_BROWSER_CHANNEL=msedge/chrome 复用系统浏览器
+    ...(process.env.E2E_BROWSER_CHANNEL ? { channel: process.env.E2E_BROWSER_CHANNEL } : {}),
     trace: 'retain-on-failure',
     locale: 'zh-CN',
     actionTimeout: 20_000,

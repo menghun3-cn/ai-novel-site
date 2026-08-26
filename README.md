@@ -190,7 +190,7 @@ npm run scheduler           # 前台运行调度器(默认 60s 一 tick)
 | `npm run test:ai-api` / `test:ai-serial-api` | AI 写手 / 自动连载 API 回归 |
 | `npm run test:reader` / `test:reader-api` | 读者核心 / 读者 API 回归 |
 | `npm run test:media` / `test:settings` / `test:analytics` / `test:discovery-api` | 对应子系统回归 |
-| `npm run test:e2e` | Playwright 浏览器冒烟(登录/评审 Tab/TTS 阅读页;独立数据目录 `e2e/.tmpdata`,默认用系统 Edge,首次需 `npx playwright install chromium` 或自备 Chrome/Edge) |
+| `npm run test:e2e` | Playwright 浏览器冒烟(登录/评审 Tab/TTS 阅读页;独立数据目录 `e2e/.tmpdata`;首次需 `npx playwright install chromium`,或设 `E2E_BROWSER_CHANNEL=msedge` 复用系统浏览器) |
 | `npm run build:web` && `npm run start:web` | 生产构建与启动 |
 
 所有验证脚本使用临时数据库(`NOVEL_DATA_DIR`),不触碰 `data/novel.db`;E2E 使用独立目录 `e2e/.tmpdata`(每次运行重置,`E2E_KEEP_DATA=1` 可复用)。
