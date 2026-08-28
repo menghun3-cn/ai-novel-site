@@ -421,6 +421,7 @@ export type AiAssistAction = (typeof AI_ASSIST_ACTIONS)[number];
 /** 短篇创作字段标签:评审/辅助提示词与前端 UI 共用,键与 StoryBrief 对齐 */
 export const SHORT_STORY_FIELD_LABELS: Readonly<Record<string, string>> = {
   title: '标题',
+  content: '正文',
   theme: '小说主题',
   genre: '小说类型',
   direction: '故事方向',
