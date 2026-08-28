@@ -78,6 +78,28 @@ async function main(): Promise<void> {
     assertOk(((output as { result?: string }).result ?? '').includes('黑伞'), 'generate 返回整段内容');
   }
 
+  // generate:编辑弹窗专用 title(标题)/content(正文)生成分支
+  {
+    const pTitle = createFakeProvider(() => '雨夜重逢');
+    const titleOut = await executeAssistTask(
+      createAiTask({ type: 'AI_GENERATE', input: { action: 'generate', field: 'title', context: { theme: '雨夜重逢' } } }),
+      { provider: pTitle as never }
+    );
+    assertOk(((titleOut as { result?: string }).result ?? '') === '雨夜重逢', 'generate title 返回标题');
+    assertOk(pTitle.calls[0].includes('标题') && pTitle.calls[0].includes('25 字'), '标题生成提示词含「标题」标签与 ≤25 字要求');
+
+    const pContent = createFakeProvider(() => '这是 AI 生成的完整短篇正文内容。'.repeat(30));
+    const contentOut = await executeAssistTask(
+      createAiTask({
+        type: 'AI_GENERATE',
+        input: { action: 'generate', field: 'content', context: { theme: '雨夜重逢', title: '雨夜重逢' } },
+      }),
+      { provider: pContent as never }
+    );
+    assertOk(((contentOut as { result?: string }).result ?? '').includes('完整短篇正文'), 'generate content 返回正文');
+    assertOk(pContent.calls[0].includes('正文') && pContent.calls[0].includes('开端'), '正文生成提示词含「正文」标签与完整结构要求');
+  }
+
   // optimize:保意图改进
   {
     const p = createFakeProvider(() => '优化后的梗概:保留了原意,但冲突更聚焦。');

@@ -66,20 +66,28 @@ async function runSuggest(provider: LlmProvider, input: AssistTaskInput): Promis
   return result.data;
 }
 
-/** AI生成:根据上下文整段生成该字段内容 */
+/** AI生成:根据上下文整段生成该字段内容(title 标题/content 正文走专门提示词) */
 async function runGenerate(provider: LlmProvider, input: AssistTaskInput): Promise<string> {
+  const field = input.field;
+  const isTitle = field === 'title';
+  const isContent = field === 'content';
+  const instruction = isTitle
+    ? '生成一个简短凝练、有画面感的中文标题(≤25 字,不加引号与标点结尾)。'
+    : isContent
+      ? '基于已有创作信息,生成一篇完整的短篇小说正文,包含明确的开端、冲突、发展、高潮与结局并前后呼应;直接输出正文,不要标题行,不要任何创作说明或前后记。'
+      : '生成完整内容,直接可采用的成品。';
   const raw = await provider.complete({
     system: ASSIST_SYSTEM,
     prompt: [
-      `请为短篇小说的创作字段「${fieldLabel(input.field)}」生成完整内容。`,
+      `请为短篇小说的创作字段「${fieldLabel(field)}」${isTitle ? '生成一个标题' : '生成内容'}。`,
+      '',
+      instruction,
       '',
       '# 已有创作信息',
       renderContext(input.context),
-      '',
-      '直接输出该字段的内容本身,不要标题、前缀或解释。',
     ].join('\n'),
     temperature: 0.85,
-    maxTokens: 2000,
+    maxTokens: isContent ? 8000 : isTitle ? 500 : 2000,
   });
   return raw.trim();
 }
