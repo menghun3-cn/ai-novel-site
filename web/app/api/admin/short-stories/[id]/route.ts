@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   deleteShortStory,
   getShortStory,
+  latestPublicationByStory,
   latestReviewForVersion,
   listAiTasks,
   listStoryVersions,
@@ -33,11 +34,15 @@ export const GET = withAdmin<Ctx>(async (_req, ctx) => {
     const rec = latestReviewForVersion(v.id);
     if (rec) reviews[v.id] = rec;
   }
+  const publication = latestPublicationByStory(id);
   return json({
     story,
     versions,
     latestReviews: reviews,
     tasks: listAiTasks({ refType: 'short_story', refId: id, limit: 20 }),
+    publication: publication
+      ? { id: publication.id, bookId: publication.bookId, versionId: publication.versionId, publishedAt: publication.publishedAt }
+      : null,
   });
 });
 
@@ -48,7 +53,7 @@ export const PATCH = withAdmin<Ctx>(async (req: NextRequest, ctx) => {
   return json({ story: updateShortStory(id, patch) });
 });
 
-/** 仅 draft/pool/failed 可删 */
+/** 仅 draft/pool/failed/scheduled 可删 */
 export const DELETE = withAdmin<Ctx>(async (_req, ctx) => {
   const { id } = await ctx.params;
   deleteShortStory(id);

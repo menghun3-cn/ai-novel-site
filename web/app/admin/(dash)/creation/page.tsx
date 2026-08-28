@@ -6,13 +6,17 @@
 
 import {
   BookOpen,
+  CalendarClock,
   CheckCircle2,
   ChevronLeft,
+  Edit,
   Eye,
+  ExternalLink,
   ListChecks,
   Pencil,
   Plus,
   RefreshCw,
+  Send,
   Sparkles,
   Trash2,
   XCircle,
@@ -43,10 +47,11 @@ interface StoryBrief {
 interface ShortStory {
   id: string;
   title: string;
-  status: string; // draft|generating|reviewing|optimizing|passed|pool|failed
+  status: string; // draft|scheduled|generating|reviewing|optimizing|passed|pool|failed
   brief: StoryBrief;
   currentVersionId: string | null;
   sourceUrl: string | null;
+  scheduledAt: string | null;
   reviewRound: number;
   optimizeRound: number;
   manualOptimizeRound: number;
@@ -56,6 +61,7 @@ interface ShortStory {
 }
 interface StoryVersion {
   id: string;
+  storyId: string;
   version: number;
   content: string;
   charCount: number;
@@ -99,9 +105,13 @@ interface StoryDetail {
   versions: StoryVersion[];
   latestReviews: Record<string, ReviewRecordLite>;
   tasks: AiTaskLite[];
+  publication: { id: string; bookId: string; versionId: string; publishedAt: string } | null;
 }
 interface StoryListItem extends ShortStory {
   versionCount: number;
+  publicationId: string | null;
+  publishedBookId: string | null;
+  publishedAt: string | null;
 }
 
 type AssistAction = 'suggest' | 'generate' | 'optimize';
@@ -171,6 +181,57 @@ const ACTIVE_STATUSES = ['generating', 'reviewing', 'optimizing'];
 const POLL_INTERVAL_MS = 3000;
 const POLL_MAX_MS = 10 * 60 * 1000;
 
+/**
+ * 用户编辑版本弹窗:在 Vn 基础上修订正文,提交后由后端 appendVersion('user_edited') 产生 Vn+1。
+ * 历史版本永不修改(规格书 §43)。
+ */
+function VersionEditModal({
+  open,
+  version,
+  onSave,
+  onClose,
+}: {
+  open: boolean;
+  version: StoryVersion | null;
+  onSave: (content: string) => void;
+  onClose: () => void;
+}): React.ReactElement {
+  const [buf, setBuf] = useState('');
+  useEffect(() => {
+    if (open && version) setBuf(version.content);
+  }, [open, version]);
+  return (
+    <Modal
+      open={open}
+      title={version ? `编辑 V${version.version} → V${version.version + 1}` : ''}
+      onClose={onClose}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            取消
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => onSave(buf)} disabled={!buf.trim()}>
+            <Edit size={14} /> 保存为 V{version ? version.version + 1 : ''}
+          </Button>
+        </div>
+      }
+    >
+      {version ? (
+        <div className="space-y-2">
+          <p className="text-xs text-[#94a3b8]">
+            当前正文 {version.charCount} 字。修订后追加新版本,旧版本保留作为留痕(用户编辑 + 再评审可走手动流程)。
+          </p>
+          <textarea
+            value={buf}
+            onChange={(e) => setBuf(e.target.value)}
+            className="h-[55vh] w-full resize-none rounded-md border border-[#e2e8f0] bg-white p-3 font-mono text-sm leading-relaxed focus:border-[#1677ff] focus:outline-none"
+          />
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
 export default function AdminCreationPage() {
   const [tab, setTab] = useState<'short' | 'long'>('short');
   const [stories, setStories] = useState<StoryListItem[] | null>(null);
@@ -184,6 +245,15 @@ export default function AdminCreationPage() {
   const [brief, setBrief] = useState<StoryBrief>({});
   const [sourceUrl, setSourceUrl] = useState('');
   const [creating, setCreating] = useState(false);
+  /** 编辑现有作品时为 true(已存在 selectedId/detail);点击"AI开始创作"只更新元数据,不重新启动流水线 */
+  const [editingExisting, setEditingExisting] = useState(false);
+  // V9.5 阶段二补丁:定时创作相关状态
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleDraft, setScheduleDraft] = useState<string>(''); // datetime-local
+  // 编辑版本
+  const [editingVersion, setEditingVersion] = useState<StoryVersion | null>(null);
+  // 发布/补发进行中
+  const [publishing, setPublishing] = useState(false);
 
   // 字段辅助弹层
   const [assist, setAssist] = useState<AssistModalState | null>(null);
@@ -245,6 +315,7 @@ export default function AdminCreationPage() {
     setTitle('');
     setBrief({});
     setSourceUrl('');
+    setEditingExisting(false);
     setError(null);
     setNotice(null);
   };
@@ -253,6 +324,17 @@ export default function AdminCreationPage() {
     setSelectedId(id);
     pollStartRef.current = Date.now();
     await loadDetail(id);
+  };
+
+  /** 返回编辑需求(从详情页回到编辑表单)并以现有 story 预填字段 */
+  const openEditorFromDetail = (d: StoryDetail): void => {
+    setTitle(d.story.title === '未命名短篇' ? '' : d.story.title);
+    setBrief(d.story.brief);
+    setSourceUrl(d.story.sourceUrl ?? '');
+    setEditingExisting(true);
+    // selectedId 仍保留(让"保存"走 PATCH),"AI开始创作"按钮在已发布/流水线中状态下隐藏
+    setError(null);
+    setNotice(null);
   };
 
   const persistBrief = async (mode: 'save' | 'create'): Promise<string | null> => {
@@ -279,7 +361,7 @@ export default function AdminCreationPage() {
     setError(null);
     try {
       const id = await persistBrief('save');
-      setNotice('草稿已保存');
+      setNotice(detail ? '元数据已保存' : '草稿已保存');
       if (id) await openStory(id);
       await loadList();
     } catch (err) {
@@ -293,14 +375,123 @@ export default function AdminCreationPage() {
     setCreating(true);
     setError(null);
     try {
-      const id = await persistBrief('create');
-      setNotice('创作流水线已启动');
-      if (id) await openStory(id);
+      if (editingExisting && detail) {
+        // 已存在作品:仅保存元数据(用户应改 brief 后走"重新开始创作",或点"⏰ 定时")
+        const id = await persistBrief('save');
+        setNotice('元数据已保存;已发布/已通过/流水线中作品请用"⏰ 定时"或新建');
+        if (id) await openStory(id);
+      } else {
+        const id = await persistBrief('create');
+        setNotice('创作流水线已启动');
+        if (id) await openStory(id);
+      }
       await loadList();
     } catch (err) {
       setError(err instanceof Error ? err.message : '启动失败');
     } finally {
       setCreating(false);
+    }
+  };
+
+  // ---------- 定时创作 ----------
+
+  const openScheduleModal = (): void => {
+    if (!detail) return;
+    // 默认:10 分钟后(确保在下一 tick 不会立刻触发);用户可改
+    const t = detail.story.scheduledAt
+      ? new Date(detail.story.scheduledAt)
+      : new Date(Date.now() + 10 * 60_000);
+    // datetime-local 需要本地时区 YYYY-MM-DDTHH:mm 格式
+    const pad = (n: number): string => String(n).padStart(2, '0');
+    const localISO = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`;
+    setScheduleDraft(localISO);
+    setScheduleOpen(true);
+  };
+
+  const submitSchedule = async (): Promise<void> => {
+    if (!detail || !scheduleDraft) return;
+    const utc = new Date(scheduleDraft).toISOString();
+    if (!Number.isFinite(Date.parse(scheduleDraft))) {
+      setError('定时时间格式无效');
+      return;
+    }
+    setCreating(true);
+    setError(null);
+    try {
+      await api(`/api/admin/short-stories/${detail.story.id}/schedule`, {
+        method: 'POST',
+        body: JSON.stringify({ scheduledAt: utc }),
+      });
+      setNotice('已设定定时创作,到点由调度器自动启动流水线');
+      setScheduleOpen(false);
+      await openStory(detail.story.id);
+      await loadList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '设定定时失败');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const cancelSchedule = async (): Promise<void> => {
+    if (!detail) return;
+    setCreating(true);
+    try {
+      await api(`/api/admin/short-stories/${detail.story.id}/schedule`, { method: 'DELETE' });
+      setNotice('已取消定时');
+      await openStory(detail.story.id);
+      await loadList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '取消定时失败');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // ---------- 用户编辑版本 ----------
+
+  const onEditVersionSave = async (content: string): Promise<void> => {
+    if (!editingVersion) return;
+    setCreating(true);
+    try {
+      await api(`/api/admin/short-stories/${editingVersion.storyId}/versions`, {
+        method: 'POST',
+        body: JSON.stringify({ content }),
+      });
+      setNotice('已追加用户编辑版本 V' + (editingVersion.version + 1));
+      setEditingVersion(null);
+      await openStory(editingVersion.storyId);
+      await loadList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存版本失败');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // ---------- 发布/补发 ----------
+
+  const onPublish = async (async = false): Promise<void> => {
+    if (!detail) return;
+    setPublishing(true);
+    try {
+      if (async) {
+        await api(`/api/admin/short-stories/${detail.story.id}/publish?async=1`, { method: 'POST' });
+        setNotice('发布任务已入队,稍后在任务列表查看');
+      } else {
+        const res = await api<{ publicationId: string; bookId: string; bookSlug: string }>(
+          `/api/admin/short-stories/${detail.story.id}/publish`,
+          { method: 'POST' }
+        );
+        setNotice(`已发布,读者页 /short/${detail.story.id}`);
+        void res; // 留作后续扩展(跳转到该书工作台等)
+      }
+      await openStory(detail.story.id);
+      await loadList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '发布失败');
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -624,11 +815,37 @@ export default function AdminCreationPage() {
             <Button variant="secondary" size="xs" onClick={() => void triggerManual(s.id, 'optimize')} disabled={ACTIVE_STATUSES.includes(s.status) || !s.currentVersionId}>
               <Sparkles size={13} /> 手动优化
             </Button>
+            {/* 定时创作:仅静止状态可设;通过后只能取消已有定时(通常无需) */}
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={openScheduleModal}
+              disabled={ACTIVE_STATUSES.includes(s.status)}
+              title={ACTIVE_STATUSES.includes(s.status) ? '流水线进行中,不可设定定时' : '设定未来某个时刻自动启动创作'}
+            >
+              <CalendarClock size={13} /> {s.status === 'scheduled' ? '调整定时' : '⏰ 定时创作'}
+            </Button>
+            {s.status === 'scheduled' ? (
+              <Button variant="ghost" size="xs" onClick={() => void cancelSchedule()} disabled={creating}>
+                取消定时
+              </Button>
+            ) : null}
+            {/* 发布:passed 后自动入队过 PUBLISH_SHORT_STORY;若任务失败/历史遗留可手动补发 */}
+            {s.status === 'passed' ? (
+              <Button variant="primary" size="xs" onClick={() => void onPublish(false)} disabled={publishing}>
+                <Send size={13} /> 立即发布
+              </Button>
+            ) : null}
+            {s.status === 'passed' ? (
+              <Button variant="ghost" size="xs" onClick={() => void onPublish(true)} disabled={publishing}>
+                入队发布任务
+              </Button>
+            ) : null}
             <Button
               variant="danger"
               size="xs"
               onClick={() => setDeleteTarget(s)}
-              disabled={['generating', 'reviewing', 'optimizing', 'passed'].includes(s.status)}
+              disabled={['generating', 'reviewing', 'optimizing', 'passed', 'scheduled'].includes(s.status)}
             >
               <Trash2 size={13} /> 删除
             </Button>
@@ -728,6 +945,14 @@ export default function AdminCreationPage() {
                       <Button variant="ghost" size="xs" onClick={() => setViewVersion(v)}>
                         <Eye size={13} /> 查看
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => setEditingVersion(v)}
+                        title="基于此版正文生成新版本(原版保留)"
+                      >
+                        <Edit size={13} /> 编辑
+                      </Button>
                     </span>
                     {v.isFinal ? <Badge tone="success">最终版</Badge> : null}
                   </div>
@@ -773,9 +998,19 @@ export default function AdminCreationPage() {
                       {STORY_STATUS_BADGE[sItem.status]?.label ?? sItem.status}
                     </Badge>
                   </div>
-                  <div className="mt-1 flex items-center gap-2 text-xs text-[#94a3b8]">
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#94a3b8]">
                     {sItem.lastScore !== null ? <span className="font-medium text-[#1677ff]">{sItem.lastScore} 分</span> : null}
                     <span>{sItem.versionCount} 版</span>
+                    {sItem.scheduledAt ? (
+                      <span className="inline-flex items-center gap-0.5 text-[#b45309]">
+                        <CalendarClock size={11} /> 定时 {formatChinaTime(sItem.scheduledAt)}
+                      </span>
+                    ) : null}
+                    {sItem.publicationId ? (
+                      <span className="inline-flex items-center gap-0.5 text-[#047857]">
+                        <CheckCircle2 size={11} /> 已发布
+                      </span>
+                    ) : null}
                     <span>{formatChinaTime(sItem.updatedAt)}</span>
                   </div>
                 </button>
@@ -790,9 +1025,24 @@ export default function AdminCreationPage() {
           renderEditor()
         ) : (
           <div className="space-y-5">
-            <Button variant="secondary" size="sm" onClick={() => { setSelectedId(null); setDetail(null); }}>
-              <ChevronLeft size={14} /> 返回编辑需求
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={() => openEditorFromDetail(detail)}>
+                <ChevronLeft size={14} /> 返回编辑需求
+              </Button>
+              {detail.story.status === 'scheduled' ? (
+                <Badge tone="warning">
+                  <CalendarClock size={12} className="mr-1" />
+                  定时 {formatChinaTime(detail.story.scheduledAt)}
+                </Badge>
+              ) : null}
+              {detail.publication ? (
+                <Badge tone="success">
+                  <CheckCircle2 size={12} className="mr-1" />已发布 {formatChinaTime(detail.publication.publishedAt)}
+                </Badge>
+              ) : detail.story.status === 'passed' ? (
+                <Badge tone="info">已通过,待发布</Badge>
+              ) : null}
+            </div>
             {renderResult()}
           </div>
         )}
@@ -943,11 +1193,65 @@ export default function AdminCreationPage() {
       <ConfirmDialog
         open={deleteTarget !== null}
         title="删除短篇小说"
-        description={`确定删除《${deleteTarget?.title ?? ''}》?仅草稿、低质量池与失败状态可删,历史版本将一并移除。`}
+        description={`确定删除《${deleteTarget?.title ?? ''}》?仅草稿/定时/低质量池/失败状态可删,历史版本将一并移除。`}
         loading={deleting}
         onConfirm={() => void onDeleteConfirm()}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* 定时创作(V9.5 阶段二补丁) */}
+      <Modal
+        open={scheduleOpen}
+        title="设定定时创作"
+        onClose={() => setScheduleOpen(false)}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setScheduleOpen(false)}>
+              取消
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => void submitSchedule()} disabled={creating || !scheduleDraft}>
+              <CalendarClock size={14} /> 设定
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-[#64748b]">
+            到指定时间由调度器自动启动创作流水线。精度到分钟;时间按服务器本地时区解释。
+          </p>
+          <Field label="触发时间">
+            <input
+              type="datetime-local"
+              step={60}
+              className="h-9 w-full rounded-md border border-[#e2e8f0] px-3 text-sm"
+              value={scheduleDraft}
+              onChange={(e) => setScheduleDraft(e.target.value)}
+            />
+          </Field>
+          <p className="text-xs text-[#94a3b8]">
+            提示:已发布/已通过/流水线中作品请改用"新建"或重置需求后重新启动。
+          </p>
+        </div>
+      </Modal>
+
+      {/* 用户编辑版本(V9.5 阶段二补丁) */}
+      <VersionEditModal
+        open={editingVersion !== null}
+        version={editingVersion}
+        onSave={(content) => void onEditVersionSave(content)}
+        onClose={() => setEditingVersion(null)}
+      />
+
+      {/* 已发布作品:查看读者页快捷入口 */}
+      {detail && detail.publication ? (
+        <Link
+          href={`/short/${detail.story.id}`}
+          target="_blank"
+          className="mt-3 inline-flex items-center gap-1 text-sm text-[#1677ff] hover:underline"
+        >
+          <ExternalLink size={13} /> 打开读者页 /short/{detail.story.id}
+        </Link>
+      ) : null}
 
       {/* 底部说明 */}
       <p className="mt-6 flex items-center gap-2 text-xs text-[#94a3b8]">

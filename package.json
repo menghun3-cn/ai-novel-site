@@ -44,6 +44,7 @@
     "test:ai-serial-api": "tsx scripts/verify-ai-serial-api.ts",
     "test:short-story": "tsx scripts/verify-short-story-core.ts",
     "test:short-story-publication": "tsx scripts/verify-short-story-publication.ts",
+    "test:short-story-schedule": "tsx scripts/verify-short-story-schedule.ts",
     "test:short-story-reader": "tsx scripts/verify-short-story-reader.ts",
     "test:chapter-review": "tsx scripts/verify-chapter-review.ts",
     "test:chapter-review-auto-enqueue": "tsx scripts/verify-chapter-review-auto-enqueue.ts",

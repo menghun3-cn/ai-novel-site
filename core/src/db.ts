@@ -313,6 +313,7 @@ CREATE TABLE IF NOT EXISTS short_stories (
   brief_json TEXT NOT NULL DEFAULT '{}',
   current_version_id TEXT,
   source_url TEXT,
+  scheduled_at TEXT,  -- V9.5 阶段二补丁:定时创作,status='scheduled' 时有效
   review_round INTEGER NOT NULL DEFAULT 0,
   optimize_round INTEGER NOT NULL DEFAULT 0,
   manual_optimize_round INTEGER NOT NULL DEFAULT 0,
@@ -537,6 +538,9 @@ function migrateShortStoryColumns(db: Database.Database): void {
   const cols = (db.prepare('PRAGMA table_info(short_stories)').all() as { name: string }[]).map((c) => c.name);
   if (!cols.includes('manual_optimize_round')) {
     db.exec('ALTER TABLE short_stories ADD COLUMN manual_optimize_round INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.includes('scheduled_at')) {
+    db.exec('ALTER TABLE short_stories ADD COLUMN scheduled_at TEXT');
   }
 }
 

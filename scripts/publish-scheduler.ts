@@ -1,8 +1,9 @@
 /**
  * 调度器:常驻进程,每 tick 依次执行
- *   1) runPublishCycle()          — 到期定时章节转发布 + 每书每日自动发布(V3)
- *   2) runAiSerializationCycle()  — 每书每日 AI 连载:入队生成→质检→送审/发布(V5)
- *   3) processAiTasks({limit:5})  — V9 阶段二:长篇章节评审/弧级评审等后台任务(V9.5)
+ *   1) runScheduleCycle()        — V9.5 阶段二补丁:到点的短篇定时创作(scheduled → generating + 入队)
+ *   2) runPublishCycle()          — 到期定时章节转发布 + 每书每日自动发布(V3)
+ *   3) runAiSerializationCycle()  — 每书每日 AI 连载:入队生成→质检→送审/发布(V5)
+ *   4) processAiTasks({limit:5})  — V9 阶段二:长篇章节评审/弧级评审等后台任务(V9.5)
  *
  * 运行:npm run scheduler
  * 环境变量:
@@ -12,7 +13,16 @@
  * 单实例互斥:启动时获取 <数据目录>/scheduler.lock(O_EXCL + pid 存活检测,崩溃残留自动接管)。
  * 第二个实例会启动失败退出;NOVEL_SCHEDULER_LOCK=0 可跳过锁(自行保证单实例时使用)。
  */
-import { getDataDir, processAiTasks, runAiSerializationCycle, runPublishCycle, type SerializationCycleResult } from '@novel/core';
+import {
+  enqueueCreationPipeline,
+  fireScheduledStory,
+  getDataDir,
+  listDueScheduledShortStories,
+  processAiTasks,
+  runAiSerializationCycle,
+  runPublishCycle,
+  type SerializationCycleResult,
+} from '@novel/core';
 import { ensureSchedulerSingleInstance } from './scheduler-lock';
 
 const tickSeconds = Number(process.env.PUBLISH_TICK_SECONDS ?? 60);
@@ -30,7 +40,44 @@ if (process.env.NOVEL_SCHEDULER_LOCK !== '0') {
 
 let running = true;
 
+/**
+ * V9.5 阶段二补丁:扫描已到点的短篇定时任务,逐个转 generating 并入队创作流水线。
+ * fireScheduledStory 把 status=generating + 清空 scheduled_at 一步完成(防重入),
+ * 之后 enqueueCreationPipeline 入队 CREATE_NOVEL;processAiTasks 在同 tick 下一块处理。
+ */
+function runScheduleCycle(): { dueCount: number; enqueued: number } {
+  const due = listDueScheduledShortStories();
+  if (due.length === 0) return { dueCount: 0, enqueued: 0 };
+  let enqueued = 0;
+  for (const item of due) {
+    try {
+      fireScheduledStory(item.id);
+      enqueueCreationPipeline(item.id);
+      enqueued++;
+    } catch (err) {
+      // 单条失败不影响其他:下轮自然重试(状态未变)
+      console.error(
+        `[${new Date().toISOString()}] schedule fire failed: id=${item.id} scheduledAt=${item.scheduledAt} err=`,
+        err
+      );
+    }
+  }
+  return { dueCount: due.length, enqueued };
+}
+
 async function tick(): Promise<void> {
+  // 1) 短篇定时到点
+  try {
+    const sch = runScheduleCycle();
+    if (sch.enqueued > 0) {
+      console.log(
+        `[${new Date().toISOString()}] schedule: due=${sch.dueCount} enqueued=${sch.enqueued}`
+      );
+    }
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] schedule cycle failed:`, err);
+  }
+
   try {
     const result = runPublishCycle();
     const { duePublished, autopilotBooks, autopilotPublished } = result;
