@@ -265,6 +265,8 @@ export default function AdminCreationPage() {
   const [deleting, setDeleting] = useState(false);
 
   const pollStartRef = useRef<number>(0);
+  /** 详情请求序号:点击"返回编辑需求"/新建/删除时递增,使 in-flight 轮询响应失效,避免视图被旧响应拉回详情页 */
+  const detailReqIdRef = useRef(0);
 
   const loadList = useCallback(async (): Promise<void> => {
     try {
@@ -276,11 +278,14 @@ export default function AdminCreationPage() {
   }, []);
 
   const loadDetail = useCallback(async (id: string, silent = false): Promise<void> => {
+    const reqId = ++detailReqIdRef.current;
     try {
       const res = await api<StoryDetail>(`/api/admin/short-stories/${id}`);
+      if (reqId !== detailReqIdRef.current) return; // 过期响应:期间用户已离开详情视图,丢弃
       setDetail(res);
       return;
     } catch (err) {
+      if (reqId !== detailReqIdRef.current) return;
       if (!silent) setError(err instanceof Error ? err.message : '加载失败');
     }
   }, []);
@@ -310,6 +315,7 @@ export default function AdminCreationPage() {
   }, [detail, loadDetail, loadList]);
 
   const openNewDraft = (): void => {
+    detailReqIdRef.current++; // 使 in-flight 详情请求失效
     setSelectedId(null);
     setDetail(null);
     setTitle('');
@@ -328,6 +334,7 @@ export default function AdminCreationPage() {
 
   /** 返回编辑需求(从详情页回到编辑表单)并以现有 story 预填字段 */
   const openEditorFromDetail = (d: StoryDetail): void => {
+    detailReqIdRef.current++; // 使 in-flight 轮询响应失效,避免视图被旧响应拉回详情页
     setTitle(d.story.title === '未命名短篇' ? '' : d.story.title);
     setBrief(d.story.brief);
     setSourceUrl(d.story.sourceUrl ?? '');
@@ -590,6 +597,7 @@ export default function AdminCreationPage() {
       setNotice('已删除');
       setDeleteTarget(null);
       if (selectedId === deleteTarget.id) {
+        detailReqIdRef.current++; // 删除后使 in-flight 详情请求失效
         setSelectedId(null);
         setDetail(null);
       }
