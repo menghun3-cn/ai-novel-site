@@ -365,10 +365,16 @@ export function appendVersion(storyId: string, input: AppendVersionInput): Short
     const now = new Date().toISOString();
     const next = (db.prepare('SELECT COALESCE(MAX(version), 0) AS v FROM short_story_versions WHERE story_id = ?').get(storyId) as { v: number }).v + 1;
     const vid = genId('ssv');
+    // 用户手工修订即最终稿:追加时直接置 final(其余版本清除标记),发布/重发时 pickPublishVersion 选中新内容。
+    // AI 版本(generated/ai_optimized)不在此处理——由流水线评审达标后显式 setFinalVersion。
+    const isFinal = input.creationReason === 'user_edited' ? 1 : 0;
+    if (isFinal) {
+      db.prepare('UPDATE short_story_versions SET is_final = 0 WHERE story_id = ?').run(storyId);
+    }
     db.prepare(
       `INSERT INTO short_story_versions (id, story_id, version, content, char_count, creation_reason, generation_prompt, model_name, is_final, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
-    ).run(vid, storyId, next, content, content.length, input.creationReason, input.generationPrompt ?? null, input.modelName ?? null, now);
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(vid, storyId, next, content, content.length, input.creationReason, input.generationPrompt ?? null, input.modelName ?? null, isFinal, now);
     db.prepare('UPDATE short_stories SET current_version_id = ?, updated_at = ? WHERE id = ?').run(vid, now, storyId);
     return vid;
   });

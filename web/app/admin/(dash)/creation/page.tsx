@@ -425,9 +425,9 @@ export default function AdminCreationPage() {
     setError(null);
     try {
       if (editingExisting) {
-        // 已存在作品:仅保存元数据(用户应改 brief 后走"重新开始创作",或点"⏰ 定时")
+        // 已存在作品:仅保存元数据(标题/需求随时可改;正文请在版本时间线点「编辑」追加新版本)
         const id = await persistBrief('save');
-        setNotice('元数据已保存;已发布/已通过/流水线中作品请用"⏰ 定时"或新建');
+        setNotice('元数据已保存;标题/需求已可修改,正文请在版本时间线点「编辑」追加新版本');
         if (id) await openStory(id);
       } else {
         const id = await persistBrief('create');
@@ -1059,8 +1059,8 @@ export default function AdminCreationPage() {
                     ) : (
                       <span className="text-xs text-[#94a3b8]">未评审</span>
                     )}
-                    <span className="ml-auto text-xs text-[#94a3b8]">{v.charCount} 字 · {formatChinaTime(v.createdAt)}</span>
-                    <span className="flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                    <span className="ml-auto flex gap-1 text-xs text-[#94a3b8]">{v.charCount} 字 · {formatChinaTime(v.createdAt)}</span>
+                    <span className="flex shrink-0 gap-1">
                       <Button variant="ghost" size="xs" onClick={() => setViewVersion(v)}>
                         <Eye size={13} /> 查看
                       </Button>
