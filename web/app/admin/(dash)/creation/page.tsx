@@ -120,6 +120,8 @@ interface BatchSchedule {
   brief: StoryBrief;
   status: 'pending' | 'executing' | 'done' | 'failed' | 'cancelled';
   storyIds: string[];
+  repeatDaily: boolean;
+  lastFiredDate: string | null;
   error: string | null;
   executedAt: string | null;
   createdAt: string;
@@ -279,6 +281,8 @@ export default function AdminCreationPage() {
   const [batchThemeDraft, setBatchThemeDraft] = useState('');
   const [batchSynopsisDraft, setBatchSynopsisDraft] = useState('');
   const [batchSubmitting, setBatchSubmitting] = useState(false);
+  /** V9.7:是否每天同一时刻重复触发 */
+  const [batchRepeatDraft, setBatchRepeatDraft] = useState(false);
   // 编辑版本
   const [editingVersion, setEditingVersion] = useState<StoryVersion | null>(null);
   // 发布/补发进行中
@@ -508,6 +512,7 @@ export default function AdminCreationPage() {
     setBatchCountDraft('3');
     setBatchThemeDraft('');
     setBatchSynopsisDraft('');
+    setBatchRepeatDraft(false);
     setBatchOpen(true);
   };
 
@@ -531,9 +536,9 @@ export default function AdminCreationPage() {
       if (batchSynopsisDraft.trim()) brief.synopsis = batchSynopsisDraft.trim();
       await api('/api/admin/short-story-batch-schedules', {
         method: 'POST',
-        body: JSON.stringify({ scheduledAt: utc, count, brief }),
+        body: JSON.stringify({ scheduledAt: utc, count, brief, repeatDaily: batchRepeatDraft }),
       });
-      setNotice(`已设定批量定时:${count} 篇,到点后逐篇生成并通过评审自动发布`);
+      setNotice(`已设定批量定时:${count} 篇,到点后逐篇生成并通过评审自动发布${batchRepeatDraft ? '(每天重复)' : ''}`);
       setBatchOpen(false);
       await loadBatchSchedules();
       await loadList();
@@ -1170,6 +1175,12 @@ export default function AdminCreationPage() {
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#94a3b8]">
                     <span>{b.count} 篇</span>
                     {b.storyIds.length > 0 ? <span>已建 {b.storyIds.length} 篇</span> : null}
+                    {b.repeatDaily ? (
+                      <span className="inline-flex items-center gap-0.5 text-[#0f4ca8]">
+                        <RefreshCw size={11} /> 每天重复
+                      </span>
+                    ) : null}
+                    {b.repeatDaily && b.lastFiredDate ? <span>上次 {b.lastFiredDate}</span> : null}
                     {b.status === 'done' ? (
                       <span className="inline-flex items-center gap-0.5 text-[#047857]">
                         <CheckCircle2 size={11} /> 已执行
@@ -1435,7 +1446,7 @@ export default function AdminCreationPage() {
       >
         <div className="space-y-3">
           <p className="text-sm text-[#64748b]">
-            到点由调度器一次性创建 {batchCountDraft || 'N'} 篇短篇并逐篇启动创作流水线;标题未填时自动生成,通过评审后自动发布。
+            到点创建 {batchCountDraft || 'N'} 篇短篇并逐篇启动创作流水线;勾选「每天重复」则每日同一时刻自动触发;标题未填时自动生成,通过评审后自动发布。
           </p>
           <Field label="触发时间">
             <input
@@ -1456,6 +1467,15 @@ export default function AdminCreationPage() {
               onChange={(e) => setBatchCountDraft(e.target.value)}
             />
           </Field>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-[#334155]">
+            <input
+              type="checkbox"
+              checked={batchRepeatDraft}
+              onChange={(e) => setBatchRepeatDraft(e.target.checked)}
+              className="h-4 w-4 rounded border-[#e2e8f0]"
+            />
+            每天同一时刻重复触发(每日自动批量生成)
+          </label>
           <Field label="创作主题(可选)">
             <Input
               value={batchThemeDraft}

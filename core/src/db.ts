@@ -452,6 +452,8 @@ CREATE TABLE IF NOT EXISTS short_story_batch_schedules (
   status TEXT NOT NULL DEFAULT 'pending', -- pending|executing|done|failed|cancelled
   story_ids_json TEXT NOT NULL DEFAULT '[]',
   error TEXT,
+  repeat_daily INTEGER NOT NULL DEFAULT 0, -- V9.7:1=每天同一时刻重复触发;0=一次性
+  last_fired_date TEXT,                -- V9.7:每日计划上次触发日期(服务器本地 YYYY-MM-DD,同日去重)
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   executed_at TEXT
@@ -607,6 +609,19 @@ function migrateReviewRecordsRefColumns(db: Database.Database): void {
   }
 }
 
+/**
+ * 轻量迁移:V9.7——short_story_batch_schedules 补每日重复触发列(旧库升级)
+ */
+function migrateBatchScheduleColumns(db: Database.Database): void {
+  const cols = (db.prepare('PRAGMA table_info(short_story_batch_schedules)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('repeat_daily')) {
+    db.exec('ALTER TABLE short_story_batch_schedules ADD COLUMN repeat_daily INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.includes('last_fired_date')) {
+    db.exec('ALTER TABLE short_story_batch_schedules ADD COLUMN last_fired_date TEXT');
+  }
+}
+
 export function getDb(): Database.Database {
   if (!sqlite) {
     ensureDataDir();
@@ -623,6 +638,7 @@ export function getDb(): Database.Database {
     migrateChapterColumns(sqlite);
     migrateBooksReviewColumns(sqlite);
     migrateReviewRecordsRefColumns(sqlite);
+    migrateBatchScheduleColumns(sqlite);
   }
   return sqlite;
 }

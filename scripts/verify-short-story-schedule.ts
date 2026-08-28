@@ -277,6 +277,44 @@ async function main(): Promise<void> {
   }
   assertOk(batchDeleted, '删除后 getBatchSchedule 抛 BATCH_SCHEDULE_NOT_FOUND');
   assertOk(listBatchSchedules().some((b) => b.id === b1.id), 'done 计划在列表可见');
+
+  // ---------- 9. 批量定时每日重复(V9.7) ----------
+  const pad9 = (n: number): string => String(n).padStart(2, '0');
+  const localDateOf = (d: Date): string => `${d.getFullYear()}-${pad9(d.getMonth() + 1)}-${pad9(d.getDate())}`;
+  const today9 = localDateOf(new Date());
+  const tomorrow9 = new Date(Date.now() + 24 * 3600_000);
+  const dayAfter9 = new Date(Date.now() + 48 * 3600_000);
+  const dailyPast = new Date(Date.now() - 5 * 60_000).toISOString();
+
+  const d1 = createBatchSchedule({ scheduledAt: dailyPast, count: 2, brief: { theme: '每日主题' }, repeatDaily: true });
+  assertOk(getBatchSchedule(d1.id).repeatDaily === true, '每日计划 repeatDaily=true');
+  assertOk(getBatchSchedule(d1.id).status === 'pending', '每日计划初始 pending');
+  assertOk(listDueBatchSchedules().some((b) => b.id === d1.id), '每日计划今天时刻已到 → 出现在 due 列表');
+
+  const firedD1 = fireBatchSchedule(d1.id);
+  assertOk(firedD1.createdStoryIds.length === 2, '每日计划首次触发创建 2 篇');
+  const d1After = getBatchSchedule(d1.id);
+  assertOk(d1After.status === 'pending', '每日计划触发后保持 pending(等待次日)');
+  assertOk(d1After.lastFiredDate === today9, `last_fired_date=今天(${today9})`);
+  assertOk(d1After.executedAt === null, '每日计划不写 executed_at');
+  assertOk(d1After.storyIds.length === 2, 'story_ids 记录 2 条');
+
+  // 同日去重:due 列表不再返回;直接 fire 也被守卫拦截
+  assertOk(!listDueBatchSchedules().some((b) => b.id === d1.id), '同日不再出现在 due 列表(去重)');
+  await assertThrows('INVALID_INPUT', () => fireBatchSchedule(d1.id), '同日再次 fire 抛 INVALID_INPUT');
+
+  // 跨日:明天可再次触发,story_ids 跨日累积
+  const firedD2 = fireBatchSchedule(d1.id, { now: tomorrow9 });
+  assertOk(firedD2.createdStoryIds.length === 2, '次日再次触发创建 2 篇');
+  assertOk(getBatchSchedule(d1.id).lastFiredDate === localDateOf(tomorrow9), '次日触发后 last_fired_date=明天');
+  assertOk(getBatchSchedule(d1.id).storyIds.length === 4, 'story_ids 跨日累积为 4 条');
+  assertOk(!listDueBatchSchedules(tomorrow9).some((b) => b.id === d1.id), '明天(已触发)不再出现在 due 列表');
+  assertOk(listDueBatchSchedules(dayAfter9).some((b) => b.id === d1.id), '后天重新出现在 due 列表');
+
+  // 取消每日计划后不再触发
+  cancelBatchSchedule(d1.id);
+  assertOk(getBatchSchedule(d1.id).status === 'cancelled', '每日计划可取消(停止重复)');
+  assertOk(!listDueBatchSchedules(dayAfter9).some((b) => b.id === d1.id), '取消后不再出现在 due 列表');
 }
 
 await main();

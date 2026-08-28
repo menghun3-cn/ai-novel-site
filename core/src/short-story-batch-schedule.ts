@@ -1,8 +1,9 @@
-// V9.6 批量定时创作:一个计划 = 到点一次性创建 count 篇短篇并逐篇入队创作流水线。
+// V9.6 批量定时创作:一个计划 = 到点创建 count 篇短篇并逐篇入队创作流水线。
+// V9.7 支持每天重复:repeat_daily=1 时按 scheduled_at 的时刻每天触发一次(同日去重)。
 // 与单篇定时(short-stories.scheduled_at)互补:单篇定时管"这一篇到点开始写",
 // 批量定时管"到点按同一份创作需求批量生成 N 篇";标题不填时由流水线自动生成,
 // 每篇独立走 生成 → 评审 → (达标)自动发布 闭环。
-// 创建故事与入队均为本地 DB 操作(无 LLM 调用),到点执行瞬时完成,失败可重试。
+// 创建故事与入队均为本地 DB 操作(无 LLM 调用),到点执行瞬时完成。
 
 import { getDb, genId } from './db';
 import { CoreError, type ShortStoryBatchSchedule, type ShortStoryBatchScheduleStatus } from './domain';
@@ -22,6 +23,18 @@ function isBatchStatus(v: unknown): v is ShortStoryBatchScheduleStatus {
   return typeof v === 'string' && (BATCH_STATUSES as readonly string[]).includes(v);
 }
 
+/** 服务器本地时区日期键(YYYY-MM-DD),用于每日计划的同日去重 */
+function localDateKey(d: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** 服务器本地时区时刻键(HH:MM),用于每日计划"今天时刻已到"判定 */
+function localTimeKey(d: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 interface ScheduleRow {
   id: string;
   scheduled_at: string;
@@ -30,6 +43,8 @@ interface ScheduleRow {
   status: string;
   story_ids_json: string;
   error: string | null;
+  repeat_daily: number;
+  last_fired_date: string | null;
   created_at: string;
   updated_at: string;
   executed_at: string | null;
@@ -43,6 +58,8 @@ function toSchedule(row: ScheduleRow): ShortStoryBatchSchedule {
     brief: JSON.parse(row.brief_json) as ShortStoryBatchSchedule['brief'],
     status: (isBatchStatus(row.status) ? row.status : 'pending') as ShortStoryBatchScheduleStatus,
     storyIds: JSON.parse(row.story_ids_json) as string[],
+    repeatDaily: row.repeat_daily === 1,
+    lastFiredDate: row.last_fired_date,
     error: row.error,
     executedAt: row.executed_at,
     createdAt: row.created_at,
@@ -93,12 +110,14 @@ export function listBatchSchedules(opts?: ListBatchSchedulesOptions): ShortStory
 // ---------- 写入 ----------
 
 export interface CreateBatchScheduleInput {
-  /** 触发时间(UTC ISO 串,精度到分钟) */
+  /** 触发时间(UTC ISO 串,精度到分钟;每日计划取其中的本地时刻每天触发) */
   scheduledAt: string;
   /** 到点生成的短篇数量(1..50) */
   count: number;
   /** 每篇共用的创作需求(可空=自由创作) */
   brief?: unknown;
+  /** 是否每天同一时刻重复触发(默认 false=一次性) */
+  repeatDaily?: boolean;
 }
 
 /** 新建批量定时计划(初始 pending,由调度器到点触发) */
@@ -115,9 +134,17 @@ export function createBatchSchedule(input: CreateBatchScheduleInput): ShortStory
   const id = genId('bss');
   db.prepare(
     `INSERT INTO short_story_batch_schedules
-       (id, scheduled_at, count, brief_json, status, story_ids_json, error, created_at, updated_at, executed_at)
-     VALUES (?, ?, ?, ?, 'pending', '[]', NULL, ?, ?, NULL)`
-  ).run(id, new Date(input.scheduledAt).toISOString(), count, JSON.stringify(normalizeBrief(input.brief)), now, now);
+       (id, scheduled_at, count, brief_json, status, story_ids_json, error, repeat_daily, last_fired_date, created_at, updated_at, executed_at)
+     VALUES (?, ?, ?, ?, 'pending', '[]', NULL, ?, NULL, ?, ?, NULL)`
+  ).run(
+    id,
+    new Date(input.scheduledAt).toISOString(),
+    count,
+    JSON.stringify(normalizeBrief(input.brief)),
+    input.repeatDaily ? 1 : 0,
+    now,
+    now
+  );
   return getBatchSchedule(id);
 }
 
@@ -145,36 +172,62 @@ export function deleteBatchSchedule(id: string): void {
 
 // ---------- 调度器 ----------
 
-/** 调度器扫描:返回所有已到点(pending 且 scheduled_at <= now)的批量定时计划 */
+/**
+ * 调度器扫描:返回本次 tick 应触发的批量定时计划。
+ * - 一次性:status='pending' 且 scheduled_at <= now(到点即触发,含历史补触发)
+ * - 每日重复:status='pending' 且今天尚未触发(last_fired_date != 今天),且今天本地时刻
+ *   已到达 scheduled_at 的本地时刻(避免创建日时刻已过就立即补触发,次日开始按时触发)
+ */
 export function listDueBatchSchedules(now = new Date()): ShortStoryBatchSchedule[] {
+  const today = localDateKey(now);
   const rows = getDb()
     .prepare(
       `SELECT * FROM short_story_batch_schedules
-       WHERE status = 'pending' AND scheduled_at <= ?
+       WHERE status = 'pending' AND (
+         (repeat_daily = 0 AND scheduled_at <= ?)
+         OR (repeat_daily = 1 AND (last_fired_date IS NULL OR last_fired_date != ?))
+       )
        ORDER BY scheduled_at ASC, rowid ASC`
     )
-    .all(now.toISOString()) as ScheduleRow[];
-  return rows.map(toSchedule);
+    .all(now.toISOString(), today) as ScheduleRow[];
+  return rows.map(toSchedule).filter((s) => {
+    if (!s.repeatDaily) return true;
+    return localTimeKey(now) >= localTimeKey(new Date(s.scheduledAt));
+  });
 }
 
 /**
  * 到点执行:原子认领(pending → executing),然后逐篇创建短篇(标题留空,由流水线自动生成)
- * 并入队 CREATE_NOVEL;全部入队后置 done 并记录 story_ids。中途失败置 failed(error 可见),
- * 已创建的故事保留(可手动重试/删除),下轮不会重复触发(状态已非 pending)。
+ * 并入队 CREATE_NOVEL。
+ * - 一次性:全部入队后置 done 并记录 story_ids;失败置 failed(error 可见),下轮不再重复触发
+ * - 每日重复:成功后保持 pending 并记录 last_fired_date=今天(同日去重,次日再触发),
+ *   story_ids 跨日累积;失败保持 pending 并记录 error(跳过今天,次日自动重试)
+ * now 可注入用于测试跨日场景;已创建的故事保留。
  */
-export function fireBatchSchedule(id: string): { schedule: ShortStoryBatchSchedule; createdStoryIds: string[] } {
+export function fireBatchSchedule(
+  id: string,
+  opts?: { now?: Date }
+): { schedule: ShortStoryBatchSchedule; createdStoryIds: string[] } {
   const db = getDb();
-  const now = new Date().toISOString();
+  const now = opts?.now ?? new Date();
+  const nowIso = now.toISOString();
   const claimed = db
     .prepare(
       `UPDATE short_story_batch_schedules SET status = 'executing', updated_at = ? WHERE id = ? AND status = 'pending'`
     )
-    .run(now, id);
+    .run(nowIso, id);
   if (claimed.changes === 0) {
     const current = getBatchSchedule(id);
     throw new CoreError('INVALID_INPUT', `批量定时计划状态为 ${current.status},不可触发`);
   }
   const schedule = getBatchSchedule(id);
+  // 每日计划同日去重守卫:即使绕过 listDue 直接触发,同一天也只执行一次(回滚到 pending 等待次日)
+  if (schedule.repeatDaily && schedule.lastFiredDate === localDateKey(now)) {
+    db.prepare(
+      `UPDATE short_story_batch_schedules SET status = 'pending', updated_at = ? WHERE id = ?`
+    ).run(nowIso, id);
+    throw new CoreError('INVALID_INPUT', '该每日计划今天已触发过');
+  }
   const created: string[] = [];
   try {
     for (let i = 0; i < schedule.count; i++) {
@@ -183,16 +236,34 @@ export function fireBatchSchedule(id: string): { schedule: ShortStoryBatchSchedu
       enqueueCreationPipeline(story.id);
       created.push(story.id);
     }
-    db.prepare(
-      `UPDATE short_story_batch_schedules
-       SET status = 'done', story_ids_json = ?, executed_at = ?, updated_at = ? WHERE id = ?`
-    ).run(JSON.stringify(created), now, now, id);
+    const allIds = [...schedule.storyIds, ...created];
+    if (schedule.repeatDaily) {
+      // 每日计划触发成功:回置 pending + 记录今天,等待次日再触发
+      db.prepare(
+        `UPDATE short_story_batch_schedules
+         SET status = 'pending', last_fired_date = ?, story_ids_json = ?, error = NULL, updated_at = ? WHERE id = ?`
+      ).run(localDateKey(now), JSON.stringify(allIds), nowIso, id);
+    } else {
+      db.prepare(
+        `UPDATE short_story_batch_schedules
+         SET status = 'done', story_ids_json = ?, executed_at = ?, updated_at = ? WHERE id = ?`
+      ).run(JSON.stringify(allIds), nowIso, nowIso, id);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    db.prepare(
-      `UPDATE short_story_batch_schedules
-       SET status = 'failed', story_ids_json = ?, error = ?, updated_at = ? WHERE id = ?`
-    ).run(JSON.stringify(created), message.slice(0, 4000), now, id);
+    const allIds = [...schedule.storyIds, ...created];
+    if (schedule.repeatDaily) {
+      // 每日计划失败不终止:回置 pending + 记录 error 并跳过今天,次日自动重试
+      db.prepare(
+        `UPDATE short_story_batch_schedules
+         SET status = 'pending', last_fired_date = ?, story_ids_json = ?, error = ?, updated_at = ? WHERE id = ?`
+      ).run(localDateKey(now), JSON.stringify(allIds), message.slice(0, 4000), nowIso, id);
+    } else {
+      db.prepare(
+        `UPDATE short_story_batch_schedules
+         SET status = 'failed', story_ids_json = ?, error = ?, updated_at = ? WHERE id = ?`
+      ).run(JSON.stringify(allIds), message.slice(0, 4000), nowIso, id);
+    }
     throw err;
   }
   return { schedule: getBatchSchedule(id), createdStoryIds: created };
