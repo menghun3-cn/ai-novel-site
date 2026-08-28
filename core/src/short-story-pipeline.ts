@@ -33,6 +33,7 @@ import {
   setFinalVersion,
   transitionStory,
   tryGetShortStory,
+  updateShortStory,
 } from './short-story';
 
 /** 单次成文硬上限(单次 LLM 调用 maxTokens≈8000 ≈ 5000-6000 汉字;决策点 #3 已确认) */
@@ -52,19 +53,23 @@ export function buildCreationPrompt(brief: StoryBrief | undefined): string {
   const parts = [
     '请根据以下创作要求写一篇完整的短篇小说。',
     '',
+    '# 输出格式(硬性)',
+    '- 第一行必须是 Markdown 一级标题,例如 `# 雨夜重逢`(用一句话凝练的故事标题,中文,≤25 字)。',
+    '- 第二行起为故事正文(直到结束)。',
+    '- 正文不要再次出现标题行,不要输出任何创作说明、解释或前后记。',
+    '',
     '# 创作要求',
     ...(briefLines(brief).length > 0 ? briefLines(brief) : ['- 主题与题材不限,自由发挥一篇有完整故事性的短篇。']),
     '',
     '# 硬性要求',
     `- 正文篇幅约 ${target} 字(允许上下浮动 10%,不要超过 ${MAX_TARGET_WORDS} 字)。`,
     '- 故事必须包含明确的开端、冲突、发展、高潮与结局,前后呼应。',
-    '- 直接输出正文(Markdown),不要输出标题解释、创作说明或任何自我引用。',
   ];
   return parts.join('\n');
 }
 
 const CREATION_SYSTEM =
-  '你是资深短篇小说作者。严格遵循用户消息中的创作要求写作;直接输出小说正文,不要任何解释。';
+  '你是资深短篇小说作者。严格遵循用户消息中的创作要求写作;首行输出一个简练的故事标题(中文,≤25 字,Markdown 一级标题格式),从第二行起输出完整正文;不要输出任何解释、创作说明或前后记。';
 
 /** 流水线结果摘要(任务 output 用) */
 export interface PipelineOutcome {
@@ -84,8 +89,9 @@ export async function runCreationPipeline(
   opts?: { provider?: LlmProvider }
 ): Promise<PipelineOutcome> {
   const story = getShortStory(storyId);
-  if (story.status !== 'draft' && story.status !== 'failed') {
-    throw new CoreError('INVALID_INPUT', `当前状态 ${story.status} 不允许启动创作流水线(仅草稿/失败可重跑)`);
+  // generating 由调度器 fireScheduledStory 后立即入队的任务进入;passed/pool 终态拒绝
+  if (story.status === 'passed' || story.status === 'pool') {
+    throw new CoreError('INVALID_INPUT', `当前状态 ${story.status} 不允许启动创作流水线(已终态)`);
   }
   const ruleVersion = getActiveRuleVersion();
   if (!ruleVersion) {
@@ -103,6 +109,9 @@ export async function runCreationPipeline(
     maxTokens: 8000,
     temperature: 0.85,
   });
+  // 首行 `# 标题` 抽离作为作品名(仅在用户未填时采用);正文从第二行起
+  const titleMatch = raw.match(/^#\s+([^\n]+?)\s*\n+/);
+  const generatedTitle = titleMatch?.[1]?.trim() ?? '';
   const content = raw.replace(/^#\s+.+\n+/, '').trim();
   const quality = qualityCheckChapter(content, { minChars: 500 });
   if (!quality.ok) {
@@ -110,6 +119,10 @@ export async function runCreationPipeline(
       'AI_PROVIDER_FAILED',
       `生成内容未通过基础质检:${quality.issues.map((i) => i.detail).join(';')}`
     );
+  }
+  // 仅在用户未填名称(默认占位)时,采用 LLM 出的标题
+  if (generatedTitle && (!story.title || story.title === '未命名短篇')) {
+    updateShortStory(storyId, { title: generatedTitle });
   }
   let current = appendVersion(storyId, {
     content,
@@ -126,10 +139,12 @@ export async function runCreationPipeline(
     if (record.qualified) {
       setFinalVersion(storyId, current.id);
       transitionStory(storyId, 'passed');
+      // 通过即自动入队发布任务(passed=可发布);失败可由任务系统重试
+      enqueuePublishShortStory(storyId);
       return { status: 'passed', finalVersionId: current.id, score: record.score, autoOptimizeRounds: autoRounds };
     }
     if (autoRounds >= ruleVersion.maxAutoOptimizeRounds) {
-      // 达到最大优化次数仍未达标 → 低质量内容池(规格书 §22)
+      // 达到最大优化次数仍未达标 → 低质量内容池(规格书 §22),不自动发布
       transitionStory(storyId, 'pool');
       return { status: 'pool', finalVersionId: current.id, score: record.score, autoOptimizeRounds: autoRounds };
     }
@@ -142,11 +157,11 @@ export async function runCreationPipeline(
 
 // ---------- 任务入队 ----------
 
-/** 启动创作流水线(draft/failed 可入队);返回任务供前端轮询 */
+/** 启动创作流水线(draft/failed/scheduled 可入队;generating 由调度器 fireScheduledStory 后入队) */
 export function enqueueCreationPipeline(storyId: string): AiTask {
   const story = getShortStory(storyId);
-  if (story.status !== 'draft' && story.status !== 'failed') {
-    throw new CoreError('INVALID_INPUT', `当前状态 ${story.status} 不允许入队创作(仅草稿/失败可重跑)`);
+  if (story.status === 'passed' || story.status === 'pool') {
+    throw new CoreError('INVALID_INPUT', `当前状态 ${story.status} 不允许入队创作(已终态)`);
   }
   return createAiTask({ type: 'CREATE_NOVEL', refType: 'short_story', refId: storyId });
 }

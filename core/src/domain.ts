@@ -80,8 +80,17 @@ export class CoreError extends Error {
 
 // ---------- V9 AI小说创作与自动评审中心:短篇小说 / 评审规则 / Prompt / 任务 ----------
 
-/** 短篇小说状态:draft 编辑中;generating/reviewing/optimizing 流水线进行中;passed 已达标入库;pool 低质量池;failed 失败 */
-export const SHORT_STORY_STATUSES = ['draft', 'generating', 'reviewing', 'optimizing', 'passed', 'pool', 'failed'] as const;
+/** 短篇小说状态:draft 编辑中;scheduled 定时到点前等待;generating/reviewing/optimizing 流水线进行中;passed 已达标入库;pool 低质量池;failed 失败 */
+export const SHORT_STORY_STATUSES = [
+  'draft',
+  'scheduled',
+  'generating',
+  'reviewing',
+  'optimizing',
+  'passed',
+  'pool',
+  'failed',
+] as const;
 export type ShortStoryStatus = (typeof SHORT_STORY_STATUSES)[number];
 
 export function isShortStoryStatus(v: unknown): v is ShortStoryStatus {
@@ -89,7 +98,7 @@ export function isShortStoryStatus(v: unknown): v is ShortStoryStatus {
 }
 
 /** 可删除(手动清理)的状态;流水线产物 passed 与进行中状态不可删 */
-export const SHORT_STORY_DELETABLE_STATUSES: readonly ShortStoryStatus[] = ['draft', 'pool', 'failed'];
+export const SHORT_STORY_DELETABLE_STATUSES: readonly ShortStoryStatus[] = ['draft', 'scheduled', 'pool', 'failed'];
 
 /**
  * 创作需求三组字段(规格书 §5):全部可选填,存 short_stories.brief_json。
@@ -134,6 +143,8 @@ export interface ShortStory {
   brief: StoryBrief;
   currentVersionId: string | null;
   sourceUrl: string | null;
+  /** 定时创作时间(UTC ISO 串)。status='scheduled' 时有效,其他状态为 null。 */
+  scheduledAt: string | null;
   /** 累计评审次数 */
   reviewRound: number;
   /** 累计自动优化次数(流水线内受 max_auto_optimize_rounds 约束) */
