@@ -11,6 +11,7 @@ process.env.AI_MODEL = 'mock-model';
 
 import { CoreError, type LlmProvider } from '@novel/core';
 import {
+  appendVersion,
   cancelBatchSchedule,
   cancelShortStorySchedule,
   createBatchSchedule,
@@ -29,10 +30,13 @@ import {
   listBatchSchedules,
   listDueBatchSchedules,
   listDueScheduledShortStories,
+  listPublicationsByStory,
+  listStoryVersions,
   processAiTasks,
   publishShortStory,
   runCreationPipeline,
   scheduleShortStory,
+  updateShortStory,
   ensureDefaultReviewRule,
 } from '@novel/core';
 import fs from 'node:fs';
@@ -277,6 +281,74 @@ async function main(): Promise<void> {
   }
   assertOk(batchDeleted, '删除后 getBatchSchedule 抛 BATCH_SCHEDULE_NOT_FOUND');
   assertOk(listBatchSchedules().some((b) => b.id === b1.id), 'done 计划在列表可见');
+
+  // ---------- 8. passed 后修改名称/正文(bug 修复:user_edited 版本自动置 final) ----------
+  const edit1 = createShortStory({ title: '待改名' });
+  await runCreationPipeline(edit1.id, { provider: makeMultiProvider(92) });
+  assertOk(getShortStory(edit1.id).status === 'passed', 'edit1 通过评审 → passed');
+  // 先把流水线自动入队的 PUBLISH(V1) 跑完:模拟"已发布后再编辑"的真实场景
+  await processAiTasks({ provider: makeMultiProvider(92), limit: 10 });
+  const pubBefore = latestPublicationByStory(edit1.id);
+  assertOk(pubBefore !== null, '初始已自动发布(V1)');
+
+  // 名称:passed 状态可改(updateShortStory 无状态限制,PATCH 入口)
+  updateShortStory(edit1.id, { title: '已改名' });
+  assertOk(getShortStory(edit1.id).title === '已改名', 'passed 状态可修改名称');
+
+  // 正文:用户编辑追加新版本 → 自动成为最终版(修复前 is_final 停留在旧版,重发被"同版本已发布"挡死)
+  const edited = appendVersion(edit1.id, {
+    content: longContent('用户修订稿'),
+    creationReason: 'user_edited',
+    modelName: 'user-edit',
+  });
+  assertOk(edited.isFinal, 'user_edited 版本自动置为最终版');
+  assertOk(getShortStory(edit1.id).currentVersionId === edited.id, 'current_version_id 指向用户编辑版');
+  const finalCount = listStoryVersions(edit1.id).filter((v) => v.isFinal).length;
+  assertOk(finalCount === 1, `最终版唯一,实际 ${finalCount}`);
+
+  // 重发:新版 version_id 与已发布 V1 不同 → 不被"同版本已发布"守卫拦截,发布记录指向新版本
+  publishShortStory(edit1.id);
+  const pubAfter = latestPublicationByStory(edit1.id);
+  assertOk(pubAfter !== null && pubAfter.versionId === edited.id, '重发后发布记录指向用户编辑版(新正文生效)');
+  assertOk(listPublicationsByStory(edit1.id).length === 2, '两次发布均留痕可追溯');
+
+  // ---------- 9. 批量定时每日重复(V9.7) ----------
+  const pad9 = (n: number): string => String(n).padStart(2, '0');
+  const localDateOf = (d: Date): string => `${d.getFullYear()}-${pad9(d.getMonth() + 1)}-${pad9(d.getDate())}`;
+  const today9 = localDateOf(new Date());
+  const tomorrow9 = new Date(Date.now() + 24 * 3600_000);
+  const dayAfter9 = new Date(Date.now() + 48 * 3600_000);
+  const dailyPast = new Date(Date.now() - 5 * 60_000).toISOString();
+
+  const d1 = createBatchSchedule({ scheduledAt: dailyPast, count: 2, brief: { theme: '每日主题' }, repeatDaily: true });
+  assertOk(getBatchSchedule(d1.id).repeatDaily === true, '每日计划 repeatDaily=true');
+  assertOk(getBatchSchedule(d1.id).status === 'pending', '每日计划初始 pending');
+  assertOk(listDueBatchSchedules().some((b) => b.id === d1.id), '每日计划今天时刻已到 → 出现在 due 列表');
+
+  const firedD1 = fireBatchSchedule(d1.id);
+  assertOk(firedD1.createdStoryIds.length === 2, '每日计划首次触发创建 2 篇');
+  const d1After = getBatchSchedule(d1.id);
+  assertOk(d1After.status === 'pending', '每日计划触发后保持 pending(等待次日)');
+  assertOk(d1After.lastFiredDate === today9, `last_fired_date=今天(${today9})`);
+  assertOk(d1After.executedAt === null, '每日计划不写 executed_at');
+  assertOk(d1After.storyIds.length === 2, 'story_ids 记录 2 条');
+
+  // 同日去重:due 列表不再返回;直接 fire 也被守卫拦截
+  assertOk(!listDueBatchSchedules().some((b) => b.id === d1.id), '同日不再出现在 due 列表(去重)');
+  await assertThrows('INVALID_INPUT', () => fireBatchSchedule(d1.id), '同日再次 fire 抛 INVALID_INPUT');
+
+  // 跨日:明天可再次触发,story_ids 跨日累积
+  const firedD2 = fireBatchSchedule(d1.id, { now: tomorrow9 });
+  assertOk(firedD2.createdStoryIds.length === 2, '次日再次触发创建 2 篇');
+  assertOk(getBatchSchedule(d1.id).lastFiredDate === localDateOf(tomorrow9), '次日触发后 last_fired_date=明天');
+  assertOk(getBatchSchedule(d1.id).storyIds.length === 4, 'story_ids 跨日累积为 4 条');
+  assertOk(!listDueBatchSchedules(tomorrow9).some((b) => b.id === d1.id), '明天(已触发)不再出现在 due 列表');
+  assertOk(listDueBatchSchedules(dayAfter9).some((b) => b.id === d1.id), '后天重新出现在 due 列表');
+
+  // 取消每日计划后不再触发
+  cancelBatchSchedule(d1.id);
+  assertOk(getBatchSchedule(d1.id).status === 'cancelled', '每日计划可取消(停止重复)');
+  assertOk(!listDueBatchSchedules(dayAfter9).some((b) => b.id === d1.id), '取消后不再出现在 due 列表');
 }
 
 await main();
