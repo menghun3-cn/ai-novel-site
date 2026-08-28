@@ -113,6 +113,18 @@ interface StoryListItem extends ShortStory {
   publishedBookId: string | null;
   publishedAt: string | null;
 }
+interface BatchSchedule {
+  id: string;
+  scheduledAt: string;
+  count: number;
+  brief: StoryBrief;
+  status: 'pending' | 'executing' | 'done' | 'failed' | 'cancelled';
+  storyIds: string[];
+  error: string | null;
+  executedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 type AssistAction = 'suggest' | 'generate' | 'optimize';
 
@@ -169,6 +181,7 @@ const GROUPS: Array<{ title: string; fields: Array<{ key: string; label: string;
 
 const STORY_STATUS_BADGE: Record<string, { tone: 'success' | 'warning' | 'danger' | 'info' | 'running'; label: string }> = {
   draft: { tone: 'info', label: '草稿' },
+  scheduled: { tone: 'warning', label: '定时中' },
   generating: { tone: 'running', label: '生成中' },
   reviewing: { tone: 'running', label: '评审中' },
   optimizing: { tone: 'running', label: '优化中' },
@@ -180,6 +193,14 @@ const STORY_STATUS_BADGE: Record<string, { tone: 'success' | 'warning' | 'danger
 const ACTIVE_STATUSES = ['generating', 'reviewing', 'optimizing'];
 const POLL_INTERVAL_MS = 3000;
 const POLL_MAX_MS = 10 * 60 * 1000;
+
+const BATCH_STATUS_BADGE: Record<string, { tone: 'success' | 'warning' | 'danger' | 'info'; label: string }> = {
+  pending: { tone: 'info', label: '待触发' },
+  executing: { tone: 'warning', label: '执行中' },
+  done: { tone: 'success', label: '已完成' },
+  failed: { tone: 'danger', label: '失败' },
+  cancelled: { tone: 'info', label: '已取消' },
+};
 
 /**
  * 用户编辑版本弹窗:在 Vn 基础上修订正文,提交后由后端 appendVersion('user_edited') 产生 Vn+1。
@@ -250,6 +271,14 @@ export default function AdminCreationPage() {
   // V9.5 阶段二补丁:定时创作相关状态
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleDraft, setScheduleDraft] = useState<string>(''); // datetime-local
+  // V9.6 批量定时创作:计划列表 + 新建弹窗(时间/数量/共享需求)
+  const [batchSchedules, setBatchSchedules] = useState<BatchSchedule[] | null>(null);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchTimeDraft, setBatchTimeDraft] = useState<string>(''); // datetime-local
+  const [batchCountDraft, setBatchCountDraft] = useState<string>('3');
+  const [batchThemeDraft, setBatchThemeDraft] = useState('');
+  const [batchSynopsisDraft, setBatchSynopsisDraft] = useState('');
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
   // 编辑版本
   const [editingVersion, setEditingVersion] = useState<StoryVersion | null>(null);
   // 发布/补发进行中
@@ -265,6 +294,8 @@ export default function AdminCreationPage() {
   const [deleting, setDeleting] = useState(false);
 
   const pollStartRef = useRef<number>(0);
+  /** 详情请求序号:点击"返回编辑需求"/新建/删除时递增,使 in-flight 轮询响应失效,避免视图被旧响应拉回详情页 */
+  const detailReqIdRef = useRef(0);
 
   const loadList = useCallback(async (): Promise<void> => {
     try {
@@ -275,19 +306,32 @@ export default function AdminCreationPage() {
     }
   }, []);
 
+  const loadBatchSchedules = useCallback(async (): Promise<void> => {
+    try {
+      const res = await api<{ schedules: BatchSchedule[] }>('/api/admin/short-story-batch-schedules?limit=200');
+      setBatchSchedules(res.schedules);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '批量定时列表加载失败');
+    }
+  }, []);
+
   const loadDetail = useCallback(async (id: string, silent = false): Promise<void> => {
+    const reqId = ++detailReqIdRef.current;
     try {
       const res = await api<StoryDetail>(`/api/admin/short-stories/${id}`);
+      if (reqId !== detailReqIdRef.current) return; // 过期响应:期间用户已离开详情视图,丢弃
       setDetail(res);
       return;
     } catch (err) {
+      if (reqId !== detailReqIdRef.current) return;
       if (!silent) setError(err instanceof Error ? err.message : '加载失败');
     }
   }, []);
 
   useEffect(() => {
     void loadList();
-  }, [loadList]);
+    void loadBatchSchedules();
+  }, [loadList, loadBatchSchedules]);
 
   // 流水进行中轮询详情(3s,上限 10 分钟)
   useEffect(() => {
@@ -310,6 +354,7 @@ export default function AdminCreationPage() {
   }, [detail, loadDetail, loadList]);
 
   const openNewDraft = (): void => {
+    detailReqIdRef.current++; // 使 in-flight 详情请求失效
     setSelectedId(null);
     setDetail(null);
     setTitle('');
@@ -328,6 +373,7 @@ export default function AdminCreationPage() {
 
   /** 返回编辑需求(从详情页回到编辑表单)并以现有 story 预填字段 */
   const openEditorFromDetail = (d: StoryDetail): void => {
+    detailReqIdRef.current++; // 使 in-flight 轮询响应失效,避免视图被旧响应拉回详情页
     setTitle(d.story.title === '未命名短篇' ? '' : d.story.title);
     setBrief(d.story.brief);
     setSourceUrl(d.story.sourceUrl ?? '');
@@ -448,6 +494,75 @@ export default function AdminCreationPage() {
       setError(err instanceof Error ? err.message : '取消定时失败');
     } finally {
       setCreating(false);
+    }
+  };
+
+  // ---------- 批量定时创作(V9.6) ----------
+
+  const openBatchScheduleModal = (): void => {
+    // 默认:10 分钟后(确保在下一 tick 不会立刻触发);用户可改
+    const t = new Date(Date.now() + 10 * 60_000);
+    const pad = (n: number): string => String(n).padStart(2, '0');
+    const localISO = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`;
+    setBatchTimeDraft(localISO);
+    setBatchCountDraft('3');
+    setBatchThemeDraft('');
+    setBatchSynopsisDraft('');
+    setBatchOpen(true);
+  };
+
+  const submitBatchSchedule = async (): Promise<void> => {
+    if (!batchTimeDraft) return;
+    const utc = new Date(batchTimeDraft).toISOString();
+    if (!Number.isFinite(Date.parse(batchTimeDraft))) {
+      setError('定时时间格式无效');
+      return;
+    }
+    const count = Number(batchCountDraft);
+    if (!Number.isInteger(count) || count < 1 || count > 50) {
+      setError('生成数量需为 1..50 的整数');
+      return;
+    }
+    setBatchSubmitting(true);
+    setError(null);
+    try {
+      const brief: StoryBrief = {};
+      if (batchThemeDraft.trim()) brief.theme = batchThemeDraft.trim();
+      if (batchSynopsisDraft.trim()) brief.synopsis = batchSynopsisDraft.trim();
+      await api('/api/admin/short-story-batch-schedules', {
+        method: 'POST',
+        body: JSON.stringify({ scheduledAt: utc, count, brief }),
+      });
+      setNotice(`已设定批量定时:${count} 篇,到点后逐篇生成并通过评审自动发布`);
+      setBatchOpen(false);
+      await loadBatchSchedules();
+      await loadList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '设定批量定时失败');
+    } finally {
+      setBatchSubmitting(false);
+    }
+  };
+
+  const cancelBatch = async (id: string): Promise<void> => {
+    setError(null);
+    try {
+      await api(`/api/admin/short-story-batch-schedules/${id}/cancel`, { method: 'POST' });
+      setNotice('已取消批量定时计划');
+      await loadBatchSchedules();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '取消批量定时失败');
+    }
+  };
+
+  const deleteBatch = async (id: string): Promise<void> => {
+    setError(null);
+    try {
+      await api(`/api/admin/short-story-batch-schedules/${id}`, { method: 'DELETE' });
+      setNotice('已删除批量定时记录');
+      await loadBatchSchedules();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除批量定时失败');
     }
   };
 
@@ -590,6 +705,7 @@ export default function AdminCreationPage() {
       setNotice('已删除');
       setDeleteTarget(null);
       if (selectedId === deleteTarget.id) {
+        detailReqIdRef.current++; // 删除后使 in-flight 详情请求失效
         setSelectedId(null);
         setDetail(null);
       }
@@ -1021,6 +1137,65 @@ export default function AdminCreationPage() {
             </div>
           )}
         </div>
+
+        {/* 批量定时创作(V9.6):到点一次性创建 count 篇短篇,标题自动生成,通过评审自动发布 */}
+        <div className="mt-4 rounded-xl bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-[#0f172a]">
+              <CalendarClock size={14} /> 批量定时
+            </h2>
+            <Button variant="primary" size="xs" onClick={openBatchScheduleModal}>
+              <Plus size={13} /> 新建
+            </Button>
+          </div>
+          {batchSchedules === null ? (
+            <p className="py-6 text-center text-sm text-[#94a3b8]">
+              <Spinner />
+            </p>
+          ) : batchSchedules.length === 0 ? (
+            <p className="py-4 text-center text-xs text-[#94a3b8]">暂无批量定时计划</p>
+          ) : (
+            <div className="max-h-[40vh] space-y-2 overflow-y-auto pr-1">
+              {batchSchedules.map((b) => (
+                <div key={b.id} className="rounded-lg border border-[#f1f5f9] px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-[#0f172a]">
+                      <CalendarClock size={12} className="text-[#b45309]" />
+                      {formatChinaTime(b.scheduledAt)}
+                    </span>
+                    <Badge tone={BATCH_STATUS_BADGE[b.status]?.tone ?? 'info'}>
+                      {BATCH_STATUS_BADGE[b.status]?.label ?? b.status}
+                    </Badge>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#94a3b8]">
+                    <span>{b.count} 篇</span>
+                    {b.storyIds.length > 0 ? <span>已建 {b.storyIds.length} 篇</span> : null}
+                    {b.status === 'done' ? (
+                      <span className="inline-flex items-center gap-0.5 text-[#047857]">
+                        <CheckCircle2 size={11} /> 已执行
+                      </span>
+                    ) : null}
+                  </div>
+                  {b.status === 'failed' && b.error ? (
+                    <p className="mt-1 break-all text-xs text-[#b91c1c]">{b.error}</p>
+                  ) : null}
+                  <div className="mt-1.5 flex justify-end gap-1">
+                    {b.status === 'pending' ? (
+                      <Button variant="ghost" size="xs" onClick={() => void cancelBatch(b.id)}>
+                        取消
+                      </Button>
+                    ) : null}
+                    {b.status !== 'executing' ? (
+                      <Button variant="ghost" size="xs" onClick={() => void deleteBatch(b.id)}>
+                        <Trash2 size={12} /> 删除
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       {/* 主区 */}
       <div className="lg:col-span-3">
@@ -1234,6 +1409,68 @@ export default function AdminCreationPage() {
           <p className="text-xs text-[#94a3b8]">
             提示:已发布/已通过/流水线中作品请改用"新建"或重置需求后重新启动。
           </p>
+        </div>
+      </Modal>
+
+      {/* 批量定时创作(V9.6) */}
+      <Modal
+        open={batchOpen}
+        title="设定批量定时创作"
+        onClose={() => setBatchOpen(false)}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setBatchOpen(false)}>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void submitBatchSchedule()}
+              disabled={batchSubmitting || !batchTimeDraft}
+            >
+              <CalendarClock size={14} /> 设定
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-[#64748b]">
+            到点由调度器一次性创建 {batchCountDraft || 'N'} 篇短篇并逐篇启动创作流水线;标题未填时自动生成,通过评审后自动发布。
+          </p>
+          <Field label="触发时间">
+            <input
+              type="datetime-local"
+              step={60}
+              className="h-9 w-full rounded-md border border-[#e2e8f0] px-3 text-sm"
+              value={batchTimeDraft}
+              onChange={(e) => setBatchTimeDraft(e.target.value)}
+            />
+          </Field>
+          <Field label="生成数量(1..50)">
+            <input
+              type="number"
+              min={1}
+              max={50}
+              className="h-9 w-full rounded-md border border-[#e2e8f0] px-3 text-sm"
+              value={batchCountDraft}
+              onChange={(e) => setBatchCountDraft(e.target.value)}
+            />
+          </Field>
+          <Field label="创作主题(可选)">
+            <Input
+              value={batchThemeDraft}
+              onChange={(e) => setBatchThemeDraft(e.target.value)}
+              placeholder="每篇共用;留空则自由创作"
+            />
+          </Field>
+          <Field label="故事梗概(可选)">
+            <Textarea
+              className="min-h-[72px]"
+              value={batchSynopsisDraft}
+              onChange={(e) => setBatchSynopsisDraft(e.target.value)}
+              placeholder="每篇共用;留空则自由创作"
+            />
+          </Field>
         </div>
       </Modal>
 
