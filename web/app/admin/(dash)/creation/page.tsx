@@ -332,7 +332,9 @@ export default function AdminCreationPage() {
     setBrief(d.story.brief);
     setSourceUrl(d.story.sourceUrl ?? '');
     setEditingExisting(true);
-    // selectedId 仍保留(让"保存"走 PATCH),"AI开始创作"按钮在已发布/流水线中状态下隐藏
+    // 切回编辑器视图:主区判断是 !detail ? renderEditor() : renderResult()
+    // selectedId 仍保留(让"保存"走 PATCH),"AI开始创作"按钮在终态下仅保存元数据
+    setDetail(null);
     setError(null);
     setNotice(null);
   };
@@ -340,8 +342,9 @@ export default function AdminCreationPage() {
   const persistBrief = async (mode: 'save' | 'create'): Promise<string | null> => {
     const payload = { title: title.trim() || undefined, brief, sourceUrl: sourceUrl.trim() || null };
     let storyId: string;
-    if (detail) {
-      storyId = detail.story.id;
+    // selectedId 在 openEditorFromDetail 后仍保留(editingExisting=true),以此区分新建/更新
+    if (editingExisting && selectedId) {
+      storyId = selectedId;
       await api(`/api/admin/short-stories/${storyId}`, { method: 'PATCH', body: JSON.stringify(payload) });
     } else {
       const res = await api<{ story: ShortStory }>('/api/admin/short-stories', {
@@ -361,7 +364,7 @@ export default function AdminCreationPage() {
     setError(null);
     try {
       const id = await persistBrief('save');
-      setNotice(detail ? '元数据已保存' : '草稿已保存');
+      setNotice(editingExisting ? '元数据已保存' : '草稿已保存');
       if (id) await openStory(id);
       await loadList();
     } catch (err) {
@@ -375,7 +378,7 @@ export default function AdminCreationPage() {
     setCreating(true);
     setError(null);
     try {
-      if (editingExisting && detail) {
+      if (editingExisting) {
         // 已存在作品:仅保存元数据(用户应改 brief 后走"重新开始创作",或点"⏰ 定时")
         const id = await persistBrief('save');
         setNotice('元数据已保存;已发布/已通过/流水线中作品请用"⏰ 定时"或新建');
