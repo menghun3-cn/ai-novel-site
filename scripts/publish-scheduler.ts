@@ -15,8 +15,10 @@
  */
 import {
   enqueueCreationPipeline,
+  fireBatchSchedule,
   fireScheduledStory,
   getDataDir,
+  listDueBatchSchedules,
   listDueScheduledShortStories,
   processAiTasks,
   runAiSerializationCycle,
@@ -41,13 +43,14 @@ if (process.env.NOVEL_SCHEDULER_LOCK !== '0') {
 let running = true;
 
 /**
- * V9.5 阶段二补丁:扫描已到点的短篇定时任务,逐个转 generating 并入队创作流水线。
- * fireScheduledStory 把 status=generating + 清空 scheduled_at 一步完成(防重入),
- * 之后 enqueueCreationPipeline 入队 CREATE_NOVEL;processAiTasks 在同 tick 下一块处理。
+ * 扫描已到点的短篇定时任务(单篇 + 批量),逐个触发并入队创作流水线。
+ * - 单篇:fireScheduledStory 把 status=generating + 清空 scheduled_at 一步完成(防重入),
+ *   之后 enqueueCreationPipeline 入队 CREATE_NOVEL
+ * - 批量:fireBatchSchedule 原子认领(pending→executing)→ 创建 count 篇短篇(标题自动生成)
+ *   并逐篇入队;processAiTasks 在同 tick 下一块处理
  */
-function runScheduleCycle(): { dueCount: number; enqueued: number } {
+function runScheduleCycle(): { dueCount: number; enqueued: number; batchFired: number; batchStories: number } {
   const due = listDueScheduledShortStories();
-  if (due.length === 0) return { dueCount: 0, enqueued: 0 };
   let enqueued = 0;
   for (const item of due) {
     try {
@@ -62,16 +65,32 @@ function runScheduleCycle(): { dueCount: number; enqueued: number } {
       );
     }
   }
-  return { dueCount: due.length, enqueued };
+  let batchFired = 0;
+  let batchStories = 0;
+  const batches = listDueBatchSchedules();
+  for (const batch of batches) {
+    try {
+      const { createdStoryIds } = fireBatchSchedule(batch.id);
+      batchFired++;
+      batchStories += createdStoryIds.length;
+    } catch (err) {
+      // 失败已由 fireBatchSchedule 落库(error 可见);下轮不再重复触发(status 已非 pending)
+      console.error(
+        `[${new Date().toISOString()}] batch schedule fire failed: id=${batch.id} scheduledAt=${batch.scheduledAt} err=`,
+        err
+      );
+    }
+  }
+  return { dueCount: due.length, enqueued, batchFired, batchStories };
 }
 
 async function tick(): Promise<void> {
-  // 1) 短篇定时到点
+  // 1) 短篇定时到点(单篇 + 批量)
   try {
     const sch = runScheduleCycle();
-    if (sch.enqueued > 0) {
+    if (sch.enqueued > 0 || sch.batchFired > 0) {
       console.log(
-        `[${new Date().toISOString()}] schedule: due=${sch.dueCount} enqueued=${sch.enqueued}`
+        `[${new Date().toISOString()}] schedule: due=${sch.dueCount} enqueued=${sch.enqueued} batch=${sch.batchFired} stories=${sch.batchStories}`
       );
     }
   } catch (err) {

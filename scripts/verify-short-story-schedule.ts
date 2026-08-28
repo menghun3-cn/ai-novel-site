@@ -11,15 +11,23 @@ process.env.AI_MODEL = 'mock-model';
 
 import { CoreError, type LlmProvider } from '@novel/core';
 import {
+  cancelBatchSchedule,
   cancelShortStorySchedule,
+  createBatchSchedule,
   createShortStory,
   createFakeProvider,
+  deleteBatchSchedule,
   enqueueCreationPipeline,
   enqueuePublishShortStory,
+  fireBatchSchedule,
   fireScheduledStory,
   getActiveRuleVersion,
+  getBatchSchedule,
   getShortStory,
+  latestPublicationByStory,
   listAiTasks,
+  listBatchSchedules,
+  listDueBatchSchedules,
   listDueScheduledShortStories,
   processAiTasks,
   publishShortStory,
@@ -193,6 +201,82 @@ async function main(): Promise<void> {
     threwAlready = err instanceof CoreError && err.code === 'SHORT_STORY_NOT_PUBLISHED';
   }
   assertOk(threwAlready, 'publishShortStory(s5) 同 version 重复发布抛 SHORT_STORY_NOT_PUBLISHED');
+
+  // ---------- 6. 自动标题:用户未填名称 → 采用 LLM 首行标题 ----------
+  const auto1 = createShortStory({});
+  assertOk(getShortStory(auto1.id).title === '未命名短篇', '未填标题时占位=未命名短篇');
+  await runCreationPipeline(auto1.id, { provider: makeMultiProvider(91) });
+  assertOk(getShortStory(auto1.id).title === '初稿', '未填标题时自动采用 LLM 首行标题');
+  assertOk(getShortStory(auto1.id).status === 'passed', '自动标题流程通过 → passed');
+
+  const auto2 = createShortStory({ title: '用户指定标题' });
+  await runCreationPipeline(auto2.id, { provider: makeMultiProvider(90) });
+  assertOk(getShortStory(auto2.id).title === '用户指定标题', '用户已填标题时保留,不覆盖');
+
+  // ---------- 7. 批量定时创作(V9.6) ----------
+  // 7.1 创建与参数校验
+  const b1 = createBatchSchedule({ scheduledAt: past, count: 3, brief: { theme: '批量主题', synopsis: '批量梗概' } });
+  assertOk(getBatchSchedule(b1.id).status === 'pending', '新建批量定时=pending');
+  assertOk(getBatchSchedule(b1.id).count === 3, '批量定时 count=3');
+  assertOk(getBatchSchedule(b1.id).brief.theme === '批量主题', '批量定时共享 brief 落库');
+  await assertThrows('INVALID_INPUT', () => createBatchSchedule({ scheduledAt: 'not-a-date', count: 3 }), '非法时间抛 INVALID_INPUT');
+  await assertThrows('INVALID_INPUT', () => createBatchSchedule({ scheduledAt: future, count: 0 }), 'count=0 抛 INVALID_INPUT');
+  await assertThrows('INVALID_INPUT', () => createBatchSchedule({ scheduledAt: future, count: 51 }), 'count=51 抛 INVALID_INPUT');
+
+  // 7.2 到期扫描
+  const b2 = createBatchSchedule({ scheduledAt: future, count: 2 });
+  const dueBatch = listDueBatchSchedules();
+  assertOk(dueBatch.some((b) => b.id === b1.id), '到期批量定时出现在 due 列表');
+  assertOk(!dueBatch.some((b) => b.id === b2.id), '未到期批量定时不在 due 列表');
+
+  // 7.3 到点触发:创建 count 篇 + 逐篇入队
+  const fired = fireBatchSchedule(b1.id);
+  assertOk(fired.createdStoryIds.length === 3, 'fire 一次性创建 3 篇短篇');
+  const b1After = getBatchSchedule(b1.id);
+  assertOk(b1After.status === 'done' && b1After.executedAt !== null, 'fire 后状态=done 且 executed_at 非空');
+  assertOk(b1After.storyIds.length === 3, 'story_ids 落库 3 条');
+  for (const sid of fired.createdStoryIds) {
+    const s = getShortStory(sid);
+    assertOk(s.status === 'draft', `批量短篇 ${sid} 初始为 draft`);
+    assertOk(s.brief.theme === '批量主题', `批量短篇 ${sid} 继承共享 brief`);
+  }
+  await assertThrows('INVALID_INPUT', () => fireBatchSchedule(b1.id), '已 done 再 fire 抛 INVALID_INPUT');
+
+  // 7.4 流水线闭环:全部通过评审 + 自动发布
+  const batchCreateTasks = listAiTasks({ refType: 'short_story', limit: 100 }).filter(
+    (t) => t.type === 'CREATE_NOVEL' && fired.createdStoryIds.includes(t.refId ?? '')
+  );
+  assertOk(batchCreateTasks.length === 3, `批量入队 3 个 CREATE_NOVEL 任务,实际 ${batchCreateTasks.length}`);
+  const resultsBatch1 = await processAiTasks({ provider: makeMultiProvider(93), limit: 10 });
+  const createAllOk = fired.createdStoryIds.every((sid) => {
+    const task = batchCreateTasks.find((t) => t.refId === sid);
+    const r = task ? resultsBatch1.find((x) => x.taskId === task.id) : undefined;
+    return !!r && r.ok;
+  });
+  assertOk(createAllOk, '批量 3 篇 CREATE_NOVEL 全部成功(passed)');
+  for (const sid of fired.createdStoryIds) {
+    assertOk(getShortStory(sid).status === 'passed', `批量短篇 ${sid} 通过评审 → passed`);
+  }
+  // 通过评审后自动发布(PUBLISH 任务由流水线入队,下一轮 processAiTasks 执行)
+  await processAiTasks({ provider: makeMultiProvider(93), limit: 10 });
+  for (const sid of fired.createdStoryIds) {
+    assertOk(latestPublicationByStory(sid) !== null, `批量短篇 ${sid} 通过评审后自动发布`);
+  }
+
+  // 7.5 取消与删除
+  await assertThrows('INVALID_INPUT', () => cancelBatchSchedule(b1.id), '已 done 不能取消');
+  cancelBatchSchedule(b2.id);
+  assertOk(getBatchSchedule(b2.id).status === 'cancelled', '取消后状态=cancelled');
+  assertOk(!listDueBatchSchedules().some((b) => b.id === b2.id), '已取消不出现在 due 列表');
+  deleteBatchSchedule(b2.id);
+  let batchDeleted = false;
+  try {
+    getBatchSchedule(b2.id);
+  } catch (err) {
+    batchDeleted = err instanceof CoreError && err.code === 'BATCH_SCHEDULE_NOT_FOUND';
+  }
+  assertOk(batchDeleted, '删除后 getBatchSchedule 抛 BATCH_SCHEDULE_NOT_FOUND');
+  assertOk(listBatchSchedules().some((b) => b.id === b1.id), 'done 计划在列表可见');
 }
 
 await main();

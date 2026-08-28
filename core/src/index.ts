@@ -11,6 +11,7 @@ export * from './admin-auth';
 export * from './discovery';
 export * from './analytics';
 export * from './short-story';
+export * from './short-story-batch-schedule';
 export * from './review-rule';
 export * from './review-prompt';
 export * from './ai-task';
