@@ -327,8 +327,12 @@ export interface ShortStoryBatchSchedule {
   /** 每篇共用的创作需求(可空=自由创作) */
   brief: StoryBrief;
   status: ShortStoryBatchScheduleStatus;
-  /** 已创建的故事 id 列表(执行后写入) */
+  /** 已创建的故事 id 列表(执行后写入;每日重复计划跨日累积) */
   storyIds: string[];
+  /** 是否每天同一时刻重复触发(1=每天;0=一次性)。每日计划触发后保持 pending,同日去重 */
+  repeatDaily: boolean;
+  /** 每日计划上次触发日期(服务器本地 YYYY-MM-DD,用于同日去重;一次性计划为 null) */
+  lastFiredDate: string | null;
   error: string | null;
   executedAt: string | null;
   createdAt: string;

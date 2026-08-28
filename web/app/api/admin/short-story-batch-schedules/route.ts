@@ -6,12 +6,14 @@ import { json, readJson, withAdmin, type AdminRouteContext } from '@/lib/admin-a
 export const dynamic = 'force-dynamic';
 
 const createSchema = z.object({
-  /** UTC ISO 串(前端 datetime-local 转 UTC 后传入),精度到分钟 */
+  /** UTC ISO 串(前端 datetime-local 转 UTC 后传入),精度到分钟;每日计划取其中的时刻 */
   scheduledAt: z.string().min(1),
   /** 到点生成的短篇数量(1..50) */
   count: z.number().int().min(1).max(50),
   /** 每篇共用的创作需求(可空=自由创作) */
   brief: z.record(z.unknown()).optional(),
+  /** 是否每天同一时刻重复触发(默认 false=一次性) */
+  repeatDaily: z.boolean().optional(),
 });
 
 /** 批量定时计划列表(?status=&limit=) */
