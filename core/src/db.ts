@@ -443,6 +443,21 @@ CREATE TABLE IF NOT EXISTS short_story_publications (
 );
 CREATE INDEX IF NOT EXISTS idx_short_story_publications_story ON short_story_publications(story_id);
 
+-- V9.6 批量定时创作:到点一次性创建 count 篇短篇并逐篇入队创作流水线(标题自动生成,通过评审后自动发布)
+CREATE TABLE IF NOT EXISTS short_story_batch_schedules (
+  id TEXT PRIMARY KEY,
+  scheduled_at TEXT NOT NULL,          -- 触发时间(UTC ISO 串,精度到分钟)
+  count INTEGER NOT NULL DEFAULT 1,    -- 到点生成的短篇数量
+  brief_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'pending', -- pending|executing|done|failed|cancelled
+  story_ids_json TEXT NOT NULL DEFAULT '[]',
+  error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  executed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_short_story_batch_schedules_due ON short_story_batch_schedules(status, scheduled_at);
+
 -- V9 阶段二:长篇弧级评审记录(独立表:弧级评审的实体边界与短篇/章节不同)
 CREATE TABLE IF NOT EXISTS arc_review_records (
   id TEXT PRIMARY KEY,

@@ -54,6 +54,7 @@ export type CoreErrorCode =
   | 'AI_PROVIDER_FAILED'
   | 'SHORT_STORY_NOT_FOUND'
   | 'SHORT_STORY_VERSION_NOT_FOUND'
+  | 'BATCH_SCHEDULE_NOT_FOUND'
   | 'REVIEW_RULE_NOT_FOUND'
   | 'REVIEW_PROMPT_NOT_FOUND'
   | 'REVIEW_RECORD_NOT_FOUND'
@@ -312,6 +313,26 @@ export interface ShortStoryPublication {
   bookId: string;
   versionId: string;
   publishedAt: string;
+}
+
+/** 批量定时创作计划:到点一次性创建 count 篇短篇(标题自动生成)并逐篇走创作流水线 */
+export type ShortStoryBatchScheduleStatus = 'pending' | 'executing' | 'done' | 'failed' | 'cancelled';
+
+export interface ShortStoryBatchSchedule {
+  id: string;
+  /** 触发时间(UTC ISO 串,精度到分钟,由前端 datetime-local 转换) */
+  scheduledAt: string;
+  /** 到点生成的短篇数量(1..50) */
+  count: number;
+  /** 每篇共用的创作需求(可空=自由创作) */
+  brief: StoryBrief;
+  status: ShortStoryBatchScheduleStatus;
+  /** 已创建的故事 id 列表(执行后写入) */
+  storyIds: string[];
+  error: string | null;
+  executedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ArcReviewRecord {
