@@ -108,7 +108,7 @@ async function main(): Promise<void> {
   // ---------- 场景B:三轮不收敛 → 低质量池 ----------
   {
     const s2 = createShortStory({ title: '场景B' });
-    enqueueCreationPipeline(s2.id);
+    const task = enqueueCreationPipeline(s2.id);
     const results = await processAiTasks({
       limit: 10,
       provider: makePipelineProvider({
@@ -120,7 +120,10 @@ async function main(): Promise<void> {
         ],
       }),
     });
-    assertOk(results.length === 1 && results[0].ok, '任务执行成功');
+    // V9.5 阶段二补丁:pipeline 通过后会入队 PUBLISH_SHORT_STORY,与上轮遗留的同任务混在同一批,
+    // 因此只断言本场景的 CREATE_NOVEL 任务成功,不强求 length===1
+    const cn = results.find((r) => r.type === 'CREATE_NOVEL' && r.taskId === task.id);
+    assertOk(!!cn && cn.ok, '任务执行成功');
     const b = getShortStory(s2.id);
     assertOk(b.status === 'pool', `三轮不收敛进入低质量池(实际 ${b.status})`);
     assertOk(b.optimizeRound === 3 && b.reviewRound === 4, '恰好 3 次优化 / 4 次评审后停止');
@@ -136,7 +139,9 @@ async function main(): Promise<void> {
     const results = await processAiTasks({
       provider: createFakeProvider(() => '太短'),
     });
-    assertOk(results.length === 1 && !results[0].ok && (results[0].error ?? '').includes('质检'), '生成过短被质检拦截并记录原因');
+    // 残留 PUBLISH 任务会与本场景 CREATE_NOVEL 混批;只断言本场景任务失败
+    const cn = results.find((r) => r.taskId === task.id);
+    assertOk(!!cn && !cn.ok && (cn.error ?? '').includes('质检'), '生成过短被质检拦截并记录原因');
     assertOk(getAiTask(task.id).status === 'FAILED', '任务 FAILED');
     assertOk(getShortStory(story.id).status === 'failed', '小说置为 failed(错误可见不静默)');
     // 重试任务并换成好 Provider → 成功

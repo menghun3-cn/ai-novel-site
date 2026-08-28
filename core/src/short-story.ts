@@ -70,6 +70,7 @@ interface StoryRow {
   brief_json: string;
   current_version_id: string | null;
   source_url: string | null;
+  scheduled_at: string | null;
   review_round: number;
   optimize_round: number;
   manual_optimize_round: number;
@@ -95,6 +96,7 @@ function toStory(row: StoryRow): ShortStory {
     brief: parseJsonSafe<StoryBrief>(row.brief_json, {}),
     currentVersionId: row.current_version_id,
     sourceUrl: row.source_url,
+    scheduledAt: row.scheduled_at ?? null,
     reviewRound: row.review_round,
     optimizeRound: row.optimize_round,
     manualOptimizeRound: row.manual_optimize_round,
@@ -155,6 +157,11 @@ export interface ListShortStoriesOptions {
 
 export interface ShortStoryListItem extends ShortStory {
   versionCount: number;
+  /** 最新一次发布物化的 publicationId(为 null 表示尚未发布) */
+  publicationId: string | null;
+  /** 最近发布使用的 bookId(与 publicationId 同步成对出现) */
+  publishedBookId: string | null;
+  publishedAt: string | null;
 }
 
 /** 列表按更新时间倒序;支持状态筛选与标题模糊匹配;q 为空返回全量(admin 惯例:客户端过滤) */
@@ -173,11 +180,26 @@ export function listShortStories(opts?: ListShortStoriesOptions): ShortStoryList
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const rows = getDb()
     .prepare(
-      `SELECT s.*, (SELECT COUNT(*) FROM short_story_versions v WHERE v.story_id = s.id) AS version_count
+      `SELECT s.*,
+              (SELECT COUNT(*) FROM short_story_versions v WHERE v.story_id = s.id) AS version_count,
+              (SELECT id FROM short_story_publications p WHERE p.story_id = s.id ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1) AS publication_id,
+              (SELECT book_id FROM short_story_publications p WHERE p.story_id = s.id ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1) AS published_book_id,
+              (SELECT published_at FROM short_story_publications p WHERE p.story_id = s.id ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1) AS published_at
        FROM short_stories s ${whereSql} ORDER BY s.updated_at DESC LIMIT ?`
     )
-    .all(...params, limit) as (StoryRow & { version_count: number })[];
-  return rows.map((row) => ({ ...toStory(row), versionCount: row.version_count }));
+    .all(...params, limit) as (StoryRow & {
+      version_count: number;
+      publication_id: string | null;
+      published_book_id: string | null;
+      published_at: string | null;
+    })[];
+  return rows.map((row) => ({
+    ...toStory(row),
+    versionCount: row.version_count,
+    publicationId: row.publication_id,
+    publishedBookId: row.published_book_id,
+    publishedAt: row.published_at,
+  }));
 }
 
 export function getStoryVersion(versionId: string): ShortStoryVersion {
@@ -206,6 +228,11 @@ export interface CreateShortStoryInput {
   title?: string;
   brief?: unknown;
   sourceUrl?: string | null;
+  /**
+   * 定时创作时间(UTC ISO 串,前端 datetime-local 转 UTC 后传入)。传入则初始状态为 'scheduled'。
+   * 仅在初始创建时有效;后续调整请走 scheduleShortStory/cancelShortStorySchedule。
+   */
+  scheduledAt?: string | null;
 }
 
 export function createShortStory(input?: CreateShortStoryInput): ShortStory {
@@ -215,10 +242,12 @@ export function createShortStory(input?: CreateShortStoryInput): ShortStory {
   const title = input?.title?.trim() || '未命名短篇';
   const brief = normalizeBrief(input?.brief);
   const sourceUrl = input?.sourceUrl?.trim() || null;
+  const scheduledAt = input?.scheduledAt?.trim() || null;
+  const initialStatus: ShortStoryStatus = scheduledAt ? 'scheduled' : 'draft';
   db.prepare(
-    `INSERT INTO short_stories (id, title, status, brief_json, current_version_id, source_url, review_round, optimize_round, last_score, created_at, updated_at)
-     VALUES (?, ?, 'draft', ?, NULL, ?, 0, 0, NULL, ?, ?)`
-  ).run(id, title.slice(0, 200), JSON.stringify(brief), sourceUrl, now, now);
+    `INSERT INTO short_stories (id, title, status, brief_json, current_version_id, source_url, scheduled_at, review_round, optimize_round, last_score, created_at, updated_at)
+     VALUES (?, ?, ?, ?, NULL, ?, ?, 0, 0, NULL, ?, ?)`
+  ).run(id, title.slice(0, 200), initialStatus, JSON.stringify(brief), sourceUrl, scheduledAt, now, now);
   return getShortStory(id);
 }
 
@@ -226,6 +255,11 @@ export interface UpdateShortStoryPatch {
   title?: string;
   brief?: unknown;
   sourceUrl?: string | null;
+  /**
+   * 直接覆盖 scheduled_at(主用于调度器在到点时清空)。
+   * 注意:用户级"设定/取消定时"请用 scheduleShortStory / cancelShortStorySchedule(同时改 status)。
+   */
+  scheduledAt?: string | null;
 }
 
 /** 编辑主档元数据;brief 整体替换(归一化后),sourceUrl 传 null 清除。不动任何版本行。 */
@@ -239,14 +273,73 @@ export function updateShortStory(id: string, patch: UpdateShortStoryPatch): Shor
   if (patch.sourceUrl !== undefined) {
     nextSourceUrl = typeof patch.sourceUrl === 'string' ? patch.sourceUrl.trim() || null : null;
   }
-  db.prepare('UPDATE short_stories SET title = ?, brief_json = ?, source_url = ?, updated_at = ? WHERE id = ?').run(
-    nextTitle,
-    JSON.stringify(nextBrief),
-    nextSourceUrl,
-    new Date().toISOString(),
-    id
-  );
+  const nextScheduledAt =
+    patch.scheduledAt !== undefined
+      ? typeof patch.scheduledAt === 'string'
+        ? patch.scheduledAt.trim() || null
+        : null
+      : current.scheduledAt;
+  db.prepare(
+    'UPDATE short_stories SET title = ?, brief_json = ?, source_url = ?, scheduled_at = ?, updated_at = ? WHERE id = ?'
+  ).run(nextTitle, JSON.stringify(nextBrief), nextSourceUrl, nextScheduledAt, new Date().toISOString(), id);
   return getShortStory(id);
+}
+
+/** 设定/更新短篇的定时创作时间(ISO 串);同步把 status 切到 scheduled。仅 draft|scheduled|failed 允许。 */
+export function scheduleShortStory(id: string, scheduledAt: string): ShortStory {
+  if (!scheduledAt || !Number.isFinite(Date.parse(scheduledAt))) {
+    throw new CoreError('INVALID_INPUT', `非法的定时时间: ${scheduledAt}`);
+  }
+  const current = getShortStory(id);
+  if (current.status !== 'draft' && current.status !== 'scheduled' && current.status !== 'failed') {
+    throw new CoreError(
+      'INVALID_INPUT',
+      `当前状态 ${current.status} 不允许设定定时(仅 draft/scheduled/failed 可设)`
+    );
+  }
+  const db = getDb();
+  db.prepare(
+    `UPDATE short_stories SET status = 'scheduled', scheduled_at = ?, updated_at = ? WHERE id = ?`
+  ).run(new Date(scheduledAt).toISOString(), new Date().toISOString(), id);
+  return getShortStory(id);
+}
+
+/** 取消短篇的定时(回退到 draft 并清空 scheduled_at)。仅 scheduled 可取消。 */
+export function cancelShortStorySchedule(id: string): ShortStory {
+  const current = getShortStory(id);
+  if (current.status !== 'scheduled') {
+    throw new CoreError('INVALID_INPUT', `当前状态 ${current.status} 没有挂起的定时任务`);
+  }
+  const db = getDb();
+  db.prepare(
+    `UPDATE short_stories SET status = 'draft', scheduled_at = NULL, updated_at = ? WHERE id = ?`
+  ).run(new Date().toISOString(), id);
+  return getShortStory(id);
+}
+
+/** 调度器到点执行:把 scheduled 切到 generating 并清空 scheduled_at(避免下一轮重复)。 */
+export function fireScheduledStory(id: string): ShortStory {
+  const current = getShortStory(id);
+  if (current.status !== 'scheduled') {
+    throw new CoreError('INVALID_INPUT', `当前状态 ${current.status} 不在 scheduled,跳过到点触发`);
+  }
+  const db = getDb();
+  db.prepare(
+    `UPDATE short_stories SET status = 'generating', scheduled_at = NULL, updated_at = ? WHERE id = ?`
+  ).run(new Date().toISOString(), id);
+  return getShortStory(id);
+}
+
+/** 调度器扫描:返回所有已到点(status='scheduled' 且 scheduled_at <= now())的短篇 id 列表 */
+export function listDueScheduledShortStories(now = new Date()): Array<{ id: string; scheduledAt: string }> {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, scheduled_at FROM short_stories
+       WHERE status = 'scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= ?
+       ORDER BY scheduled_at ASC, rowid ASC`
+    )
+    .all(now.toISOString()) as Array<{ id: string; scheduled_at: string }>;
+  return rows.map((r) => ({ id: r.id, scheduledAt: r.scheduled_at }));
 }
 
 export interface AppendVersionInput {
