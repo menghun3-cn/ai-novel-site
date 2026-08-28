@@ -205,24 +205,83 @@ const BATCH_STATUS_BADGE: Record<string, { tone: 'success' | 'warning' | 'danger
 };
 
 /**
- * 用户编辑版本弹窗:在 Vn 基础上修订正文,提交后由后端 appendVersion('user_edited') 产生 Vn+1。
+ * 用户编辑弹窗:可同时修改作品名称与基于 Vn 修订正文。
+ * 名称即时生效(PATCH 主档);正文变更后由后端 appendVersion('user_edited') 产生 Vn+1。
+ * 名称/正文均支持 AI 自动生成(assist 异步任务 + 轮询填入)。
  * 历史版本永不修改(规格书 §43)。
  */
 function VersionEditModal({
   open,
   version,
+  storyTitle,
+  brief,
   onSave,
   onClose,
 }: {
   open: boolean;
   version: StoryVersion | null;
-  onSave: (content: string) => void;
+  storyTitle: string;
+  brief: StoryBrief;
+  onSave: (title: string, content: string) => void;
   onClose: () => void;
 }): React.ReactElement {
+  const [titleBuf, setTitleBuf] = useState('');
   const [buf, setBuf] = useState('');
+  const [aiBusy, setAiBusy] = useState<'title' | 'content' | null>(null);
+  const [aiError, setAiError] = useState('');
   useEffect(() => {
-    if (open && version) setBuf(version.content);
-  }, [open, version]);
+    if (open && version) {
+      setTitleBuf(storyTitle);
+      setBuf(version.content);
+      setAiError('');
+    }
+  }, [open, version, storyTitle]);
+  const titleChanged = titleBuf.trim() !== storyTitle;
+  const contentChanged = version !== null && buf !== version.content && buf.trim() !== '';
+
+  /** AI 生成名称/正文:assist 异步任务 + 轮询填入(与创作表单字段辅助同款) */
+  const aiGenerate = async (field: 'title' | 'content'): Promise<void> => {
+    if (aiBusy || !version) return;
+    setAiBusy(field);
+    setAiError('');
+    try {
+      const context: StoryBrief = field === 'title' ? { ...brief } : { ...brief, title: storyTitle };
+      const res = await api<{ task: AiTaskLite }>('/api/admin/ai/assist', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'generate', field, context }),
+      });
+      const taskId = res.task.id;
+      const startedAt = Date.now();
+      const timer = setInterval(async () => {
+        try {
+          const t = await api<{ task: AiTaskLite & { output: { result?: string } | null } }>(`/api/admin/ai/tasks/${taskId}`);
+          if (t.task.status === 'SUCCESS') {
+            clearInterval(timer);
+            setAiBusy(null);
+            const result = t.task.output?.result ?? '';
+            if (result) {
+              if (field === 'title') setTitleBuf(result);
+              else setBuf(result);
+            }
+          } else if (t.task.status === 'FAILED' || t.task.status === 'CANCELLED') {
+            clearInterval(timer);
+            setAiBusy(null);
+            setAiError(t.task.error ?? 'AI 生成失败');
+          } else if (Date.now() - startedAt > 120000) {
+            clearInterval(timer);
+            setAiBusy(null);
+            setAiError('AI 生成超时(2 分钟),请重试');
+          }
+        } catch {
+          /* 单次轮询失败忽略,下一轮继续 */
+        }
+      }, 1500);
+    } catch (err) {
+      setAiBusy(null);
+      setAiError(err instanceof Error ? err.message : 'AI 生成请求失败');
+    }
+  };
+
   return (
     <Modal
       open={open}
@@ -233,8 +292,13 @@ function VersionEditModal({
           <Button variant="ghost" size="sm" onClick={onClose}>
             取消
           </Button>
-          <Button variant="primary" size="sm" onClick={() => onSave(buf)} disabled={!buf.trim()}>
-            <Edit size={14} /> 保存为 V{version ? version.version + 1 : ''}
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => onSave(titleBuf, buf)}
+            disabled={!titleChanged && !contentChanged}
+          >
+            <Edit size={14} /> 保存
           </Button>
         </div>
       }
@@ -242,13 +306,44 @@ function VersionEditModal({
       {version ? (
         <div className="space-y-2">
           <p className="text-xs text-[#94a3b8]">
-            当前正文 {version.charCount} 字。修订后追加新版本,旧版本保留作为留痕(用户编辑 + 再评审可走手动流程)。
+            修改名称即时生效;修改正文则追加新版本(原版保留留痕),通过后可在详情页重新发布。名称/正文均可由 AI 自动生成。
           </p>
-          <textarea
-            value={buf}
-            onChange={(e) => setBuf(e.target.value)}
-            className="h-[55vh] w-full resize-none rounded-md border border-[#e2e8f0] bg-white p-3 font-mono text-sm leading-relaxed focus:border-[#1677ff] focus:outline-none"
-          />
+          <Field label="作品名称">
+            <div className="flex items-start gap-2">
+              <Input value={titleBuf} onChange={(e) => setTitleBuf(e.target.value)} placeholder="未命名短篇" />
+              <Button
+                variant="ghost"
+                size="xs"
+                title="✨ AI 自动生成名称"
+                onClick={() => void aiGenerate('title')}
+                disabled={aiBusy !== null}
+              >
+                {aiBusy === 'title' ? <Spinner size={13} /> : <Sparkles size={13} />} 生成
+              </Button>
+            </div>
+          </Field>
+          <Field label={`正文(当前 ${version.charCount} 字)`}>
+            <div className="space-y-1.5">
+              <textarea
+                value={buf}
+                onChange={(e) => setBuf(e.target.value)}
+                className="h-[42vh] w-full resize-none rounded-md border border-[#e2e8f0] bg-white p-3 font-mono text-sm leading-relaxed focus:border-[#1677ff] focus:outline-none"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-[#94a3b8]">基于创作需求 + 当前名称生成完整正文,可反复生成后手动微调。</span>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  title="✨ AI 自动生成正文"
+                  onClick={() => void aiGenerate('content')}
+                  disabled={aiBusy !== null}
+                >
+                  {aiBusy === 'content' ? <Spinner size={13} /> : <Sparkles size={13} />} AI 生成正文
+                </Button>
+              </div>
+            </div>
+          </Field>
+          {aiError ? <p className="text-xs text-[#b91c1c]">{aiError}</p> : null}
         </div>
       ) : null}
     </Modal>
@@ -573,20 +668,40 @@ export default function AdminCreationPage() {
 
   // ---------- 用户编辑版本 ----------
 
-  const onEditVersionSave = async (content: string): Promise<void> => {
-    if (!editingVersion) return;
+  const onEditVersionSave = async (title: string, content: string): Promise<void> => {
+    if (!editingVersion || !detail) return;
+    const story = detail.story;
+    const titleChanged = title.trim() !== '' && title.trim() !== story.title;
+    const contentChanged = content.trim() !== '' && content !== editingVersion.content;
+    if (!titleChanged && !contentChanged) {
+      setError('未做任何修改');
+      return;
+    }
     setCreating(true);
+    setError(null);
     try {
-      await api(`/api/admin/short-stories/${editingVersion.storyId}/versions`, {
-        method: 'POST',
-        body: JSON.stringify({ content }),
-      });
-      setNotice('已追加用户编辑版本 V' + (editingVersion.version + 1));
+      if (titleChanged) {
+        await api(`/api/admin/short-stories/${editingVersion.storyId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ title: title.trim() }),
+        });
+      }
+      if (contentChanged) {
+        await api(`/api/admin/short-stories/${editingVersion.storyId}/versions`, {
+          method: 'POST',
+          body: JSON.stringify({ content }),
+        });
+      }
+      setNotice(
+        [titleChanged ? '名称已更新' : '', contentChanged ? `已追加用户编辑版本 V${editingVersion.version + 1}` : '']
+          .filter(Boolean)
+          .join(';')
+      );
       setEditingVersion(null);
       await openStory(editingVersion.storyId);
       await loadList();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存版本失败');
+      setError(err instanceof Error ? err.message : '保存失败');
     } finally {
       setCreating(false);
     }
@@ -1494,11 +1609,13 @@ export default function AdminCreationPage() {
         </div>
       </Modal>
 
-      {/* 用户编辑版本(V9.5 阶段二补丁) */}
+      {/* 用户编辑版本(V9.5 阶段二补丁):名称 + 正文 + AI 生成 */}
       <VersionEditModal
         open={editingVersion !== null}
         version={editingVersion}
-        onSave={(content) => void onEditVersionSave(content)}
+        storyTitle={detail?.story.title ?? ''}
+        brief={detail?.story.brief ?? {}}
+        onSave={(title, content) => void onEditVersionSave(title, content)}
         onClose={() => setEditingVersion(null)}
       />
 
