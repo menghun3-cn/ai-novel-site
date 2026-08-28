@@ -11,6 +11,7 @@ process.env.AI_MODEL = 'mock-model';
 
 import { CoreError, type LlmProvider } from '@novel/core';
 import {
+  appendVersion,
   cancelBatchSchedule,
   cancelShortStorySchedule,
   createBatchSchedule,
@@ -29,10 +30,13 @@ import {
   listBatchSchedules,
   listDueBatchSchedules,
   listDueScheduledShortStories,
+  listPublicationsByStory,
+  listStoryVersions,
   processAiTasks,
   publishShortStory,
   runCreationPipeline,
   scheduleShortStory,
+  updateShortStory,
   ensureDefaultReviewRule,
 } from '@novel/core';
 import fs from 'node:fs';
@@ -277,6 +281,36 @@ async function main(): Promise<void> {
   }
   assertOk(batchDeleted, '删除后 getBatchSchedule 抛 BATCH_SCHEDULE_NOT_FOUND');
   assertOk(listBatchSchedules().some((b) => b.id === b1.id), 'done 计划在列表可见');
+
+  // ---------- 8. passed 后修改名称/正文(bug 修复:user_edited 版本自动置 final) ----------
+  const edit1 = createShortStory({ title: '待改名' });
+  await runCreationPipeline(edit1.id, { provider: makeMultiProvider(92) });
+  assertOk(getShortStory(edit1.id).status === 'passed', 'edit1 通过评审 → passed');
+  // 先把流水线自动入队的 PUBLISH(V1) 跑完:模拟"已发布后再编辑"的真实场景
+  await processAiTasks({ provider: makeMultiProvider(92), limit: 10 });
+  const pubBefore = latestPublicationByStory(edit1.id);
+  assertOk(pubBefore !== null, '初始已自动发布(V1)');
+
+  // 名称:passed 状态可改(updateShortStory 无状态限制,PATCH 入口)
+  updateShortStory(edit1.id, { title: '已改名' });
+  assertOk(getShortStory(edit1.id).title === '已改名', 'passed 状态可修改名称');
+
+  // 正文:用户编辑追加新版本 → 自动成为最终版(修复前 is_final 停留在旧版,重发被"同版本已发布"挡死)
+  const edited = appendVersion(edit1.id, {
+    content: longContent('用户修订稿'),
+    creationReason: 'user_edited',
+    modelName: 'user-edit',
+  });
+  assertOk(edited.isFinal, 'user_edited 版本自动置为最终版');
+  assertOk(getShortStory(edit1.id).currentVersionId === edited.id, 'current_version_id 指向用户编辑版');
+  const finalCount = listStoryVersions(edit1.id).filter((v) => v.isFinal).length;
+  assertOk(finalCount === 1, `最终版唯一,实际 ${finalCount}`);
+
+  // 重发:新版 version_id 与已发布 V1 不同 → 不被"同版本已发布"守卫拦截,发布记录指向新版本
+  publishShortStory(edit1.id);
+  const pubAfter = latestPublicationByStory(edit1.id);
+  assertOk(pubAfter !== null && pubAfter.versionId === edited.id, '重发后发布记录指向用户编辑版(新正文生效)');
+  assertOk(listPublicationsByStory(edit1.id).length === 2, '两次发布均留痕可追溯');
 }
 
 await main();
