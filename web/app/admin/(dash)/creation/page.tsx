@@ -134,6 +134,8 @@ interface AssistModalState {
   fieldKey: string;
   label: string;
   action: AssistAction;
+  /** V9.8:辅助结果写入的目标('editor'=主创作表单 brief,'batch'=批量定时弹窗草稿) */
+  target: 'editor' | 'batch';
   phase: 'loading' | 'done' | 'failed';
   taskId: string | null;
   options: string[];
@@ -378,6 +380,9 @@ export default function AdminCreationPage() {
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   /** V9.7:是否每天同一时刻重复触发 */
   const [batchRepeatDraft, setBatchRepeatDraft] = useState(false);
+  // V9.8 批量定时管理:编辑中的计划 id(null=新建);每天重复时的触发时刻(HH:mm,本地时区)
+  const [batchEditId, setBatchEditId] = useState<string | null>(null);
+  const [batchDailyTimeDraft, setBatchDailyTimeDraft] = useState('10:00');
   // 编辑版本
   const [editingVersion, setEditingVersion] = useState<StoryVersion | null>(null);
   // 发布/补发进行中
@@ -598,25 +603,44 @@ export default function AdminCreationPage() {
 
   // ---------- 批量定时创作(V9.6) ----------
 
-  const openBatchScheduleModal = (): void => {
-    // 默认:10 分钟后(确保在下一 tick 不会立刻触发);用户可改
-    const t = new Date(Date.now() + 10 * 60_000);
+  const openBatchScheduleModal = (schedule: BatchSchedule | null = null): void => {
+    // 编辑:按现有计划预填;新建:默认 10 分钟后(确保在下一 tick 不会立刻触发)
+    setBatchEditId(schedule?.id ?? null);
     const pad = (n: number): string => String(n).padStart(2, '0');
+    const t = schedule ? new Date(schedule.scheduledAt) : new Date(Date.now() + 10 * 60_000);
     const localISO = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`;
     setBatchTimeDraft(localISO);
-    setBatchCountDraft('3');
-    setBatchThemeDraft('');
-    setBatchSynopsisDraft('');
-    setBatchRepeatDraft(false);
+    setBatchDailyTimeDraft(`${pad(t.getHours())}:${pad(t.getMinutes())}`);
+    setBatchCountDraft(schedule ? String(schedule.count) : '3');
+    setBatchThemeDraft(String(schedule?.brief.theme ?? ''));
+    setBatchSynopsisDraft(String(schedule?.brief.synopsis ?? ''));
+    setBatchRepeatDraft(schedule?.repeatDaily ?? false);
     setBatchOpen(true);
   };
 
   const submitBatchSchedule = async (): Promise<void> => {
-    if (!batchTimeDraft) return;
-    const utc = new Date(batchTimeDraft).toISOString();
-    if (!Number.isFinite(Date.parse(batchTimeDraft))) {
-      setError('定时时间格式无效');
-      return;
+    // 每天重复:只取 HH:mm(本地时区),拼到今天组成 scheduledAt(后端按本地时刻每天触发);
+    // 一次性:完整 datetime-local 转 UTC。
+    let utc: string;
+    if (batchRepeatDraft) {
+      if (!batchDailyTimeDraft) {
+        setError('请填写每日触发时间');
+        return;
+      }
+      const [hh, mm] = batchDailyTimeDraft.split(':').map(Number);
+      if (!Number.isInteger(hh) || !Number.isInteger(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+        setError('每日触发时间格式无效');
+        return;
+      }
+      const t = new Date();
+      t.setHours(hh, mm, 0, 0);
+      utc = t.toISOString();
+    } else {
+      if (!batchTimeDraft || !Number.isFinite(Date.parse(batchTimeDraft))) {
+        setError('定时时间格式无效');
+        return;
+      }
+      utc = new Date(batchTimeDraft).toISOString();
     }
     const count = Number(batchCountDraft);
     if (!Number.isInteger(count) || count < 1 || count > 50) {
@@ -629,16 +653,21 @@ export default function AdminCreationPage() {
       const brief: StoryBrief = {};
       if (batchThemeDraft.trim()) brief.theme = batchThemeDraft.trim();
       if (batchSynopsisDraft.trim()) brief.synopsis = batchSynopsisDraft.trim();
-      await api('/api/admin/short-story-batch-schedules', {
-        method: 'POST',
-        body: JSON.stringify({ scheduledAt: utc, count, brief, repeatDaily: batchRepeatDraft }),
-      });
-      setNotice(`已设定批量定时:${count} 篇,到点后逐篇生成并通过评审自动发布${batchRepeatDraft ? '(每天重复)' : ''}`);
+      const payload = JSON.stringify({ scheduledAt: utc, count, brief, repeatDaily: batchRepeatDraft });
+      if (batchEditId) {
+        await api(`/api/admin/short-story-batch-schedules/${batchEditId}`, { method: 'PATCH', body: payload });
+        setNotice(
+          `已修改批量定时计划${batchRepeatDraft ? `(每天 ${batchDailyTimeDraft})` : ''},${batchRepeatDraft ? '次日同刻' : '到点'}开始执行`
+        );
+      } else {
+        await api('/api/admin/short-story-batch-schedules', { method: 'POST', body: payload });
+        setNotice(`已设定批量定时:${count} 篇,到点后逐篇生成并通过评审自动发布${batchRepeatDraft ? '(每天重复)' : ''}`);
+      }
       setBatchOpen(false);
       await loadBatchSchedules();
       await loadList();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '设定批量定时失败');
+      setError(err instanceof Error ? err.message : '保存批量定时失败');
     } finally {
       setBatchSubmitting(false);
     }
@@ -744,8 +773,18 @@ export default function AdminCreationPage() {
   };
 
   const runAssist = useCallback(
-    async (fieldKey: string, label: string, action: AssistAction): Promise<void> => {
-      const currentValue = String(brief[fieldKey] ?? '');
+    async (fieldKey: string, label: string, action: AssistAction, target: 'editor' | 'batch' = 'editor'): Promise<void> => {
+      // 值源分流:批量定时弹窗读草稿 state;主创作表单中 title 读标题 state,其余读 brief
+      const currentValue =
+        target === 'batch'
+          ? fieldKey === 'theme'
+            ? batchThemeDraft
+            : fieldKey === 'synopsis'
+              ? batchSynopsisDraft
+              : ''
+          : fieldKey === 'title'
+            ? title
+            : String(brief[fieldKey] ?? '');
       if (action === 'optimize' && !currentValue.trim()) {
         setError(`「${label}」还没有内容,无法 AI 优化`);
         return;
@@ -755,6 +794,7 @@ export default function AdminCreationPage() {
         fieldKey,
         label,
         action,
+        target,
         phase: 'loading',
         taskId: null,
         options: [],
@@ -765,9 +805,13 @@ export default function AdminCreationPage() {
       });
       setError(null);
       try {
+        const context: StoryBrief =
+          target === 'batch'
+            ? { theme: batchThemeDraft.trim() || undefined, synopsis: batchSynopsisDraft.trim() || undefined }
+            : brief;
         const res = await api<{ task: AiTaskLite }>('/api/admin/ai/assist', {
           method: 'POST',
-          body: JSON.stringify({ action, field: fieldKey, value: currentValue || undefined, context: brief }),
+          body: JSON.stringify({ action, field: fieldKey, value: currentValue || undefined, context }),
         });
         const taskId = res.task.id;
         setAssist((prev) => (prev ? { ...prev, taskId } : prev));
@@ -808,12 +852,19 @@ export default function AdminCreationPage() {
         setError(err instanceof Error ? err.message : '请求失败');
       }
     },
-    [brief]
+    [brief, title, batchThemeDraft, batchSynopsisDraft]
   );
 
   const applyAssistToField = (value: string): void => {
     if (!assist) return;
-    setBrief((prev) => ({ ...prev, [assist.fieldKey]: value }));
+    if (assist.target === 'batch') {
+      if (assist.fieldKey === 'theme') setBatchThemeDraft(value);
+      else if (assist.fieldKey === 'synopsis') setBatchSynopsisDraft(value);
+    } else if (assist.fieldKey === 'title') {
+      setTitle(value);
+    } else {
+      setBrief((prev) => ({ ...prev, [assist.fieldKey]: value }));
+    }
     closeAssist();
   };
 
@@ -948,7 +999,36 @@ export default function AdminCreationPage() {
       </div>
       <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         <Field label="作品标题">
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="未命名短篇" />
+          <div className="flex items-start gap-2">
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="未命名短篇" />
+            <div className="flex shrink-0 gap-1 pt-0.5">
+              <Button
+                variant="ghost"
+                size="xs"
+                title="✨ AI建议"
+                onClick={() => void runAssist('title', '作品标题', 'suggest')}
+              >
+                <Sparkles size={13} /> 建议
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
+                title="✨ AI生成"
+                onClick={() => void runAssist('title', '作品标题', 'generate')}
+              >
+                <Sparkles size={13} /> 生成
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
+                title="✨ AI优化"
+                disabled={!title.trim()}
+                onClick={() => void runAssist('title', '作品标题', 'optimize')}
+              >
+                <Sparkles size={13} /> 优化
+              </Button>
+            </div>
+          </div>
         </Field>
         <Field label="小说源地址(可选)">
           <Input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://…" />
@@ -1264,7 +1344,7 @@ export default function AdminCreationPage() {
             <h2 className="flex items-center gap-1.5 text-sm font-semibold text-[#0f172a]">
               <CalendarClock size={14} /> 批量定时
             </h2>
-            <Button variant="primary" size="xs" onClick={openBatchScheduleModal}>
+            <Button variant="primary" size="xs" onClick={() => openBatchScheduleModal()}>
               <Plus size={13} /> 新建
             </Button>
           </div>
@@ -1306,6 +1386,11 @@ export default function AdminCreationPage() {
                     <p className="mt-1 break-all text-xs text-[#b91c1c]">{b.error}</p>
                   ) : null}
                   <div className="mt-1.5 flex justify-end gap-1">
+                    {b.status === 'pending' || b.status === 'failed' ? (
+                      <Button variant="ghost" size="xs" onClick={() => openBatchScheduleModal(b)}>
+                        <Pencil size={12} /> 编辑
+                      </Button>
+                    ) : null}
                     {b.status === 'pending' ? (
                       <Button variant="ghost" size="xs" onClick={() => void cancelBatch(b.id)}>
                         取消
@@ -1424,7 +1509,7 @@ export default function AdminCreationPage() {
             ) : (
               <>
                 {assist.action === 'suggest' ? (
-                  <Button variant="secondary" onClick={() => void runAssist(assist.fieldKey, assist.label, 'suggest')}>
+                  <Button variant="secondary" onClick={() => void runAssist(assist.fieldKey, assist.label, 'suggest', assist.target)}>
                     <RefreshCw size={13} /> 换一批
                   </Button>
                 ) : null}
@@ -1449,7 +1534,7 @@ export default function AdminCreationPage() {
             <p className="flex items-center gap-2 py-4 text-sm text-[#b91c1c]">
               <XCircle size={16} /> {assist.error}
             </p>
-            <Button variant="secondary" size="sm" onClick={() => void runAssist(assist.fieldKey, assist.label, assist.action)}>
+            <Button variant="secondary" size="sm" onClick={() => void runAssist(assist.fieldKey, assist.label, assist.action, assist.target)}>
               重试
             </Button>
           </div>
@@ -1538,10 +1623,10 @@ export default function AdminCreationPage() {
         </div>
       </Modal>
 
-      {/* 批量定时创作(V9.6) */}
+      {/* 批量定时创作(V9.6):新建/编辑共用弹窗 */}
       <Modal
         open={batchOpen}
-        title="设定批量定时创作"
+        title={batchEditId ? '编辑批量定时创作' : '设定批量定时创作'}
         onClose={() => setBatchOpen(false)}
         footer={
           <div className="flex justify-end gap-2">
@@ -1552,9 +1637,9 @@ export default function AdminCreationPage() {
               variant="primary"
               size="sm"
               onClick={() => void submitBatchSchedule()}
-              disabled={batchSubmitting || !batchTimeDraft}
+              disabled={batchSubmitting || (batchRepeatDraft ? !batchDailyTimeDraft : !batchTimeDraft)}
             >
-              <CalendarClock size={14} /> 设定
+              <CalendarClock size={14} /> {batchEditId ? '保存修改' : '设定'}
             </Button>
           </div>
         }
@@ -1563,14 +1648,24 @@ export default function AdminCreationPage() {
           <p className="text-sm text-[#64748b]">
             到点创建 {batchCountDraft || 'N'} 篇短篇并逐篇启动创作流水线;勾选「每天重复」则每日同一时刻自动触发;标题未填时自动生成,通过评审后自动发布。
           </p>
-          <Field label="触发时间">
-            <input
-              type="datetime-local"
-              step={60}
-              className="h-9 w-full rounded-md border border-[#e2e8f0] px-3 text-sm"
-              value={batchTimeDraft}
-              onChange={(e) => setBatchTimeDraft(e.target.value)}
-            />
+          <Field label={batchRepeatDraft ? '每日触发时间' : '触发时间'}>
+            {batchRepeatDraft ? (
+              <input
+                type="time"
+                step={60}
+                className="h-9 w-full rounded-md border border-[#e2e8f0] px-3 text-sm"
+                value={batchDailyTimeDraft}
+                onChange={(e) => setBatchDailyTimeDraft(e.target.value)}
+              />
+            ) : (
+              <input
+                type="datetime-local"
+                step={60}
+                className="h-9 w-full rounded-md border border-[#e2e8f0] px-3 text-sm"
+                value={batchTimeDraft}
+                onChange={(e) => setBatchTimeDraft(e.target.value)}
+              />
+            )}
           </Field>
           <Field label="生成数量(1..50)">
             <input
@@ -1592,19 +1687,70 @@ export default function AdminCreationPage() {
             每天同一时刻重复触发(每日自动批量生成)
           </label>
           <Field label="创作主题(可选)">
-            <Input
-              value={batchThemeDraft}
-              onChange={(e) => setBatchThemeDraft(e.target.value)}
-              placeholder="每篇共用;留空则自由创作"
-            />
+            <div className="flex flex-wrap items-start gap-2">
+              <Input
+                className="min-w-[180px] flex-1"
+                value={batchThemeDraft}
+                onChange={(e) => setBatchThemeDraft(e.target.value)}
+                placeholder="每篇共用;留空则自由创作"
+              />
+              <div className="flex shrink-0 gap-1 pt-0.5">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  title="✨ AI建议"
+                  onClick={() => void runAssist('theme', '创作主题', 'suggest', 'batch')}
+                >
+                  <Sparkles size={13} /> 建议
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  title="✨ AI生成"
+                  onClick={() => void runAssist('theme', '创作主题', 'generate', 'batch')}
+                >
+                  <Sparkles size={13} /> 生成
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  title="✨ AI优化"
+                  disabled={!batchThemeDraft.trim()}
+                  onClick={() => void runAssist('theme', '创作主题', 'optimize', 'batch')}
+                >
+                  <Sparkles size={13} /> 优化
+                </Button>
+              </div>
+            </div>
           </Field>
           <Field label="故事梗概(可选)">
-            <Textarea
-              className="min-h-[72px]"
-              value={batchSynopsisDraft}
-              onChange={(e) => setBatchSynopsisDraft(e.target.value)}
-              placeholder="每篇共用;留空则自由创作"
-            />
+            <div className="flex flex-wrap items-start gap-2">
+              <Textarea
+                className="min-h-[72px] min-w-[180px] flex-1"
+                value={batchSynopsisDraft}
+                onChange={(e) => setBatchSynopsisDraft(e.target.value)}
+                placeholder="每篇共用;留空则自由创作"
+              />
+              <div className="flex shrink-0 gap-1 pt-0.5">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  title="✨ AI生成"
+                  onClick={() => void runAssist('synopsis', '故事梗概', 'generate', 'batch')}
+                >
+                  <Sparkles size={13} /> 生成
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  title="✨ AI优化"
+                  disabled={!batchSynopsisDraft.trim()}
+                  onClick={() => void runAssist('synopsis', '故事梗概', 'optimize', 'batch')}
+                >
+                  <Sparkles size={13} /> 优化
+                </Button>
+              </div>
+            </div>
           </Field>
         </div>
       </Modal>
