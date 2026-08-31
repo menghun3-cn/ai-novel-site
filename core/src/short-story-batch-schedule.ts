@@ -109,6 +109,21 @@ export function listBatchSchedules(opts?: ListBatchSchedulesOptions): ShortStory
 
 // ---------- 写入 ----------
 
+function normalizeScheduledAt(v: unknown): string {
+  if (typeof v !== 'string' || !Number.isFinite(Date.parse(v))) {
+    throw new CoreError('INVALID_INPUT', `非法的定时时间: ${String(v)}`);
+  }
+  return new Date(v).toISOString();
+}
+
+function normalizeCount(v: unknown): number {
+  const count = Math.round(Number(v));
+  if (!Number.isFinite(count) || count < 1 || count > 50) {
+    throw new CoreError('INVALID_INPUT', `生成数量需为 1..50 的整数,当前: ${String(v)}`);
+  }
+  return count;
+}
+
 export interface CreateBatchScheduleInput {
   /** 触发时间(UTC ISO 串,精度到分钟;每日计划取其中的本地时刻每天触发) */
   scheduledAt: string;
@@ -122,13 +137,8 @@ export interface CreateBatchScheduleInput {
 
 /** 新建批量定时计划(初始 pending,由调度器到点触发) */
 export function createBatchSchedule(input: CreateBatchScheduleInput): ShortStoryBatchSchedule {
-  if (!input.scheduledAt || !Number.isFinite(Date.parse(input.scheduledAt))) {
-    throw new CoreError('INVALID_INPUT', `非法的定时时间: ${String(input.scheduledAt)}`);
-  }
-  const count = Math.round(Number(input.count));
-  if (!Number.isFinite(count) || count < 1 || count > 50) {
-    throw new CoreError('INVALID_INPUT', `生成数量需为 1..50 的整数,当前: ${String(input.count)}`);
-  }
+  const scheduledAt = normalizeScheduledAt(input.scheduledAt);
+  const count = normalizeCount(input.count);
   const db = getDb();
   const now = new Date().toISOString();
   const id = genId('bss');
@@ -138,7 +148,7 @@ export function createBatchSchedule(input: CreateBatchScheduleInput): ShortStory
      VALUES (?, ?, ?, ?, 'pending', '[]', NULL, ?, NULL, ?, ?, NULL)`
   ).run(
     id,
-    new Date(input.scheduledAt).toISOString(),
+    scheduledAt,
     count,
     JSON.stringify(normalizeBrief(input.brief)),
     input.repeatDaily ? 1 : 0,
@@ -168,6 +178,43 @@ export function deleteBatchSchedule(id: string): void {
     throw new CoreError('INVALID_INPUT', `批量定时正在执行中,不可删除`);
   }
   getDb().prepare('DELETE FROM short_story_batch_schedules WHERE id = ?').run(id);
+}
+
+export interface UpdateBatchScheduleInput {
+  /** 新的触发时间(UTC ISO 串,精度到分钟;每日计划取其中的本地时刻每天触发) */
+  scheduledAt?: string;
+  /** 新的到点生成数量(1..50) */
+  count?: number;
+  /** 新的每篇共用创作需求(可空=自由创作) */
+  brief?: unknown;
+  /** 新的重复模式(是否每天同一时刻重复触发) */
+  repeatDaily?: boolean;
+}
+
+/**
+ * 修改批量定时计划(未触发的管理:如把 10:00 改为 10:30)。
+ * - 仅 pending(含每日重复待触发)与 failed 可修改;executing/done/cancelled 不可改。
+ * - failed 修改后自动重置为 pending(重新挂起,error 清空),到点(或次日时刻)再次触发。
+ * - 每日计划的 last_fired_date 保留(同日去重:已触发过则修改后的时刻次日生效)。
+ * - 仅提供部分字段时其余保持原值。
+ */
+export function updateBatchSchedule(id: string, input: UpdateBatchScheduleInput): ShortStoryBatchSchedule {
+  const current = getBatchSchedule(id);
+  if (current.status !== 'pending' && current.status !== 'failed') {
+    throw new CoreError('INVALID_INPUT', `当前状态 ${current.status} 不可修改批量定时计划`);
+  }
+  const scheduledAt = input.scheduledAt !== undefined ? normalizeScheduledAt(input.scheduledAt) : current.scheduledAt;
+  const count = input.count !== undefined ? normalizeCount(input.count) : current.count;
+  const brief = input.brief !== undefined ? normalizeBrief(input.brief) : current.brief;
+  const repeatDaily = input.repeatDaily !== undefined ? input.repeatDaily : current.repeatDaily;
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE short_story_batch_schedules
+     SET scheduled_at = ?, count = ?, brief_json = ?, repeat_daily = ?, status = 'pending', error = NULL, updated_at = ?
+     WHERE id = ?`
+  ).run(scheduledAt, count, JSON.stringify(brief), repeatDaily ? 1 : 0, now, id);
+  return getBatchSchedule(id);
 }
 
 // ---------- 调度器 ----------
