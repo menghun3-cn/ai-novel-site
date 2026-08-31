@@ -222,6 +222,50 @@ export function Notice({ tone, children }: { tone: 'error' | 'success'; children
   );
 }
 
+// ---------- Toast(自动消失的轻提示) ----------
+
+/**
+ * 固定右上角的轻提示:默认 3.2s 自动消失,可手动关闭。
+ * 用法:父组件持有一个消息 state,渲染 <Toast> 并 key=消息值(新消息会重新挂载、重置计时)。
+ */
+export function Toast({
+  tone,
+  children,
+  onClose,
+  duration = 3200,
+}: {
+  tone: 'error' | 'success';
+  children: ReactNode;
+  onClose: () => void;
+  duration?: number;
+}) {
+  useEffect(() => {
+    const t = window.setTimeout(onClose, duration);
+    return () => window.clearTimeout(t);
+  }, [onClose, duration]);
+  const cls =
+    tone === 'error'
+      ? 'border-[#fecaca] bg-[#fef2f2] text-[#b91c1c]'
+      : 'border-[#a7f3d0] bg-[#ecfdf5] text-[#047857]';
+  return (
+    <div
+      role={tone === 'error' ? 'alert' : 'status'}
+      className={`pointer-events-auto fixed right-4 top-4 z-[120] flex max-w-sm items-start gap-2 rounded-lg border px-4 py-2.5 text-sm shadow-lg ${cls}`}
+      style={{ animation: 'toastIn .25s cubic-bezier(0.25,0.1,0.25,1)' }}
+    >
+      <span className="min-w-0 flex-1 break-words">{children}</span>
+      <button
+        aria-label="关闭提示"
+        onClick={onClose}
+        className="mt-0.5 shrink-0 rounded p-0.5 opacity-60 transition hover:bg-black/5 hover:opacity-100"
+      >
+        <X size={14} />
+      </button>
+      <style>{`@keyframes toastIn{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}@media(prefers-reduced-motion:reduce){*{animation:none!important}}`}</style>
+    </div>
+  );
+}
+
 export function Spinner({ size = 16 }: { size?: number }): ReactNode {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className="animate-spin" aria-hidden>
