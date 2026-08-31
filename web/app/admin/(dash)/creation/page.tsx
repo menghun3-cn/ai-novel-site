@@ -37,6 +37,7 @@ import {
   Spinner,
   Tabs,
   Textarea,
+  Toast,
 } from '@/components/admin/ui';
 
 // ---------- 类型 ----------
@@ -359,6 +360,8 @@ export default function AdminCreationPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Toast 关闭回调(稳定引用:避免每次渲染新建函数导致 Toast 计时器被重置)
+  const dismissNotice = useCallback(() => setNotice(null), []);
 
   // 新建表单
   const [title, setTitle] = useState('');
@@ -1442,7 +1445,12 @@ export default function AdminCreationPage() {
   return (
     <div>
       {error ? <Notice tone="error">{error}</Notice> : null}
-      {notice ? <Notice tone="success">{notice}</Notice> : null}
+      {/* 成功提示:Toast 自动消失,不再长期占用页面顶部;key 使新消息重置计时 */}
+      {notice ? (
+        <Toast key={notice} tone="success" onClose={dismissNotice}>
+          {notice}
+        </Toast>
+      ) : null}
 
       {/* 页头卡 */}
       <div className="mb-5 rounded-xl bg-white p-5 shadow-sm">
