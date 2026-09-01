@@ -20,6 +20,8 @@ const UA =
 const MAX_TEXT = 2000;
 const TIMEOUT_MS = 15_000;
 const WIN_EPOCH = 11644473600; // Unix(1970) 与 Windows(1601) 纪元的秒差
+// TTS 出口代理(可选):服务器网络无法直连 bing 时(常见于国内网络)通过环境变量配置,如 http://user:pass@host:port
+const EDGE_TTS_PROXY = (process.env.EDGE_TTS_PROXY ?? '').trim();
 
 function sha256(s: string): string {
   return crypto.createHash('sha256').update(s).digest('hex');
@@ -57,7 +59,7 @@ async function synthesize(text: string, voice: string, rate: number): Promise<Bu
     `${WSS_URL}?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}` +
     `&ConnectionId=${crypto.randomUUID().replace(/-/g, '')}` +
     `&Sec-MS-GEC=${gec}&Sec-MS-GEC-Version=${SEC_MS_GEC_VERSION}`;
-  // Node 22 全局 WebSocket(undici)支持 headers 选项;TS 的 DOM 声明只接受 protocols 参数,此处做类型收窄
+  // Node 22 全局 WebSocket(undici)支持 headers/proxy 选项;TS 的 DOM 声明只接受 protocols 参数,此处做类型收窄
   const wsInit = {
     headers: {
       'Accept-Encoding': 'gzip, deflate, br, zstd',
@@ -70,6 +72,7 @@ async function synthesize(text: string, voice: string, rate: number): Promise<Bu
       'Sec-MS-GEC-Version': SEC_MS_GEC_VERSION,
       Cookie: `muid=${muid};`,
     },
+    ...(EDGE_TTS_PROXY ? { proxy: EDGE_TTS_PROXY } : {}),
   } as unknown as string[];
   const ws = new WebSocket(url, wsInit);
   ws.binaryType = 'arraybuffer';
