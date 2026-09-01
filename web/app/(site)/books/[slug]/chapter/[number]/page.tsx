@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getChapterView } from '@novel/core';
+import { getChapterView, latestUpdates } from '@novel/core';
 import { mdToHtml } from '@/lib/markdown';
 import { chapterLabel } from '@/lib/format';
 import ReaderControls from '@/components/ReaderControls';
@@ -11,8 +11,19 @@ import ScrollRestore from '@/components/ScrollRestore';
 import SwipeNavigation from '@/components/SwipeNavigation';
 import ProgressReporter from '@/components/ProgressReporter';
 import ViewTracker from '@/components/ViewTracker';
+import PrefetchNextChapter from '@/components/PrefetchNextChapter';
 
-export const dynamic = 'force-dynamic';
+// ISR:已发布章节正文不可变,按 60s 再生成;配合 next.config 分层 Cache-Control + 编辑时 revalidatePath。
+export const revalidate = 60;
+
+/** 按需 ISR 种子:种子只预生成最近的一小部分章,其余首次访问生成并缓存,避免大规模时 build 枚举全量。 */
+export async function generateStaticParams() {
+  try {
+    return latestUpdates(100).map((u) => ({ slug: u.bookSlug, number: String(u.chapter.number) }));
+  } catch {
+    return [];
+  }
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; number: string }> }) {
   const { slug, number } = await params;
@@ -41,6 +52,9 @@ export default async function ChapterPage({
     <div className="chapter-enter mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
       {/* 阅读位置恢复/跳转到顶部 */}
       <ScrollRestore bookSlug={book.slug} chapterNumber={chapter.number} />
+
+      {/* 预取下一章,翻章更顺滑 */}
+      <PrefetchNextChapter href={next ? chapterLink(next.number) : null} />
 
       {/* 移动端滑动手势 */}
       <SwipeNavigation

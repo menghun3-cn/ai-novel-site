@@ -2,6 +2,7 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { approveChapter, rejectChapter, submitChapterForReview } from '@novel/core';
 import { fail, intParam, json, readJson, withAdmin } from '@/lib/admin-api';
+import { revalidateBookChapter } from '@/lib/revalidate';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,9 +35,13 @@ export const POST = withAdmin<Ctx>(async (req: NextRequest, ctx) => {
         if (Number.isNaN(scheduledAt.getTime())) {
           return fail(400, 'INVALID_REVIEW_TRANSITION', `invalid scheduledAt: ${body.scheduledAt}`);
         }
+        // 定时发布:此刻论文仍未上线,先不失效;到点由调度器发布,靠 ISR revalidate 兜底
         return json({ chapter: approveChapter(id, n, { mode: 'scheduled', scheduledAt: scheduledAt.toISOString() }) });
       }
-      return json({ chapter: approveChapter(id, n, { mode: 'now' }) });
+      const chapter = approveChapter(id, n, { mode: 'now' });
+      // 立即发布:失效章节页 + 书详情页,让读者下次访问即见新章节
+      revalidateBookChapter(id, n);
+      return json({ chapter });
     }
     case 'reject':
       return json({ chapter: rejectChapter(id, n, body.note ?? null) });

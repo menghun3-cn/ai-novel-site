@@ -2,7 +2,16 @@ import { notFound } from 'next/navigation';
 import { listBooks, listCategories } from '@novel/core';
 import BookCard from '@/components/BookCard';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
+
+/** 分类数量有限,枚举为 ISR 种子;分类增删不影响其它分类。 */
+export async function generateStaticParams() {
+  try {
+    return listCategories().map((c) => ({ slug: c.slug }));
+  } catch {
+    return [];
+  }
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug: rawSlug } = await params;

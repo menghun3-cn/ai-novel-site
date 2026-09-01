@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { listCategories } from '@novel/core';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
 
 export const metadata = { title: '分类' };
 

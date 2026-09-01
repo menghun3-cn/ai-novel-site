@@ -1,12 +1,22 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getBookBySlug, listPublishedChapters, getBookStats } from '@novel/core';
+import { getBookBySlug, listBooks, listPublishedChapters, getBookStats } from '@novel/core';
 import ContinueReading from '@/components/ContinueReading';
 import ChapterList from '@/components/ChapterList';
 import BookActions from '@/components/BookActions';
 import { chapterLabel } from '@/lib/format';
 
-export const dynamic = 'force-dynamic';
+// ISR:书籍详情(元信息+章节列表)较稳定,配合发布时 revalidatePath 及时刷新最新章节/热度。
+export const revalidate = 60;
+
+/** 动态路由需配合 generateStaticParams 才会真正启用 ISR;枚举公开书 slug。 */
+export async function generateStaticParams() {
+  try {
+    return listBooks({ limit: 100 }).map((b) => ({ slug: b.slug }));
+  } catch {
+    return [];
+  }
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
