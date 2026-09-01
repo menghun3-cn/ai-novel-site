@@ -1,5 +1,5 @@
 import { revalidatePath } from 'next/cache';
-import { getBookById } from '@novel/core';
+import { getBookById, latestPublicationByStory, listPublishedChapters } from '@novel/core';
 
 /**
  * 公开阅读路径的主动缓存失效(仅在 web 进程内有效)。
@@ -22,4 +22,32 @@ export function revalidateBook(bookId: string): void {
   const book = getBookById(bookId);
   if (!book) return;
   revalidatePath(`/books/${book.slug}`);
+}
+
+/**
+ * 失效某个短篇的公开页及其发布书籍的页面。
+ * 短篇发布后作为一本书(books/short-*)呈现,故同时失效:
+ *  - /short/[id]      短篇专属阅读页
+ *  - /books/[slug]    作为书的详情页
+ *  - /books/[slug]/chapter/[n]  书内章节(短篇通常单章)
+ * 未发布/书已被隐藏等场景静默跳过(仅保留 /short 失效)。
+ */
+export function revalidateShortStory(storyId: string): void {
+  revalidatePath(`/short/${storyId}`);
+  try {
+    const pub = latestPublicationByStory(storyId);
+    if (!pub?.bookId) return;
+    const book = getBookById(pub.bookId);
+    if (!book) return;
+    revalidatePath(`/books/${book.slug}`);
+    try {
+      for (const ch of listPublishedChapters(pub.bookId)) {
+        revalidatePath(`/books/${book.slug}/chapter/${ch.number}`);
+      }
+    } catch {
+      /* 章节查询失败不影响短篇页失效 */
+    }
+  } catch {
+    /* 未发布/不存在:仅失效 /short 路径 */
+  }
 }
