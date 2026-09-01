@@ -30,6 +30,9 @@ services:
     build: .
     container_name: novel-scheduler
     restart: unless-stopped
+    # 调度循环 tick 间隔可达 60s,优雅停机(释放锁)需要足够窗口,
+    # 否则超出宽限期被 SIGKILL 后锁残留
+    stop_grace_period: 90s
     # 不暴露端口,仅访问共享 data
     environment:
       NODE_ENV: production
