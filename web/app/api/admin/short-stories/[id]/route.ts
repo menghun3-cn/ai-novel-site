@@ -10,9 +10,9 @@ import {
   updateShortStory,
 } from '@novel/core';
 import { json, readJson, withAdmin } from '@/lib/admin-api';
+import { revalidateShortStory } from '@/lib/revalidate';
 
 export const dynamic = 'force-dynamic';
-
 type Ctx = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
@@ -50,12 +50,17 @@ export const GET = withAdmin<Ctx>(async (_req, ctx) => {
 export const PATCH = withAdmin<Ctx>(async (req: NextRequest, ctx) => {
   const { id } = await ctx.params;
   const patch = await readJson(req, patchSchema);
-  return json({ story: updateShortStory(id, patch) });
+  const story = updateShortStory(id, patch);
+  // 编辑主档(标题等)会影响短篇页的展示
+  revalidateShortStory(id);
+  return json({ story });
 });
 
 /** 仅 draft/pool/failed/scheduled 可删 */
 export const DELETE = withAdmin<Ctx>(async (_req, ctx) => {
   const { id } = await ctx.params;
   deleteShortStory(id);
+  // 删除后短篇页应转为 404
+  revalidateShortStory(id);
   return json({ deleted: true });
 });

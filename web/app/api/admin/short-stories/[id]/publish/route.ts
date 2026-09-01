@@ -2,6 +2,7 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { enqueuePublishShortStory, publishShortStory, getShortStory } from '@novel/core';
 import { json, readJson, withAdmin } from '@/lib/admin-api';
+import { revalidateShortStory } from '@/lib/revalidate';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,5 +27,7 @@ export const POST = withAdmin<Ctx>(async (req: NextRequest, ctx) => {
     return json({ queued: true, taskId: task.id }, 202);
   }
   const pub = publishShortStory(id);
+  // 同步发布:失效短篇页 + 发布书籍页/章节,读者下次访问即见新内容
+  revalidateShortStory(id);
   return json({ publicationId: pub.publicationId, bookId: pub.bookId, bookSlug: pub.bookSlug });
 });

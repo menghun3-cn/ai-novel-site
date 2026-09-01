@@ -1,11 +1,22 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getShortStory, getBookById, latestPublicationByStory, getStoryVersion, CoreError } from '@novel/core';
+import { getShortStory, getBookById, latestPublicationByStory, getStoryVersion, listShortStories, CoreError } from '@novel/core';
 import { mdToHtml } from '@/lib/markdown';
 import ShortStoryReader from '@/components/ShortStoryReader';
 import TtsPlayer from '@/components/TtsPlayer';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
+
+/** 按需 ISR 种子:只预生成已发布短篇的 id 列表(有界上限 1000),其余首次访问生成并缓存。 */
+export async function generateStaticParams() {
+  try {
+    return listShortStories({ limit: 1000 })
+      .filter((s) => s.publicationId)
+      .map((s) => ({ id: s.id }));
+  } catch {
+    return [];
+  }
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

@@ -6,6 +6,7 @@ import {
   getShortStory,
 } from '@novel/core';
 import { json, readJson, withAdmin } from '@/lib/admin-api';
+import { revalidateShortStory } from '@/lib/revalidate';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,5 +33,7 @@ export const POST = withAdmin<Ctx>(async (req: NextRequest, ctx) => {
     creationReason: 'user_edited',
     modelName: 'user-edit',
   });
+  // 追加用户编辑版本:刷新短篇页(若当前发布版本即将随之更新)
+  revalidateShortStory(id);
   return json({ version }, 201);
 });
