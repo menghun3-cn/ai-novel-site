@@ -19,6 +19,7 @@ services:
       NOVEL_SITE_URL: http://localhost:33000   # 部署后改为实际域名
       PORT: "33000"
       TZ: Asia/Shanghai                        # 容器日志/本地时间按北京时间
+      EDGE_TTS_PROXY: ""                       # AI 朗读出口代理(可选):服务器无法直连 bing 时填 http://user:pass@host:port
     volumes:
       - ./data:/app/data                                          # SQLite 数据库
       - ./web/public/covers:/app/web/public/covers               # 封面
