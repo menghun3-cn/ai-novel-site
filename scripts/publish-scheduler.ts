@@ -25,7 +25,7 @@ import {
   runPublishCycle,
   type SerializationCycleResult,
 } from '@novel/core';
-import { ensureSchedulerSingleInstance } from './scheduler-lock';
+import { ensureSchedulerSingleInstance, refreshSchedulerLock } from './scheduler-lock';
 
 const tickSeconds = Number(process.env.PUBLISH_TICK_SECONDS ?? 60);
 if (!Number.isFinite(tickSeconds) || tickSeconds < 5) {
@@ -85,6 +85,8 @@ function runScheduleCycle(): { dueCount: number; enqueued: number; batchFired: n
 }
 
 async function tick(): Promise<void> {
+  // 续约锁:持有者每 tick 刷新 at,其他宿主据此区分活/死持有者(防双跑误接管)
+  refreshSchedulerLock();
   // 1) 短篇定时到点(单篇 + 批量)
   try {
     const sch = runScheduleCycle();
