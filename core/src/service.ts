@@ -638,6 +638,10 @@ export function listAllBooks(opts: ListAllBooksOptions = {}): BookWithMeta[] {
     where.push('c.slug = ?');
     params.push(opts.categorySlug);
   }
+  if (opts.kind) {
+    where.push('b.kind = ?');
+    params.push(opts.kind);
+  }
   if (opts.q) {
     where.push(
       `(b.title LIKE ? OR a.name LIKE ? OR EXISTS (
