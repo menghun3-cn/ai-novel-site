@@ -16,6 +16,7 @@
 import {
   enqueueCreationPipeline,
   fireBatchSchedule,
+  fireDueDailyProductionRuns,
   fireScheduledStory,
   getDataDir,
   listDueBatchSchedules,

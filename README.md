@@ -52,6 +52,8 @@ AI 生成小说的**内容管理 + Web 阅读**一体化平台：从小说源文
 | `short-story-publication.ts` | V9.5 阶段二:passed 短篇物化为 Book+Chapter(读者站可读) |
 | `chapter-review.ts` | V9.5 阶段二:长篇单章自动评审(落 review_records ref_type='chapter') |
 | `arc-review.ts` | V9.5 阶段二:长篇弧级自动评审(落 arc_review_records;半自动阈值判定) |
+| `production-line.ts` | V10 内容工厂:产线(题材模板/调度/配额/质量闸门)+ 混合题材运行 + 每日调度 |
+| `production-ops.ts` | V10 内容工厂:运营聚合(总览/队列/质量闸门/异常分诊/成本估算) |
 
 ### Web 页面结构（`web/app/`）
 
@@ -120,6 +122,27 @@ AI 生成小说的**内容管理 + Web 阅读**一体化平台：从小说源文
 - **新表**:`short_story_publications`、`arc_review_records`;`review_records` 加 `chapter_id` + `ref_type` 列;`books` 加 5 列长篇评审配置
 - **新公开端点**:`/api/short-stories`(列表)、`/api/short-stories/[id]`(详情)
 - 验证脚本:`test:short-story-publication` / `test:short-story-reader` / `test:chapter-review` / `test:arc-review` / `test:scheduler-tasks` / `test:tts-reader` 全部通过;`test:*` 共 15 套全绿
+
+### ✅ V10 内容工厂(Production Line · P0-P2)
+
+面向**批量化不同题材/类型**的短篇生产运营。
+
+- **产线(`production_lines`)是一等实体**:一整套「题材/类型模板 + 调度 + 配额 + 质量闸门」配置。
+  - **混合题材分配** `assignRunKinds`:按每个题材的 `weight` 给一次运行分配 `count` 篇,保证**同一批产出覆盖不同题材、类型**;`count >= 题材数` 时每个题材至少 1 篇。
+  - **种子池**:每个题材可配多组种子(主题/梗概),运行内 round-robin 分配,让**同题材也各不相同**。
+  - 单篇需求 = 产线基线 ⊕ 题材 brief ⊕ 种子,`genre` 强制写入,再逐篇走既有「生成→评审→自动优化→再评审→达标自动发布/入池」闭环(复用 `CREATE_NOVEL` 任务)。
+- **运行(`production_runs`)**:手动/每日触发;每日产线同日去重(`last_run_date`);`production_run_items` 关联表把每篇映射到其产线/题材,供聚合查询。
+- **运营指挥中心**(`/admin/creation` 重构为内容工厂,一级 Tab):
+  - **总览**:产线健康(今日产出/达标/在制/池/失败/通过率)、产出漏斗、产线泳道、告警、最近运行。
+  - **产线**:列表 + 编辑/启停/删除 + 一键运行;新建/编辑含题材清单(weight/种子池)、调度、配额(每日上限/预算/超预算跳过)、质量闸门(达标分/最大优化轮数/自动发布)。
+  - **队列**:按类型积压/运行/近 7 日成败 + 当前 RUNNING。
+  - **质量闸门**:低质量池 + 各产线达标情况(均分/通过率/阈值)。
+  - **异常分诊**:失败任务/失败创作/低质池/配额超限/规则离线/停用产线 → 一键重试/优化/启用。
+  - **成本**:按日/按产线 token 与估算成本、单篇发布成本。
+- **数据层**:新增 `production_lines` / `production_runs` / `production_run_items` 三表;所有权由产线 → 运行 → 作品,级联删除。
+- **调度**:scheduler tick 新增 `fireDueDailyProductionRuns()`,每日产线到点自动触发。
+- **候选决策点**:产线默认取全局当前生效评审规则(`ruleId` 可覆盖);达标线 `qualityGate.minScore` 缺省回落规则阈值,`reworkMaxRounds` 缺省回落规则值。
+- 验证脚本:`test:production-line`(隔离临时库,全部通过)。
 
 ### ✅ V6 用户阅读
 - 读者注册 / 登录 / 登出（httpOnly Cookie 会话，30 天）
