@@ -270,6 +270,55 @@ SQLite WAL 提供并发读写安全,但 `ai_tasks` 的 PENDING→RUNNING 转换�
 
 ---
 
+## 5.3 V10 内容工厂(Production Line · P0-P2)
+
+把「AI 创作中心」重构为面向批量化**不同题材/类型**短篇的运营指挥中心。核心：**产线(Line)是一等实体,单篇创作循环降级为产线的一道工序**。
+
+```text
+ 产线 production_lines(题材模板 + 调度 + 配额 + 质量闸门)
+      │ 手动/每日触发一次运行(production_runs)
+      ▼
+ assignRunKinds(config, count)  ← 按各题材 weight 分配 count 篇,保证覆盖不同题材/类型
+      │  items = [{genre, seedIndex}]
+      ▼  逐篇: 产出基线 ⊕ 题材 brief ⊕ 种子 → 合成 StoryBrief(genre 强制写入)
+ createShortStory(brief) ─▶ enqueueCreationPipeline() ─▶ 既有 生成→评审→优化→再评审→达标发布/池
+      ▼
+ production_run_items(story_id, genre, seed_index)  ← 权属可聚合
+      ▼
+ production-ops 聚合: 总览(KPI/漏斗/泳道/告警) · 队列 · 质量闸门 · 异常分诊 · 成本
+```
+
+### 模块分工(新增)
+
+| 模块 | 职责 |
+|---|---|
+| `production-line.ts` | 产线 CRUD + 配置归一化 + `assignRunKinds`(混合题材分配)+ `deriveBriefForItem`(合成需求)+ `runProductionLine`(建篇入队)+ `fireDueDailyProductionRuns`(每日调度,同日去重) |
+| `production-ops.ts` | 运营聚合:`getProductionOverview` / `getProductionQueue` / `getProductionGate` / `getProductionExceptions` / `getProductionCost` / `getProductionLinesWithMeta` |
+
+### 数据模型(新增 3 表)
+
+- `production_lines(id, name, description, enabled, config_json, last_run_at, last_run_date, created_at, updated_at)`——`config_json` 存 `ProductionLineConfig`(brief 基线 + kinds[] + 调度 + 配额 + 质量闸门)。
+- `production_runs(id, line_id, trigger, run_date, count, status, items_json, error, created_at, finished_at, executed_at)`——一次运行的账本。
+- `production_run_items(id, run_id, story_id, genre, seed_index, created_at)`——运行→作品关联表,`ON DELETE CASCADE`;供 `story → line/run/genre` 的聚合查询。
+
+### 关键决策
+
+- **多样性的实现是"配置 + 运行时分配"**:同批覆盖不同题材靠 `assignRunKinds` 按权重分配;同题材不同味靠题材内 `seeds` 池 round-robin。两者都只存配置,不硬编码。
+- **不破坏既有闭环**:复用车 `CREATE_NOVEL` 任务与 `runCreationPipeline`,产线运行只是"批量、差异化地喂 brief 进去"。
+- **达标线/优化轮数**:产线 `qualityGate` 可覆盖全局规则(缺省回落 `getActiveRuleVersion()` 的阈值与轮数),`ruleId` 可指定规则。
+- **成本为估算**:`production-ops.getProductionCost` 汇总 `ai_tasks` 的 token 后按机型单价折算,仅用于运营决策,非账单。
+
+### Web API 分区(新增,全部 `/api/admin/*`)
+
+- 产线: `/production-lines`、`/production-lines/[id]`、`/production-lines/[id]/run`、`/production-lines/[id]/toggle`、`/production-lines/[id]/runs`
+- 运营: `/production/overview`、`/production/queue`、`/production/gate`、`/production/exceptions`、`/production/cost`
+
+### 调度器集成
+
+`scheduler.ts` tick 新增 `fireDueDailyProductionRuns()`:扫描 `enabled=1 & mode='daily'` 且当天未触发(`last_run_date != today`)且本地时刻已到 `hour` 的产线,逐个 `runProductionLine(trigger='daily')`;单条失败不阻断其他产线。
+
+---
+
 ## 6. Web Publisher（`web/`）
 
 Next.js 15 App Router 单应用，三块结构：

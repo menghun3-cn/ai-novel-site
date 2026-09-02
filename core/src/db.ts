@@ -487,6 +487,47 @@ CREATE TABLE IF NOT EXISTS arc_review_records (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_arc_review_records_book ON arc_review_records(book_id, created_at);
+
+-- V10 内容工厂:产线(Production Line)与批次运行 —— 批量生成不同题材/类型短篇的一等实体
+CREATE TABLE IF NOT EXISTS production_lines (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  last_run_at TEXT,
+  last_run_date TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS production_runs (
+  id TEXT PRIMARY KEY,
+  line_id TEXT NOT NULL REFERENCES production_lines(id) ON DELETE CASCADE,
+  trigger TEXT NOT NULL,              -- 'manual' | 'daily'
+  run_date TEXT NOT NULL,             -- 服务器本地 'YYYY-MM-DD'
+  count INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending|executing|done|failed|cancelled
+  items_json TEXT NOT NULL DEFAULT '[]',
+  error TEXT,
+  created_at TEXT NOT NULL,
+  finished_at TEXT,
+  executed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_production_runs_line ON production_runs(line_id, run_date, created_at);
+CREATE INDEX IF NOT EXISTS idx_production_runs_due ON production_runs(status, run_date);
+
+-- V10 内容工厂:运行-作品 关联表(可聚合查询:某产线产出的所有短篇)
+CREATE TABLE IF NOT EXISTS production_run_items (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES production_runs(id) ON DELETE CASCADE,
+  story_id TEXT REFERENCES short_stories(id) ON DELETE SET NULL,
+  genre TEXT NOT NULL,
+  seed_index INTEGER,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_production_run_items_run ON production_run_items(run_id);
+CREATE INDEX IF NOT EXISTS idx_production_run_items_story ON production_run_items(story_id);
 `;
 
 let sqlite: Database.Database | null = null;
