@@ -16,7 +16,7 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/admin-client';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import {
@@ -839,8 +839,10 @@ export default function CreationPage() {
   const [confirm, setConfirm] = useState<{ type: string; targetId: string; label: string } | null>(null);
   const [runLineId, setRunLineId] = useState<string | null>(null);
 
+  // 已成功加载过就不再进 loading 态:轮询刷新只更新数据,不卸载当前 Tab 内容(否则每 5s 闪烁一次)
+  const loadedRef = useRef(false);
   const load = useCallback(async () => {
-    setLoading(true);
+    if (!loadedRef.current) setLoading(true);
     try {
       const [o, l, q, g, e, c] = await Promise.all([
         api<OverviewResp>('/api/admin/production/overview'),
@@ -856,6 +858,7 @@ export default function CreationPage() {
       setGate(g.gate);
       setExceptions(e.exceptions);
       setCost(c.cost);
+      loadedRef.current = true;
     } catch (err) {
       setToast({ tone: 'error', msg: err instanceof Error ? err.message : '加载失败' });
     } finally {
