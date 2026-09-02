@@ -9,6 +9,8 @@ const KEY_VOICE = 'novel:tts:voiceURI';
 const KEY_ENGINE = 'novel:tts:engine';
 const KEY_EDGE_VOICE = 'novel:tts:edgeVoice';
 const DEFAULT_RATE = 1;
+/** AI 朗读预取片数:播放到第 i 片时提前合成好 i+1、i+2,避免播完一片再等合成 */
+const PREFETCH_COUNT = 2;
 
 type Engine = 'native' | 'edge';
 
@@ -78,6 +80,8 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
   const edgeQueueRef = useRef<SpeakUnit[]>([]);
   const edgeIdxRef = useRef(-1);
   const edgeActiveRef = useRef(false);
+  /** 预取缓冲:下标 → 已合成好的 MP3(url + audio),供后续段落无缝接力 */
+  const edgeBuffersRef = useRef<Map<number, { url: string; audio: HTMLAudioElement }>>(new Map());
 
   // 支持检测 + native 语音列表加载。
   // 移动端 getVoices() 首次常为空且 voiceschanged 可能不触发:轮询 + 回前台兜底 + 手动重试。
@@ -160,6 +164,17 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
     }
     edgeQueueRef.current = [];
     edgeIdxRef.current = -1;
+    // 释放预取缓冲的 objectURL 与 audio
+    for (const b of edgeBuffersRef.current.values()) {
+      try {
+        b.audio.pause();
+        b.audio.src = '';
+      } catch {
+        /* ignore */
+      }
+      URL.revokeObjectURL(b.url);
+    }
+    edgeBuffersRef.current = new Map();
     playingRef.current = false;
     setIsPlaying(false);
     setPaused(false);
@@ -268,7 +283,90 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
     return units;
   }, [contentSelector, rate]);
 
-  /** 顺序播放第 i 片:请求合成 MP3 → 播放 → onended 播下一片 */
+  /** 合成单个朗读单元为 MP3(objectURL + audio 元素);瞬时失败(5xx/网络中断)自动重试 2 次 */
+  const fetchEdgeAudio = useCallback(
+    async (unit: SpeakUnit): Promise<{ url: string; audio: HTMLAudioElement }> => {
+      const body = JSON.stringify({ text: unit.text, voice: edgeVoice, rate });
+      let lastErr: unknown;
+      for (let attempt = 0; attempt <= 2; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 600 * attempt));
+        try {
+          // 20s 超时:服务端合成 15s 上限 + 缓冲。移动端中间层挂死不返回时快速失败进重试
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 20_000);
+          let res: Response;
+          try {
+            res = await fetch('/api/tts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body,
+              signal: ctrl.signal,
+            });
+          } finally {
+            clearTimeout(t);
+          }
+          if (!res.ok) {
+            const data = (await res.json().catch(() => null)) as { error?: string } | null;
+            lastErr = new Error(data?.error ?? `语音合成失败(${res.status})`);
+            // 4xx 为请求本身有问题,重试无意义
+            if (res.status < 500) throw lastErr;
+            continue; // 5xx:服务端合成波动,重试
+          }
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          return { url, audio };
+        } catch (err) {
+          if (err instanceof Error && err.message.includes('语音合成失败(4')) throw err;
+          lastErr = err; // TypeError(fail to fetch)/5xx/断网:重试
+        }
+      }
+      let msg =
+        lastErr instanceof DOMException && lastErr.name === 'AbortError'
+          ? '语音合成请求超时,请重试或切换「系统语音」'
+          : lastErr instanceof TypeError
+            ? '网络连接中断,无法访问语音服务,请检查网络后重试'
+            : lastErr instanceof Error
+              ? lastErr.message
+              : 'AI 语音合成失败';
+      // 服务器无法连通 Edge TTS(未配置 EDGE_TTS_PROXY 或出口受限)时的可操作提示
+      if (msg.includes('Edge TTS 服务')) msg = `${msg};可先改用「系统语音」,或稍后重试`;
+      throw new Error(msg);
+    },
+    [edgeVoice, rate]
+  );
+
+  /**
+   * 预取工作者:始终在播放线程之外提前合成「当前 + 1、当前 + 2」两片(默认 2 片),
+   * 让后续段落播放时无需等待网络合成,实现丝滑接力。
+   * 连续失败 2 次即放弃预取(由播放线程兜底报错),避免坏网络下空转。
+   */
+  const prefetchEdge = useCallback(
+    async (from: number, uptoExclusive: number) => {
+      let fails = 0;
+      for (let i = from; i < uptoExclusive; i++) {
+        if (!edgeActiveRef.current || edgeBuffersRef.current.has(i)) continue;
+        const unit = edgeQueueRef.current[i];
+        if (!unit) break;
+        try {
+          const buf = await fetchEdgeAudio(unit);
+          if (!edgeActiveRef.current) {
+            buf.audio.pause();
+            URL.revokeObjectURL(buf.url);
+            return;
+          }
+          edgeBuffersRef.current.set(i, buf);
+          fails = 0;
+        } catch {
+          fails += 1;
+          if (fails >= 2) return; // 连续失败:交给播放线程重试/报错
+        }
+      }
+    },
+    [fetchEdgeAudio]
+  );
+
+  /** 顺序播放第 i 片:优先用预取缓冲(零等待),否则现场合成 → 播放 → onended 播下一片 */
   const playEdgeChunk = useCallback(
     async (i: number) => {
       if (!edgeActiveRef.current || engine !== 'edge') return;
@@ -280,44 +378,62 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
       edgeIdxRef.current = i;
       setActivePara(units[i].paraIndex);
       setTtsError(null);
-      setEdgeBusy(true);
-      try {
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: units[i].text, voice: edgeVoice, rate }),
-        });
-        if (!res.ok) {
-          const data = (await res.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(data?.error ?? `语音合成失败(${res.status})`);
-        }
-        if (!edgeActiveRef.current) return; // 等待期间被停止
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        setEdgeBusy(false);
-        audio.onended = () => {
-          URL.revokeObjectURL(url);
-          if (edgeActiveRef.current) void playEdgeChunk(i + 1);
-        };
-        audio.onerror = () => {
-          URL.revokeObjectURL(url);
+      // 预取窗口:当前 + PREFETCH_COUNT 片
+      void prefetchEdge(i + 1, i + 1 + PREFETCH_COUNT);
+      let buf = edgeBuffersRef.current.get(i);
+      if (!buf) {
+        // 无缓冲(首片或预取落后):现场合成,期间显示"正在合成"
+        setEdgeBusy(true);
+        try {
+          buf = await fetchEdgeAudio(units[i]);
+        } catch (err) {
+          setEdgeBusy(false);
           if (edgeActiveRef.current) {
-            setTtsError('音频播放失败,请重试或切换「系统语音」');
+            setTtsError(err instanceof Error ? err.message : 'AI 语音合成失败');
             stop();
           }
-        };
+          return;
+        }
+        if (!edgeActiveRef.current) {
+          buf.audio.pause();
+          URL.revokeObjectURL(buf.url);
+          return;
+        }
+        edgeBuffersRef.current.set(i, buf);
+        setEdgeBusy(false);
+      }
+      const audio = buf.audio;
+      audioRef.current = audio;
+      audio.onended = () => {
+        URL.revokeObjectURL(buf!.url);
+        edgeBuffersRef.current.delete(i);
+        if (edgeActiveRef.current) void playEdgeChunk(i + 1);
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(buf!.url);
+        edgeBuffersRef.current.delete(i);
+        if (edgeActiveRef.current) {
+          setTtsError('音频播放失败,请重试或切换「系统语音」');
+          stop();
+        }
+      };
+      try {
         await audio.play();
       } catch (err) {
-        setEdgeBusy(false);
+        URL.revokeObjectURL(buf!.url);
+        edgeBuffersRef.current.delete(i);
         if (edgeActiveRef.current) {
-          setTtsError(err instanceof Error ? err.message : 'AI 语音合成失败');
+          // 移动端常见:非手势内 play() 被拒(AbortError/NotAllowedError)
+          const msg =
+            err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'AbortError')
+              ? '浏览器拦截了自动播放:请点「继续」重试,或改用「系统语音」'
+              : '音频播放失败,请重试或切换「系统语音」';
+          setTtsError(msg);
           stop();
         }
       }
     },
-    [edgeVoice, rate, stop, engine]
+    [edgeVoice, rate, stop, engine, fetchEdgeAudio, prefetchEdge]
   );
 
   const startEdge = useCallback(() => {
