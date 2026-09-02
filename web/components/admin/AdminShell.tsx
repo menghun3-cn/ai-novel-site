@@ -4,7 +4,7 @@
 // 规格: 侧栏 200/64px · 顶栏/Logo区 56px · 菜单项40px · 内容区 p16 bg #eef4fb
 // 响应式: <768px 抽屉化 | 768-1024 默认收起 | ≥1024 默认展开
 
-import { BarChart3, BookOpen, FileCheck, FileSearch, FolderTree, ImageIcon, KeyRound, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, Tags, Users, X } from 'lucide-react';
+import { BarChart3, BookOpen, FileCheck, FileSearch, FolderTree, ImageIcon, KeyRound, LayoutDashboard, Library, LogOut, Menu, PenLine, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, Tags, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
@@ -13,40 +13,53 @@ import appPackage from '../../package.json';
 
 const APP_VERSION = `v${appPackage.version}`;
 
-const NAV = [
-  { href: '/admin', label: '概览', icon: LayoutDashboard },
-  { href: '/admin/creation', label: 'AI 创作中心', icon: Sparkles },
-  { href: '/admin/review-center', label: 'AI 评审中心', icon: FileSearch },
-  { href: '/admin/books', label: '小说管理', icon: BookOpen },
-  { href: '/admin/review', label: '审核队列', icon: FileCheck },
-  { href: '/admin/story', label: '长篇工作台', icon: BookOpen },
-  { href: '/admin/analytics', label: '数据分析', icon: BarChart3 },
-  { href: '/admin/authors', label: '作者管理', icon: Users },
-  { href: '/admin/categories', label: '分类管理', icon: FolderTree },
-  { href: '/admin/tags', label: '标签管理', icon: Tags },
-  { href: '/admin/media', label: '媒体库', icon: ImageIcon },
-  { href: '/admin/settings', label: '系统设置', icon: Settings },
-] as const;
+/** 按用户任务流分组:内容生产 → 内容审核 → 内容库 → 基础数据 → 数据与系统。概览独立置顶。 */
+const NAV: { label: string; items: Array<{ href: string; label: string; icon: typeof LayoutDashboard }> }[] = [
+  { label: '', items: [{ href: '/admin', label: '概览', icon: LayoutDashboard }] },
+  {
+    label: '内容生产',
+    items: [
+      { href: '/admin/creation', label: '创作中心', icon: Sparkles },
+      { href: '/admin/works', label: '短篇作品', icon: Library },
+      { href: '/admin/story', label: '长篇工作台', icon: PenLine },
+    ],
+  },
+  {
+    label: '内容审核',
+    items: [
+      { href: '/admin/review-center', label: 'AI 评审', icon: FileSearch },
+      { href: '/admin/review', label: '审核队列', icon: FileCheck },
+    ],
+  },
+  { label: '内容库', items: [{ href: '/admin/books', label: '小说库', icon: BookOpen }] },
+  {
+    label: '基础数据',
+    items: [
+      { href: '/admin/authors', label: '作者', icon: Users },
+      { href: '/admin/categories', label: '分类', icon: FolderTree },
+      { href: '/admin/tags', label: '标签', icon: Tags },
+      { href: '/admin/media', label: '媒体库', icon: ImageIcon },
+    ],
+  },
+  {
+    label: '数据与系统',
+    items: [
+      { href: '/admin/analytics', label: '数据分析', icon: BarChart3 },
+      { href: '/admin/settings', label: '系统设置', icon: Settings },
+    ],
+  },
+];
 
-const PAGE_TITLE: Record<string, string> = {
-  '/admin': '概览',
-  '/admin/creation': 'AI 创作中心',
-  '/admin/review-center': 'AI 评审中心',
-  '/admin/books': '小说管理',
-  '/admin/review': '审核队列',
-  '/admin/story': '长篇工作台',
-  '/admin/analytics': '数据分析',
-  '/admin/authors': '作者管理',
-  '/admin/categories': '分类管理',
-  '/admin/tags': '标签管理',
-  '/admin/media': '媒体库',
-  '/admin/settings': '系统设置',
-};
+/** 扁平化后的全部导航项(供激活判断与面包屑) */
+const ALL_ITEMS = NAV.flatMap((g) => g.items);
+
+const PAGE_TITLE: Record<string, string> = Object.fromEntries(ALL_ITEMS.map((i) => [i.href, i.label]));
 
 function breadcrumb(pathname: string): string {
   if (PAGE_TITLE[pathname]) return PAGE_TITLE[pathname];
   const seg = pathname.split('/').filter(Boolean);
-  if (seg[1] === 'books' && seg.length > 2) return `小说管理 / 编辑`;
+  if (seg[1] === 'books' && seg.length > 2) return `小说库 / 编辑`;
+  if (seg[1] === 'works' && seg.length > 2) return `短篇作品 / 详情`;
   return '内容管理后台';
 }
 
@@ -141,36 +154,48 @@ export default function AdminShell({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label="后台导航">
-          {NAV.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setDrawer(false)}
-                title={collapsed ? item.label : undefined}
-                aria-current={active ? 'page' : undefined}
-                className={`relative mb-1 flex h-10 items-center rounded-lg px-3 transition-colors duration-150 ${
-                  active ? 'bg-[#e8f3ff]' : 'hover:bg-[#f8fafc]'
-                } ${collapsed ? 'md:justify-center md:px-0' : ''}`}
-              >
-                {active ? <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-[#1677ff]" aria-hidden /> : null}
-                <Icon size={18} className={active ? 'text-[#1677ff]' : 'text-[#64748b]'} aria-hidden />
-                <span className={`ml-3 text-sm font-normal ${active ? 'font-medium text-[#1677ff]' : 'text-[#475569]'} ${collapsed ? 'md:hidden' : ''}`}>
-                  {item.label}
-                </span>
-                {item.href === '/admin/review' && reviewCount > 0 ? (
-                  <span
-                    className={`ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[#dc2626] px-1.5 text-[11px] font-medium leading-none text-white ${collapsed ? 'md:hidden' : ''}`}
-                    aria-label={`${reviewCount} 章待审核`}
+          {NAV.map((group, gi) => (
+            <div key={group.label || 'top'} className={gi > 0 ? 'mt-3' : ''}>
+              {/* 分组标题:折叠态显示为分隔线 */}
+              {group.label ? (
+                collapsed ? (
+                  <div className="mx-2 mb-2 border-t border-[#eef2f7] md:block hidden" aria-hidden />
+                ) : (
+                  <div className="mb-1 px-3 text-[11px] font-medium tracking-wide text-[#94a3b8]">{group.label}</div>
+                )
+              ) : null}
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setDrawer(false)}
+                    title={collapsed ? item.label : undefined}
+                    aria-current={active ? 'page' : undefined}
+                    className={`relative mb-1 flex h-10 items-center rounded-lg px-3 transition-colors duration-150 ${
+                      active ? 'bg-[#e8f3ff]' : 'hover:bg-[#f8fafc]'
+                    } ${collapsed ? 'md:justify-center md:px-0' : ''}`}
                   >
-                    {reviewCount > 99 ? '99+' : reviewCount}
-                  </span>
-                ) : null}
-              </Link>
-            );
-          })}
+                    {active ? <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-[#1677ff]" aria-hidden /> : null}
+                    <Icon size={18} className={active ? 'text-[#1677ff]' : 'text-[#64748b]'} aria-hidden />
+                    <span className={`ml-3 text-sm font-normal ${active ? 'font-medium text-[#1677ff]' : 'text-[#475569]'} ${collapsed ? 'md:hidden' : ''}`}>
+                      {item.label}
+                    </span>
+                    {item.href === '/admin/review' && reviewCount > 0 ? (
+                      <span
+                        className={`ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[#dc2626] px-1.5 text-[11px] font-medium leading-none text-white ${collapsed ? 'md:hidden' : ''}`}
+                        aria-label={`${reviewCount} 章待审核`}
+                      >
+                        {reviewCount > 99 ? '99+' : reviewCount}
+                      </span>
+                    ) : null}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         <button

@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/admin-client';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
@@ -934,7 +935,13 @@ function WorksTab({ onChanged, notify }: { onChanged: () => void; notify: (tone:
                 return (
                   <tr key={s.id} className="border-t border-[#f1f5f9] hover:bg-[#f8fafc]">
                     <td className="px-4 py-2.5">
-                      <div className="font-medium text-[#0f172a]">{s.title || '(未命名)'}</div>
+                      <Link
+                        href={`/admin/works/${s.id}`}
+                        title="进入作品管理:编辑标题/正文、版本历史、发布"
+                        className="font-medium text-[#0f172a] hover:text-[#1677ff] hover:underline"
+                      >
+                        {s.title || '(未命名)'}
+                      </Link>
                       <div className="text-xs text-[#94a3b8]">{s.id}</div>
                     </td>
                     <td className="px-3 py-2.5">

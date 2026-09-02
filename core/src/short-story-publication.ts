@@ -136,6 +136,43 @@ export function publishShortStory(storyId: string, opts?: { versionId?: string }
 }
 
 /**
+ * 同步线上 Book+Chapter 的标题/description 到主档(不碰正文,不改发布时间)。
+ * 抽出自 republish 的公共逻辑:PATCH 主档标题后调用,保证「主档 = book = chapter = 读者页」全链路一致。
+ * 未发布时静默跳过(无线上快照可同步)。
+ */
+export function syncShortStoryOnlineMeta(storyId: string): { bookId: string } | null {
+  const story = getShortStory(storyId);
+  const latest = latestPublicationByStory(storyId);
+  if (!latest) return null;
+  updateBook(latest.bookId, {
+    title: story.title,
+    description: buildDescription(story.brief as Record<string, unknown>),
+  });
+  updateChapter(latest.bookId, 1, { title: story.title });
+  return { bookId: latest.bookId };
+}
+
+/**
+ * 下架已发布短篇:线上 Book 置 hidden(读者页 /short/[id] 已支持 hidden → 404)。
+ * 幂等:hidden 再次调用不报错。下架不删除任何数据——重新 publish/republish 会恢复 visible。
+ * 未发布(无 publication)时拒绝。
+ */
+export function unpublishShortStory(storyId: string): { bookId: string } {
+  const latest = latestPublicationByStory(storyId);
+  if (!latest) {
+    throw new CoreError('SHORT_STORY_NOT_PUBLISHED', '该短篇尚未发布,无需下架');
+  }
+  const book = getDb().prepare('SELECT status AS s FROM books WHERE id = ?').get(latest.bookId) as { s: string } | undefined;
+  if (!book) {
+    throw new CoreError('PUBLICATION_NOT_FOUND', `线上 Book 不存在:${latest.bookId}`);
+  }
+  if (book.s !== 'hidden') {
+    updateBook(latest.bookId, { status: 'hidden' });
+  }
+  return { bookId: latest.bookId };
+}
+
+/**
  * 重新发布:把「当前线上 Book+Chapter」的内容更新为最新应发版本(优先 is_final,否则最新)。
  * 与 publish 的区别:不新建 Book(读者链接 /short/[id] 不变),只原地更新线上内容;
  * publications 追加一行(同 book、新 version),保留发布追溯。
