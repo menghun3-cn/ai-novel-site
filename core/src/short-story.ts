@@ -164,6 +164,10 @@ export interface ShortStoryListItem extends ShortStory {
   publishedAt: string | null;
   /** 线上发布快照对应的版本号(无发布记录 → null;与 versionCount 对比可判断"线上是否落后") */
   onlineVersionNumber: number | null;
+  /** 最新最终版(或当前版本)的字数,列表展示用(无版本 → null) */
+  latestCharCount: number | null;
+  /** 线上 Book 状态(未发布 → null;hidden 表示已下架,列表显示「已下架」徽标) */
+  onlineBookStatus: 'serializing' | 'completed' | 'hidden' | null;
 }
 
 /** 线上发布快照对应的版本号(无发布记录 → null) */
@@ -204,7 +208,16 @@ export function listShortStories(opts?: ListShortStoriesOptions): ShortStoryList
                  FROM short_story_publications p
                  JOIN short_story_versions v ON v.id = p.version_id
                 WHERE p.story_id = s.id
-                ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1) AS online_version_number
+                ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1) AS online_version_number,
+              (SELECT v.char_count
+                 FROM short_story_versions v
+                 WHERE v.story_id = s.id
+                ORDER BY v.is_final DESC, v.version DESC LIMIT 1) AS latest_char_count,
+              (SELECT b.status
+                 FROM short_story_publications p
+                 JOIN books b ON b.id = p.book_id
+                WHERE p.story_id = s.id
+                ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1) AS online_book_status
        FROM short_stories s ${whereSql} ORDER BY s.updated_at DESC LIMIT ?`
     )
     .all(...params, limit) as (StoryRow & {
@@ -213,6 +226,8 @@ export function listShortStories(opts?: ListShortStoriesOptions): ShortStoryList
       published_book_id: string | null;
       published_at: string | null;
       online_version_number: number | null;
+      latest_char_count: number | null;
+      online_book_status: string | null;
     })[];
   return rows.map((row) => ({
     ...toStory(row),
@@ -221,6 +236,12 @@ export function listShortStories(opts?: ListShortStoriesOptions): ShortStoryList
     publishedBookId: row.published_book_id,
     publishedAt: row.published_at,
     onlineVersionNumber: row.online_version_number,
+    latestCharCount: row.latest_char_count,
+    onlineBookStatus:
+      row.online_book_status === 'hidden' ? 'hidden'
+      : row.online_book_status === 'serializing' ? 'serializing'
+      : row.online_book_status ? 'completed'
+      : null,
   }));
 }
 

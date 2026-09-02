@@ -7,6 +7,7 @@ import {
   latestReviewForVersion,
   listAiTasks,
   listStoryVersions,
+  syncShortStoryOnlineMeta,
   updateShortStory,
 } from '@novel/core';
 import { json, readJson, withAdmin } from '@/lib/admin-api';
@@ -46,12 +47,15 @@ export const GET = withAdmin<Ctx>(async (_req, ctx) => {
   });
 });
 
-/** 编辑主档(标题/brief/sourceUrl);不动任何版本 */
+/** 编辑主档(标题/brief/sourceUrl);不动任何版本。改标题时同步线上 Book/Chapter 标题,保证全链路一致 */
 export const PATCH = withAdmin<Ctx>(async (req: NextRequest, ctx) => {
   const { id } = await ctx.params;
   const patch = await readJson(req, patchSchema);
   const story = updateShortStory(id, patch);
-  // 编辑主档(标题等)会影响短篇页的展示
+  if (patch.title !== undefined || patch.brief !== undefined) {
+    syncShortStoryOnlineMeta(id);
+  }
+  // 编辑主档(标题等)会影响短篇页与线上书页的展示
   revalidateShortStory(id);
   return json({ story });
 });
