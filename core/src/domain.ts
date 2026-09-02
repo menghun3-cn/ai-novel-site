@@ -67,7 +67,11 @@ export type CoreErrorCode =
   | 'ARC_NOT_FOUND'
   | 'CHAPTER_NOT_FOUND_IN_ARC'
   | 'INVALID_RULE_DIMENSIONS'
-  | 'STRUCTURED_OUTPUT_FAILED';
+  | 'STRUCTURED_OUTPUT_FAILED'
+  | 'PRODUCTION_LINE_NOT_FOUND'
+  | 'PRODUCTION_RUN_NOT_FOUND'
+  | 'INVALID_LINE_CONFIG'
+  | 'LINE_QUOTA_EXCEEDED';
 
 export class CoreError extends Error {
   constructor(
@@ -441,6 +445,123 @@ export const SHORT_STORY_FIELD_LABELS: Readonly<Record<string, string>> = {
   pacing: '故事节奏',
   endingType: '结局类型',
 };
+
+// ---------- V10 内容工厂:产线(Production Line)与批次运行 ----------
+
+export type ProductionLineScheduleMode = 'manual' | 'daily';
+
+/** 单个题材/类型模板的种子库:每个种子注入一批差异化主题/梗概,实现"同类不同篇" */
+export interface ProductionKindSeed {
+  title?: string;
+  theme?: string;
+  synopsis?: string;
+  coreConflict?: string;
+  background?: string;
+  characters?: string;
+  direction?: string;
+}
+
+/** 产线里的一种题材/类型:一批短篇里按 weight 分配,保证"批量生成不同题材、类型" */
+export interface ProductionKindTemplate {
+  /** 题材/类型名,如「都市言情」「悬疑」「科幻」 */
+  genre: string;
+  /** 选择权重(正整数,>=1),决定该题材在单次运行中的占比 */
+  weight: number;
+  /** 该题材的创作基线(叠加在产线共享 brief 之上) */
+  brief?: StoryBrief;
+  /** 该题材的可选种子池,单次运行内按 round-robin 分配,使同题材也不同味 */
+  seeds?: ProductionKindSeed[];
+}
+
+export interface ProductionLineSchedule {
+  mode: ProductionLineScheduleMode;
+  /** 每日触发小时(0-23),mode='daily' 时有效 */
+  hour?: number;
+  /** 每次触发创建的短篇数(1..50) */
+  count: number;
+}
+
+export interface ProductionLineQuota {
+  /** 单次最多篇数(上限,叠在 schedule.count 之上做硬约束) */
+  maxPerRun?: number;
+  /** 每日最多创建的短篇数(软配额,超出时 run 拒绝并报 LINE_QUOTA_EXCEEDED) */
+  dailyLimit?: number;
+  /** 每日成本预算(USD,用于告警与"预算超支自动跳过") */
+  dailyBudgetUsd?: number;
+  /** 预算超支时是否自动跳过当次运行(否则仅告警不拦截) */
+  skipOnBudgetOverrun?: boolean;
+}
+
+export interface ProductionQualityGate {
+  /** 该产线的达标分数线(缺省取全局生效规则的 qualityThreshold) */
+  minScore?: number;
+  /** 该产线的最大自动优化轮数(缺省取全局生效规则的 maxAutoOptimizeRounds) */
+  reworkMaxRounds?: number;
+  /** 达标后是否自动发布(默认 true) */
+  publishOnPass?: boolean;
+}
+
+export interface ProductionLineConfig {
+  /** 产线共享创作基线(叠加每个题材 brief 与种子) */
+  brief?: StoryBrief;
+  /** 题材/类型清单(非空) */
+  kinds: ProductionKindTemplate[];
+  /** 目标字数(缺省回落 buildCreationPrompt 默认) */
+  targetWords?: number;
+  /** 模型覆盖(缺省取全局 LLM 配置) */
+  model?: string;
+  /** 评审规则 id(缺省取全局当前生效规则) */
+  ruleId?: string;
+  /** 评审 Prompt id */
+  promptId?: string;
+  schedule: ProductionLineSchedule;
+  quota?: ProductionLineQuota;
+  qualityGate?: ProductionQualityGate;
+}
+
+export interface ProductionLine {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  config: ProductionLineConfig;
+  lastRunAt: string | null;
+  /** 服务器本地 'YYYY-MM-DD',每日产线的同日去重游标 */
+  lastRunDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ProductionRunStatus = 'pending' | 'executing' | 'done' | 'failed' | 'cancelled';
+
+export interface ProductionRunItem {
+  /** 运行创建后写入的短篇 id */
+  storyId: string | null;
+  /** 该篇被分配的题材/类型 */
+  genre: string;
+  /** 该题材种子库内的序号(无种子为 null) */
+  seedIndex: number | null;
+}
+
+export interface ProductionRun {
+  id: string;
+  lineId: string;
+  trigger: 'manual' | 'daily';
+  /** 服务器本地 'YYYY-MM-DD' */
+  runDate: string;
+  count: number;
+  status: ProductionRunStatus;
+  items: ProductionRunItem[];
+  error: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+  executedAt: string | null;
+}
+
+export function isProductionRunStatus(v: unknown): v is ProductionRunStatus {
+  return typeof v === 'string' && ['pending', 'executing', 'done', 'failed', 'cancelled'].includes(v);
+}
+
 
 export interface Author {
   id: number;
