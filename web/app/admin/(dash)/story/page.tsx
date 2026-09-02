@@ -3,8 +3,8 @@
 // AI 创作中心:选书 → Story Core 事实管理(世界观/人物/关系/故事线/大纲/伏笔) + AI 章节生成工作台
 // 结构蓝图见 PR16 描述;所有卡片复用 ui.tsx 原语与既有 LSG token
 
-import { Bot, CalendarClock, Flame, ListChecks, Pencil, Plus, Sparkles, Trash2, Users } from 'lucide-react';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Bot, CalendarClock, ChevronDown, Flame, ListChecks, Pencil, Plus, Sparkles, Trash2, Users } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '@/lib/admin-client';
 import { formatChinaTime } from '@/lib/format';
 import {
@@ -18,6 +18,7 @@ import {
   Notice,
   Select,
   Spinner,
+  Tabs,
   Textarea,
 } from '@/components/admin/ui';
 
@@ -75,6 +76,7 @@ interface BookOption {
   id: string;
   title: string;
   chapterCount: number;
+  status: string;
 }
 
 const ROLE_BADGE: Record<string, { tone: 'success' | 'danger' | 'info' | 'warning'; label: string }> = {
@@ -89,9 +91,37 @@ const ARC_STATUS_BADGE: Record<string, { tone: 'info' | 'running' | 'success'; l
   done: { tone: 'success', label: '完结' },
 };
 
+const BOOK_STATUS_LABEL: Record<string, string> = {
+  serializing: '连载中',
+  completed: '已完结',
+  hidden: '已隐藏',
+};
+
 export default function AdminStoryPage() {
   const [books, setBooks] = useState<BookOption[] | null>(null);
   const [bookId, setBookId] = useState<string>('');
+  // 可搜索选书:书多时原生下拉不友好——按钮 + 搜索过滤 + 滚动列表
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [bookQuery, setBookQuery] = useState('');
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onDown = (e: MouseEvent): void => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setPickerOpen(false);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setPickerOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [pickerOpen]);
+  // 工作台一级 Tab:章节流水线(高频的生成/连载流程,默认) / 故事设定(Story Core 素材库,收纳六类事实)
+  const [workbenchTab, setWorkbenchTab] = useState<'pipeline' | 'settings'>('pipeline');
   const [story, setStory] = useState<StoryBundle | null>(null);
   const [chaptersMax, setChaptersMax] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -170,9 +200,10 @@ export default function AdminStoryPage() {
     setError(null);
   };
 
+  // 只列长篇:短篇发布物化的书(kind='short')混进来会让下拉又长又无关
   const loadBooks = useCallback(async () => {
     try {
-      const res = await api<{ books: Array<{ id: string; title: string; chapterCount: number }> }>('/api/admin/books?limit=500');
+      const res = await api<{ books: BookOption[] }>('/api/admin/books?kind=long&limit=500');
       setBooks(res.books);
       if (res.books.length > 0) setBookId((prev) => prev || res.books[0].id);
     } catch (err) {
@@ -461,14 +492,51 @@ export default function AdminStoryPage() {
           <Sparkles size={20} aria-hidden />
         </span>
         <h1 className="text-lg font-semibold text-[#0f172a]">AI 创作中心</h1>
-        <div className="min-w-[240px]">
-          <Select value={bookId} onChange={(e) => setBookId(e.target.value)} aria-label="选择书籍">
-            {(books ?? []).map((b) => (
-              <option key={b.id} value={b.id}>
-                《{b.title}》(共 {b.chapterCount} 章)
-              </option>
-            ))}
-          </Select>
+        <div className="min-w-[240px]" ref={pickerRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            aria-label="选择书籍"
+            onClick={() => {
+              setBookQuery('');
+              setPickerOpen((v) => !v);
+            }}
+            className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#0f172a] transition-shadow duration-150 hover:border-[#cbd5e1] focus:border-[#1677ff] focus:shadow-[0_0_0_3px_rgba(22,119,255,0.15)] focus:outline-none"
+          >
+            <span className="truncate">
+              {(books ?? []).find((b) => b.id === bookId) ? `《${(books ?? []).find((b) => b.id === bookId)!.title}》` : '选择书籍'}
+            </span>
+            <ChevronDown size={15} className="shrink-0 text-[#94a3b8]" />
+          </button>
+          {pickerOpen ? (
+            <div className="absolute z-50 mt-1 w-[340px] rounded-xl border border-[#e2e8f0] bg-white shadow-lg">
+              <div className="border-b border-[#f1f5f9] p-2">
+                <Input autoFocus placeholder="搜索书名…" value={bookQuery} onChange={(e) => setBookQuery(e.target.value)} className="h-9" />
+              </div>
+              <div className="max-h-[320px] overflow-y-auto p-1.5">
+                {(books ?? [])
+                  .filter((b) => !bookQuery.trim() || b.title.toLowerCase().includes(bookQuery.trim().toLowerCase()))
+                  .map((b) => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => {
+                        setBookId(b.id);
+                        setPickerOpen(false);
+                      }}
+                      className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors duration-150 ${b.id === bookId ? 'bg-[#e8f3ff] text-[#1677ff]' : 'text-[#334155] hover:bg-[#f8fafc]'}`}
+                    >
+                      <span className="truncate">《{b.title}》</span>
+                      <span className="shrink-0 text-xs text-[#94a3b8]">
+                        {BOOK_STATUS_LABEL[b.status] ?? b.status} · {b.chapterCount} 章
+                      </span>
+                    </button>
+                  ))}
+                {(books ?? []).length > 0 && (books ?? []).filter((b) => !bookQuery.trim() || b.title.toLowerCase().includes(bookQuery.trim().toLowerCase())).length === 0 ? (
+                  <p className="px-3 py-4 text-center text-xs text-[#94a3b8]">没有匹配的书</p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </div>
         {loading ? <Spinner size={16} /> : null}
       </div>
@@ -483,6 +551,32 @@ export default function AdminStoryPage() {
         )
       ) : (
         <>
+          <div className="mb-5">
+            <Tabs
+              tabs={[
+                { key: 'pipeline', label: '章节流水线' },
+                { key: 'settings', label: '故事设定' },
+              ]}
+              value={workbenchTab}
+              onChange={setWorkbenchTab}
+            />
+          </div>
+
+          {/* 新书空态:设定还是空时给步骤化引导,而不是对着六块空表单发呆 */}
+          {story.world.setting.trim() === '' && story.characters.length === 0 ? (
+            <div className="mb-5 rounded-xl border border-dashed border-[#cbd5e1] bg-white p-5 shadow-sm">
+              <h3 className="mb-3 text-sm font-semibold text-[#0f172a]">新书起步(建议顺序)</h3>
+              <ol className="grid grid-cols-1 gap-2 text-sm text-[#334155] sm:grid-cols-2">
+                <li className="flex items-start gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-xs font-semibold text-[#1677ff]">1</span>在下方「世界观」填写设定与写作规则</li>
+                <li className="flex items-start gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-xs font-semibold text-[#1677ff]">2</span>添加主角、反派等人物及其状态</li>
+                <li className="flex items-start gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-xs font-semibold text-[#1677ff]">3</span>为前几章写好「章节大纲」要点</li>
+                <li className="flex items-start gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-xs font-semibold text-[#1677ff]">4</span>切到「章节流水线」生成首章草稿</li>
+              </ol>
+            </div>
+          ) : null}
+
+          {workbenchTab === 'settings' ? (
+            <>
           {/* 世界观卡 */}
           <form onSubmit={(e) => void saveWorld(e)} className="mb-5 rounded-xl bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-2">
@@ -698,6 +792,9 @@ export default function AdminStoryPage() {
             )}
           </section>
 
+            </>
+          ) : (
+            <>
           {/* AI 工作台卡 */}
           <section className="overflow-hidden rounded-xl bg-white shadow-sm">
             <header className="flex h-14 items-center gap-2 px-5 text-white" style={{ background: 'linear-gradient(135deg,#7c3aed,#4f46e5)' }}>
@@ -874,6 +971,8 @@ export default function AdminStoryPage() {
               </div>
             </div>
           </section>
+            </>
+          )}
         </>
       )}
 
