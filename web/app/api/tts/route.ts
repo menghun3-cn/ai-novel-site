@@ -190,7 +190,11 @@ export async function POST(req: Request): Promise<Response> {
     return new Response(new Uint8Array(audio), {
       headers: {
         'Content-Type': 'audio/mpeg',
-        'Cache-Control': 'public, max-age=3600',
+        // POST 动态合成:必须 no-store。
+        // 曾标 public,max-age=3600 —— 移动端网络路径上的中间层(运营商代理/CDN 节点)
+        // 见到"可缓存"的长时 POST 会拦截/改写,是手机端 502/fail-to-fetch(PC 正常)的诱因之一。
+        'Cache-Control': 'no-store',
+        'Content-Length': String(audio.length),
       },
     });
   } catch (err) {
