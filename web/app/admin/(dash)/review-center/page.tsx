@@ -130,6 +130,10 @@ const TASK_TYPE_BADGE: Record<string, { tone: 'info' | 'running' | 'success' | '
   AI_OPTIMIZE_STORY: { tone: 'warning', label: '手动优化' },
   AI_REVIEW: { tone: 'running', label: '重新评审' },
   AI_REVIEW_RETRY: { tone: 'running', label: '重试评审' },
+  AI_REVIEW_CHAPTER: { tone: 'running', label: '章节评审' },
+  AI_REVIEW_ARC: { tone: 'running', label: '弧级评审' },
+  AI_OPTIMIZE_CHAPTER: { tone: 'warning', label: '章节优化' },
+  PUBLISH_SHORT_STORY: { tone: 'success', label: '短篇发布' },
 };
 const TASK_STATUS_TONE: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'running'> = {
   SUCCESS: 'success',
@@ -137,6 +141,13 @@ const TASK_STATUS_TONE: Record<string, 'success' | 'warning' | 'danger' | 'info'
   RUNNING: 'running',
   FAILED: 'danger',
   CANCELLED: 'warning',
+};
+const TASK_STATUS_LABEL: Record<string, string> = {
+  PENDING: '待处理',
+  RUNNING: '执行中',
+  SUCCESS: '已完成',
+  FAILED: '失败',
+  CANCELLED: '已取消',
 };
 const RULE_STATUS_TONE: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
   published: 'success',
@@ -239,25 +250,70 @@ export default function AdminReviewCenterPage() {
   // V9.5 补丁:章节批量入队
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
 
+  // 任务"目标"列按 refType 解析:short_story→短篇标题;chapter→书名·章节号;book→书名;field_assist→短篇标题
+  const [bookTitles, setBookTitles] = useState<Record<string, string>>({});
+  const [chapterNumbers, setChapterNumbers] = useState<Record<string, number>>({});
+
   const loadAll = useCallback(async (): Promise<void> => {
     setError(null);
     try {
-      const [stories, tasksRes, recordsRes, rulesRes, promptsRes] = await Promise.all([
+      const [stories, tasksRes, recordsRes, rulesRes, promptsRes, booksRes] = await Promise.all([
         api<{ stories: Array<{ id: string; title: string }> }>('/api/admin/short-stories?limit=500'),
         api<{ tasks: TaskItem[] }>('/api/admin/ai/tasks?limit=200'),
         api<{ records: RecordItem[] }>('/api/admin/review-records?limit=200'),
         api<{ rules: RuleWithVersions[] }>('/api/admin/review-rules'),
         api<{ groups: Array<{ name: string; versions: PromptItem[] }> }>('/api/admin/review-prompts?grouped=1'),
+        api<{ books: Array<{ id: string; title: string }> }>('/api/admin/books?limit=500'),
       ]);
       setStoryTitles(Object.fromEntries(stories.stories.map((s) => [s.id, s.title])));
+      setBookTitles(Object.fromEntries(booksRes.books.map((b) => [b.id, b.title])));
       setTasks(tasksRes.tasks);
       setRecords(recordsRes.records);
       setRules(rulesRes.rules);
       setPromptGroups(promptsRes.groups);
+      // 章节号从 chapter id 解析(章节 id 形如 `${bookId}_ch${number}`)
+      const chIds = new Set<string>();
+      for (const t of tasksRes.tasks) if (t.refType === 'chapter' && t.refId) chIds.add(t.refId);
+      const numMap: Record<string, number> = {};
+      const bookIds = new Set<string>();
+      for (const cid of chIds) {
+        const m = /_ch(\d+)$/.exec(cid);
+        if (m) {
+          numMap[cid] = Number(m[1]);
+          bookIds.add(cid.slice(0, cid.length - m[0].length));
+        }
+      }
+      setChapterNumbers(numMap);
+      // 章节所属书不在书名表(短篇发布书可能未入前 500)时按需补取
+      for (const bid of bookIds) {
+        if (!booksRes.books.some((b) => b.id === bid)) {
+          api<{ book: { id: string; title: string } }>(`/api/admin/books/${encodeURIComponent(bid)}`)
+            .then((r) => setBookTitles((prev) => ({ ...prev, [r.book.id]: r.book.title })))
+            .catch(() => undefined);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载失败');
     }
   }, []);
+
+  const resolveTaskTarget = (t: TaskItem): string => {
+    if (!t.refId) return '—';
+    switch (t.refType) {
+      case 'chapter': {
+        const bookId = t.refId.replace(/_ch\d+$/, '');
+        const n = chapterNumbers[t.refId];
+        const book = bookTitles[bookId];
+        return book ? `${book} · 第${n ?? '?'}章` : t.refId;
+      }
+      case 'book':
+        return bookTitles[t.refId] ?? t.refId;
+      case 'short_story':
+      case 'field_assist':
+      default:
+        return storyTitles[t.refId] ?? t.refId;
+    }
+  };
 
   useEffect(() => {
     void loadAll();
@@ -877,9 +933,9 @@ export default function AdminReviewCenterPage() {
                   <td className="px-4 py-3">
                     <Badge tone={TASK_TYPE_BADGE[t.type]?.tone ?? 'info'}>{TASK_TYPE_BADGE[t.type]?.label ?? t.type}</Badge>
                   </td>
-                  <td className="max-w-[180px] truncate px-4 py-3 text-[#334155]">{t.refId ? storyTitles[t.refId] ?? t.refId : '—'}</td>
+                  <td className="max-w-[180px] truncate px-4 py-3 text-[#334155]" title={resolveTaskTarget(t)}>{resolveTaskTarget(t)}</td>
                   <td className="px-4 py-3">
-                    <Badge tone={TASK_STATUS_TONE[t.status] ?? 'info'}>{t.status}</Badge>
+                    <Badge tone={TASK_STATUS_TONE[t.status] ?? 'info'}>{TASK_STATUS_LABEL[t.status] ?? t.status}</Badge>
                   </td>
                   <td className="px-4 py-3 font-medium text-[#1677ff]">{outScore !== null ? `${outScore} 分` : '—'}</td>
                   <td className="px-4 py-3 text-xs text-[#64748b]">
@@ -1070,7 +1126,7 @@ export default function AdminReviewCenterPage() {
             <div className="grid grid-cols-2 gap-2 text-xs text-[#64748b]">
               <span>ID:{taskDetail.id}</span>
               <span>类型:{TASK_TYPE_BADGE[taskDetail.type]?.label ?? taskDetail.type}</span>
-              <span>状态:{taskDetail.status}</span>
+              <span>状态:{TASK_STATUS_LABEL[taskDetail.status] ?? taskDetail.status}</span>
               <span>尝试次数:{taskDetail.attempt}</span>
               <span>模型:{taskDetail.modelName ?? '—'}</span>
               <span>耗时:{taskDetail.durationMs !== null ? `${(taskDetail.durationMs / 1000).toFixed(1)}s` : '—'}</span>
