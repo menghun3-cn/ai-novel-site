@@ -4,7 +4,7 @@
 
 import { getDb, genId } from './db';
 import { CoreError, type ShortStoryPublication } from './domain';
-import { createBook, createChapter } from './service';
+import { createBook, createChapter, updateBook, updateChapter } from './service';
 import { getShortStory, getStoryVersion, listStoryVersions } from './short-story';
 
 /** 物化短篇时使用的默认作者/分类(首次发布时自动 upsert) */
@@ -133,6 +133,49 @@ export function publishShortStory(storyId: string, opts?: { versionId?: string }
     .run(publicationId, storyId, book.id, versionId, now);
 
   return { bookId: book.id, bookSlug: book.slug, chapterId: chapter.id, publicationId };
+}
+
+/**
+ * 重新发布:把「当前线上 Book+Chapter」的内容更新为最新应发版本(优先 is_final,否则最新)。
+ * 与 publish 的区别:不新建 Book(读者链接 /short/[id] 不变),只原地更新线上内容;
+ * publications 追加一行(同 book、新 version),保留发布追溯。
+ * 线上已是最新应发版本时拒绝(无意义操作)。
+ */
+export function republishShortStory(storyId: string): {
+  bookId: string;
+  bookSlug: string;
+  versionId: string;
+  publicationId: string;
+} {
+  const story = getShortStory(storyId);
+  if (story.status !== 'passed') {
+    throw new CoreError('SHORT_STORY_NOT_PUBLISHED', `仅已达标(passed)短篇可重新发布,当前状态:${story.status}`);
+  }
+  const latest = latestPublicationByStory(storyId);
+  if (!latest) {
+    throw new CoreError('SHORT_STORY_NOT_PUBLISHED', '该短篇尚未发布,请先发布');
+  }
+  const { versionId, content } = pickPublishVersion(storyId);
+  if (versionId === latest.versionId) {
+    throw new CoreError('SHORT_STORY_NOT_PUBLISHED', '线上已是最新应发版本,无需重新发布');
+  }
+
+  const db = getDb();
+  // 1. 线上 Book 同步最新标题/description(读者站首页信息跟着更新)
+  const book = updateBook(latest.bookId, {
+    title: story.title,
+    description: buildDescription(story.brief as Record<string, unknown>),
+  });
+  // 2. 线上 Chapter(第 1 章)同步正文;状态保持 published,不改首次发布时间
+  updateChapter(latest.bookId, 1, { title: story.title, contentMd: content });
+  // 3. 追加发布记录(同 book、新 version;UNIQUE(story_id, version_id) 天然防重)
+  const publicationId = genId('sspub');
+  const now = new Date().toISOString();
+  db.prepare(
+    'INSERT INTO short_story_publications (id, story_id, book_id, version_id, published_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(publicationId, storyId, latest.bookId, versionId, now);
+
+  return { bookId: latest.bookId, bookSlug: book.slug, versionId, publicationId };
 }
 
 // ---------- 查询 ----------

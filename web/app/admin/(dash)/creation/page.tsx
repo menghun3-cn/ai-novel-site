@@ -10,6 +10,8 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  Copy,
+  ExternalLink,
   Factory,
   Play,
   Plus,
@@ -142,7 +144,7 @@ interface CostResp {
   };
 }
 
-type TabKey = 'overview' | 'lines' | 'queue' | 'gate' | 'exceptions' | 'cost';
+type TabKey = 'overview' | 'lines' | 'queue' | 'gate' | 'exceptions' | 'cost' | 'works';
 
 const TASK_TYPE_LABEL: Record<string, string> = {
   CREATE_NOVEL: '创作流水线',
@@ -824,6 +826,163 @@ function CostTab({ data }: { data: CostResp['cost'] }) {
   );
 }
 
+// ---------- 作品(发布闭环) ----------
+
+interface WorkItem {
+  id: string;
+  title: string;
+  status: string;
+  versionCount: number;
+  publicationId: string | null;
+  publishedBookId: string | null;
+  publishedAt: string | null;
+  onlineVersionNumber: number | null;
+}
+
+const STORY_STATUS_LABEL: Record<string, { label: string; tone: 'info' | 'running' | 'success' | 'danger' | 'warning' }> = {
+  draft: { label: '草稿', tone: 'info' },
+  scheduled: { label: '已排期', tone: 'info' },
+  creating: { label: '创作中', tone: 'running' },
+  reviewing: { label: '评审中', tone: 'running' },
+  optimizing: { label: '优化中', tone: 'running' },
+  passed: { label: '已达标', tone: 'success' },
+  failed: { label: '失败', tone: 'danger' },
+};
+
+/**
+ * 作品 Tab:已发布短篇的线上状态与发布闭环操作。
+ * - 展示「线上版本 vs 最新版本」:线上落后时高亮并提示重新发布
+ * - 重新发布:线上 Book+Chapter 原地更新为最新应发版本(读者链接不变)
+ * - 复制读者链接:完成 产出→分享 的最后一公里
+ */
+function WorksTab({ onChanged, notify }: { onChanged: () => void; notify: (tone: 'success' | 'error', msg: string) => void }) {
+  const [works, setWorks] = useState<WorkItem[] | null>(null);
+  const [q, setQ] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const loadWorks = useCallback(async () => {
+    try {
+      const r = await api<{ stories: WorkItem[] }>('/api/admin/short-stories?status=passed&limit=500');
+      setWorks(r.stories);
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : '作品加载失败');
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    void loadWorks();
+  }, [loadWorks]);
+
+  const republish = async (s: WorkItem) => {
+    setBusyId(s.id);
+    try {
+      await api(`/api/admin/short-stories/${s.id}/republish`, { method: 'POST', body: JSON.stringify({}) });
+      notify('success', `《${s.title}》已重新发布,读者下次访问即见新内容。`);
+      void loadWorks();
+      onChanged();
+    } catch (err) {
+      notify('error', err instanceof Error ? err.message : '重新发布失败');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const copyReaderLink = async (s: WorkItem) => {
+    const url = `${window.location.origin}/short/${s.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      notify('success', '读者链接已复制。');
+    } catch {
+      window.prompt('复制以下读者链接:', url);
+    }
+  };
+
+  const openReader = (s: WorkItem) => {
+    window.open(`/short/${s.id}`, '_blank', 'noopener');
+  };
+
+  const filtered = (works ?? []).filter(
+    (s) => !q.trim() || s.title.toLowerCase().includes(q.trim().toLowerCase()) || s.id.includes(q.trim())
+  );
+
+  if (!works) return <div className="py-16 text-center text-sm text-[#64748b]">加载中…</div>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Input placeholder="搜索标题 / 编号…" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
+        <span className="text-xs text-[#64748b]">共 {filtered.length} 篇已达标作品(仅展示已发布/可发布)</span>
+      </div>
+      {filtered.length === 0 ? (
+        <EmptyState icon={<Factory size={28} />} title="暂无已达标作品" description="产线运行并通过质量闸门后,作品会出现在这里,可一键发布给读者。" />
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-[#e2e8f0] bg-white">
+          <table className="w-full text-sm">
+            <thead className="bg-[#f8fafc] text-xs text-[#64748b]">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">作品</th>
+                <th className="px-3 py-2 text-left font-medium">线上版本</th>
+                <th className="px-3 py-2 text-left font-medium">发布时间</th>
+                <th className="px-4 py-2 text-right font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((s) => {
+                const published = !!s.publicationId;
+                const stale = published && s.onlineVersionNumber !== null && s.onlineVersionNumber < s.versionCount;
+                const badge = STORY_STATUS_LABEL[s.status] ?? { label: s.status, tone: 'info' as const };
+                return (
+                  <tr key={s.id} className="border-t border-[#f1f5f9] hover:bg-[#f8fafc]">
+                    <td className="px-4 py-2.5">
+                      <div className="font-medium text-[#0f172a]">{s.title || '(未命名)'}</div>
+                      <div className="text-xs text-[#94a3b8]">{s.id}</div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {!published ? (
+                        <Badge tone="warning">未发布</Badge>
+                      ) : stale ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Badge tone="warning">线上 v{s.onlineVersionNumber} / 最新 v{s.versionCount}</Badge>
+                          <span className="text-xs text-[#b45309]">落后</span>
+                        </span>
+                      ) : (
+                        <Badge tone="success">线上 v{s.onlineVersionNumber} · 最新</Badge>
+                      )}
+                      <span className="ml-2">
+                        <Badge tone={badge.tone}>{badge.label}</Badge>
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-[#64748b]">{s.publishedAt ? formatRelativeTime(s.publishedAt) : '—'}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button variant="ghost" size="xs" onClick={() => void copyReaderLink(s)} title="复制读者链接">
+                          <Copy size={13} /> 链接
+                        </Button>
+                        <Button variant="ghost" size="xs" onClick={() => openReader(s)} title="打开读者页">
+                          <ExternalLink size={13} /> 查看
+                        </Button>
+                        {stale ? (
+                          <Button variant="primary" size="xs" disabled={busyId === s.id} onClick={() => void republish(s)}>
+                            {busyId === s.id ? '发布中…' : '重新发布'}
+                          </Button>
+                        ) : published ? null : (
+                          <Button variant="primary" size="xs" disabled={busyId === s.id} onClick={() => void republish(s)}>
+                            {busyId === s.id ? '发布中…' : '发布'}
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- 主页面 ----------
 
 export default function CreationPage() {
@@ -945,6 +1104,7 @@ export default function CreationPage() {
             { key: 'gate', label: '质量闸门' },
             { key: 'exceptions', label: '异常分诊' },
             { key: 'cost', label: '成本' },
+            { key: 'works', label: '作品' },
           ]}
           value={tab}
           onChange={setTab}
@@ -958,6 +1118,7 @@ export default function CreationPage() {
       {!loading && tab === 'gate' && gate ? <GateTab data={gate} /> : null}
       {!loading && tab === 'exceptions' && exceptions ? <ExceptionsTab items={exceptions} onAction={(i) => void doExceptionAction(i)} /> : null}
       {!loading && tab === 'cost' && cost ? <CostTab data={cost} /> : null}
+      {!loading && tab === 'works' ? <WorksTab onChanged={() => void load()} notify={(tone, msg) => setToast({ tone, msg })} /> : null}
 
       {/* 运行确认 */}
       {runLineId ? (

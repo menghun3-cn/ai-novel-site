@@ -162,6 +162,21 @@ export interface ShortStoryListItem extends ShortStory {
   /** 最近发布使用的 bookId(与 publicationId 同步成对出现) */
   publishedBookId: string | null;
   publishedAt: string | null;
+  /** 线上发布快照对应的版本号(无发布记录 → null;与 versionCount 对比可判断"线上是否落后") */
+  onlineVersionNumber: number | null;
+}
+
+/** 线上发布快照对应的版本号(无发布记录 → null) */
+export function onlineVersionNumberByStory(storyId: string): number | null {
+  const row = getDb()
+    .prepare(
+      `SELECT v.version FROM short_story_publications p
+       JOIN short_story_versions v ON v.id = p.version_id
+       WHERE p.story_id = ?
+       ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1`
+    )
+    .get(storyId) as { version: number } | undefined;
+  return row ? row.version : null;
 }
 
 /** 列表按更新时间倒序;支持状态筛选与标题模糊匹配;q 为空返回全量(admin 惯例:客户端过滤) */
@@ -184,7 +199,12 @@ export function listShortStories(opts?: ListShortStoriesOptions): ShortStoryList
               (SELECT COUNT(*) FROM short_story_versions v WHERE v.story_id = s.id) AS version_count,
               (SELECT id FROM short_story_publications p WHERE p.story_id = s.id ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1) AS publication_id,
               (SELECT book_id FROM short_story_publications p WHERE p.story_id = s.id ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1) AS published_book_id,
-              (SELECT published_at FROM short_story_publications p WHERE p.story_id = s.id ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1) AS published_at
+              (SELECT published_at FROM short_story_publications p WHERE p.story_id = s.id ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1) AS published_at,
+              (SELECT v.version
+                 FROM short_story_publications p
+                 JOIN short_story_versions v ON v.id = p.version_id
+                WHERE p.story_id = s.id
+                ORDER BY p.published_at DESC, p.rowid DESC LIMIT 1) AS online_version_number
        FROM short_stories s ${whereSql} ORDER BY s.updated_at DESC LIMIT ?`
     )
     .all(...params, limit) as (StoryRow & {
@@ -192,6 +212,7 @@ export function listShortStories(opts?: ListShortStoriesOptions): ShortStoryList
       publication_id: string | null;
       published_book_id: string | null;
       published_at: string | null;
+      online_version_number: number | null;
     })[];
   return rows.map((row) => ({
     ...toStory(row),
@@ -199,6 +220,7 @@ export function listShortStories(opts?: ListShortStoriesOptions): ShortStoryList
     publicationId: row.publication_id,
     publishedBookId: row.published_book_id,
     publishedAt: row.published_at,
+    onlineVersionNumber: row.online_version_number,
   }));
 }
 

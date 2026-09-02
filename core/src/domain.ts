@@ -740,6 +740,8 @@ export interface ListAllBooksOptions {
   status?: BookStatus;
   categorySlug?: string;
   q?: string;
+  /** V10.1:按种类过滤(long=长篇,short=短篇发布物化) */
+  kind?: 'short' | 'long';
   limit?: number;
   offset?: number;
 }

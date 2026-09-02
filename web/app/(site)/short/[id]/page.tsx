@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   try {
     const story = getShortStory(id);
-    return { title: `${story.title} · 短篇 · ${story.title}`, description: story.title };
+    return { title: `${story.title} · 短篇`, description: story.title };
   } catch {
     return { title: '短篇不存在' };
   }

@@ -22,10 +22,12 @@ const createSchema = z.object({
 
 export const GET = withAdmin<AdminRouteContext>(async (req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
+  const kind = sp.get('kind');
   const books = listAllBooks({
     status: (sp.get('status') ?? undefined) as BookStatus | undefined,
     categorySlug: sp.get('category') ?? undefined,
     q: sp.get('q') ?? undefined,
+    kind: kind === 'short' || kind === 'long' ? kind : undefined,
     limit: intQuery(sp, 'limit'),
     offset: intQuery(sp, 'offset'),
   });
