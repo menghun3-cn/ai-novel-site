@@ -57,6 +57,7 @@
     "test:production-line": "tsx scripts/verify-production-line.ts",
     "test:continuous-production-line": "tsx scripts/verify-continuous-production-line.ts",
     "test:tts-reader": "tsx scripts/verify-tts-reader.ts",
+    "test:tts-local": "tsx scripts/verify-tts-local.ts",
     "test:e2e": "playwright test",
     "test:review-rule": "tsx scripts/verify-review-rule.ts",
     "test:review-prompt": "tsx scripts/verify-review-prompt.ts",

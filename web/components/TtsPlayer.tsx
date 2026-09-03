@@ -3,16 +3,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { detectIOS, maxChunkLength, splitIntoChunks } from '@/lib/tts';
 import { EDGE_DEFAULT_VOICE, EDGE_VOICES } from '@/lib/edge-tts';
+import { KOKORO_DEFAULT_VOICE, KOKORO_VOICES } from '@/lib/kokoro';
 
 const KEY_RATE = 'novel:tts:rate';
 const KEY_VOICE = 'novel:tts:voiceURI';
 const KEY_ENGINE = 'novel:tts:engine';
 const KEY_EDGE_VOICE = 'novel:tts:edgeVoice';
+const KEY_KOKORO_VOICE = 'novel:tts:kokoroVoice';
 const DEFAULT_RATE = 1;
 /** AI 朗读预取片数:播放到第 i 片时提前合成好 i+1、i+2,避免播完一片再等合成 */
 const PREFETCH_COUNT = 2;
 
-type Engine = 'native' | 'edge';
+type Engine = 'native' | 'edge' | 'kokoro';
 
 interface SpeechVoiceLite {
   voiceURI: string;
@@ -61,6 +63,9 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
   // 引擎 + AI 语音选择(默认 AI 情感朗读,规避系统语音缺失)
   const [engine, setEngine] = useState<Engine>('edge');
   const [edgeVoice, setEdgeVoice] = useState<string>(EDGE_DEFAULT_VOICE);
+  const [kokoroVoice, setKokoroVoice] = useState<string>(KOKORO_DEFAULT_VOICE);
+  // 本地 Kokoro 引擎可用性(由 /api/tts 探测,挂载模型后自动出现)
+  const [kokoroOk, setKokoroOk] = useState(false);
   // 错误/加载提示(native 语音列表为空 / edge 合成失败均可见)
   const [ttsError, setTtsError] = useState<string | null>(null);
   const [edgeBusy, setEdgeBusy] = useState(false);
@@ -126,12 +131,30 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
       if (r >= 0.5 && r <= 2) setRate(r);
       savedVoiceRef.current = localStorage.getItem(KEY_VOICE) ?? '';
       const e = localStorage.getItem(KEY_ENGINE);
-      if (e === 'native' || e === 'edge') setEngine(e);
+      if (e === 'native' || e === 'edge' || e === 'kokoro') setEngine(e);
       const ev = localStorage.getItem(KEY_EDGE_VOICE);
       if (ev && EDGE_VOICES.some((v) => v.voiceURI === ev)) setEdgeVoice(ev);
+      const kv = localStorage.getItem(KEY_KOKORO_VOICE);
+      if (kv && KOKORO_VOICES.some((v) => v.voiceURI === kv)) setKokoroVoice(kv);
     } catch {
       /* ignore */
     }
+  }, []);
+
+  // 探测本地 Kokoro 引擎可用性:镜像启用 ENABLE_LOCAL_TTS 且模型已挂载才出现该选项
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/tts', { method: 'GET' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { kokoro?: { available?: boolean } } | null) => {
+        if (alive) setKokoroOk(Boolean(data?.kokoro?.available));
+      })
+      .catch(() => {
+        /* 探测失败视为不可用,edge 兜底 */
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // 语音列表就绪后解析生效语音:已选且存在 → 保留;否则用保存的偏好;再否则自动选第一个中文语音
@@ -283,10 +306,16 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
     return units;
   }, [contentSelector, rate]);
 
-  /** 合成单个朗读单元为 MP3(objectURL + audio 元素);瞬时失败(5xx/网络中断)自动重试 2 次 */
+  /** 合成单个朗读单元为 MP3/WAV(objectURL + audio 元素);瞬时失败(5xx/网络中断)自动重试 2 次 */
   const fetchEdgeAudio = useCallback(
     async (unit: SpeakUnit): Promise<{ url: string; audio: HTMLAudioElement }> => {
-      const body = JSON.stringify({ text: unit.text, voice: edgeVoice, rate });
+      const isKokoro = engine === 'kokoro';
+      const body = JSON.stringify({
+        text: unit.text,
+        voice: isKokoro ? kokoroVoice : edgeVoice,
+        rate,
+        engine: isKokoro ? 'kokoro' : 'edge',
+      });
       let lastErr: unknown;
       for (let attempt = 0; attempt <= 2; attempt++) {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 600 * attempt));
@@ -308,7 +337,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
           if (!res.ok) {
             const data = (await res.json().catch(() => null)) as { error?: string } | null;
             lastErr = new Error(data?.error ?? `语音合成失败(${res.status})`);
-            // 4xx 为请求本身有问题,重试无意义
+            // 4xx 为请求本身有问题,重试无意义;503 为本地引擎未就绪(edge 不受影响)
             if (res.status < 500) throw lastErr;
             continue; // 5xx:服务端合成波动,重试
           }
@@ -333,7 +362,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
       if (msg.includes('Edge TTS 服务')) msg = `${msg};可先改用「系统语音」,或稍后重试`;
       throw new Error(msg);
     },
-    [edgeVoice, rate]
+    [edgeVoice, kokoroVoice, rate, engine]
   );
 
   /**
@@ -369,7 +398,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
   /** 顺序播放第 i 片:优先用预取缓冲(零等待),否则现场合成 → 播放 → onended 播下一片 */
   const playEdgeChunk = useCallback(
     async (i: number) => {
-      if (!edgeActiveRef.current || engine !== 'edge') return;
+      if (!edgeActiveRef.current || engine === 'native') return;
       const units = edgeQueueRef.current;
       if (i < 0 || i >= units.length) {
         stop();
@@ -470,7 +499,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
         }
         return;
       }
-      if (engine === 'edge' && audioRef.current) {
+      if (engine !== 'native' && audioRef.current) {
         void audioRef.current.play();
         setIsPlaying(true);
         setPaused(false);
@@ -545,6 +574,15 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
     }
   }, []);
 
+  const onChangeKokoroVoice = useCallback((uri: string) => {
+    setKokoroVoice(uri);
+    try {
+      localStorage.setItem(KEY_KOKORO_VOICE, uri);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const onChangeEngine = useCallback((next: Engine) => {
     if (next === engine) return;
     stop();
@@ -612,9 +650,10 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
           onChange={(e) => onChangeEngine(e.target.value as Engine)}
           className="h-9 max-w-[190px] rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
           aria-label="选择朗读引擎"
-          title="AI 情感朗读走免费 Edge 神经语音(情感自然);系统语音用浏览器内置语音"
+          title="AI 情感朗读走免费 Edge 神经语音(情感自然);本地语音走 Kokoro 模型(离线可用,需镜像启用 ENABLE_LOCAL_TTS 并挂载模型);系统语音用浏览器内置语音"
         >
           <option value="edge">✨ AI 情感朗读</option>
+          {kokoroOk ? <option value="kokoro">🎧 本地语音</option> : null}
           <option value="native">系统语音</option>
         </select>
 
@@ -626,6 +665,19 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
             aria-label="选择 AI 语音"
           >
             {EDGE_VOICES.map((v) => (
+              <option key={v.voiceURI} value={v.voiceURI}>
+                {v.name} · {v.desc}
+              </option>
+            ))}
+          </select>
+        ) : engine === 'kokoro' ? (
+          <select
+            value={kokoroVoice}
+            onChange={(e) => onChangeKokoroVoice(e.target.value)}
+            className="h-9 max-w-[190px] rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+            aria-label="选择本地语音"
+          >
+            {KOKORO_VOICES.map((v) => (
               <option key={v.voiceURI} value={v.voiceURI}>
                 {v.name} · {v.desc}
               </option>
@@ -668,7 +720,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
       {ttsError ? (
         <p className="mt-2 text-xs text-[#b91c1c] dark:text-red-400">
           ⚠ {ttsError}
-          {engine === 'edge' ? (
+          {engine !== 'native' ? (
             <button
               type="button"
               onClick={play}
@@ -694,13 +746,14 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
         </p>
       ) : null}
 
-      {engine === 'edge' && edgeBusy ? (
+      {engine !== 'native' && edgeBusy ? (
         <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">正在合成语音…</p>
       ) : null}
 
       {isPlaying && (
         <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-          正在朗读第 {activePara + 1}/{paraTotal} 段{engine === 'edge' ? '(AI 情感语音)' : ''}
+          正在朗读第 {activePara + 1}/{paraTotal} 段
+          {engine === 'edge' ? '(AI 情感语音)' : engine === 'kokoro' ? '(本地语音)' : ''}
         </p>
       )}
     </div>
