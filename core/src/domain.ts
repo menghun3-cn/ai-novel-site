@@ -448,7 +448,7 @@ export const SHORT_STORY_FIELD_LABELS: Readonly<Record<string, string>> = {
 
 // ---------- V10 内容工厂:产线(Production Line)与批次运行 ----------
 
-export type ProductionLineScheduleMode = 'manual' | 'daily';
+export type ProductionLineScheduleMode = 'manual' | 'daily' | 'continuous';
 
 /** 单个题材/类型模板的种子库:每个种子注入一批差异化主题/梗概,实现"同类不同篇" */
 export interface ProductionKindSeed {
@@ -479,6 +479,8 @@ export interface ProductionLineSchedule {
   hour?: number;
   /** 每次触发创建的短篇数(1..50) */
   count: number;
+  // 持续模式(mode='continuous')不设时间间隔:无间隙生产由背压驱动,
+  // 实际触发粒度 = 调度器 tick(PUBLISH_TICK_SECONDS,默认 60s,下限 5s)。
 }
 
 export interface ProductionLineQuota {
@@ -528,6 +530,14 @@ export interface ProductionLine {
   lastRunAt: string | null;
   /** 服务器本地 'YYYY-MM-DD',每日产线的同日去重游标 */
   lastRunDate: string | null;
+  /** V10.5 持续模式:连续失败轮数(达到阈值自动停线熔断) */
+  consecutiveFailures: number;
+  /** 持续模式熔断阈值(连续失败达到该值自动 enabled=0) */
+  maxConsecutiveFailures: number;
+  /** 熔断原因(人工停止不记;熔断时写原因) */
+  trippedReason: string | null;
+  /** 熔断时间(ISO) */
+  trippedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -546,7 +556,7 @@ export interface ProductionRunItem {
 export interface ProductionRun {
   id: string;
   lineId: string;
-  trigger: 'manual' | 'daily';
+  trigger: 'manual' | 'daily' | 'continuous';
   /** 服务器本地 'YYYY-MM-DD' */
   runDate: string;
   count: number;

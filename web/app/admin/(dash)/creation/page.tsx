@@ -59,7 +59,7 @@ interface LineConfig {
   model?: string;
   ruleId?: string;
   promptId?: string;
-  schedule: { mode: 'manual' | 'daily'; hour?: number; count: number };
+  schedule: { mode: 'manual' | 'daily' | 'continuous'; hour?: number; count: number };
   quota?: { maxPerRun?: number; dailyLimit?: number; dailyBudgetUsd?: number; skipOnBudgetOverrun?: boolean };
   qualityGate?: { minScore?: number; reworkMaxRounds?: number; publishOnPass?: boolean };
 }
@@ -71,6 +71,10 @@ interface ProductionLine {
   config: LineConfig;
   lastRunAt: string | null;
   lastRunDate: string | null;
+  consecutiveFailures: number;
+  maxConsecutiveFailures: number;
+  trippedReason: string | null;
+  trippedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -84,11 +88,15 @@ interface LineWithMeta extends ProductionLine {
   passRate: number | null;
   lastRunTitle: string | null;
   lastRunStatus: string | null;
+  /** V10.5 持续模式:在飞短篇数(背压判定用) */
+  inFlight?: number;
+  /** V10.5 持续模式:背压阈值 */
+  backpressureThreshold?: number;
 }
 interface ProductionRun {
   id: string;
   lineId: string;
-  trigger: 'manual' | 'daily';
+  trigger: 'manual' | 'daily' | 'continuous';
   runDate: string;
   count: number;
   status: string;
@@ -102,7 +110,7 @@ interface OverviewResp {
   overview: {
     kpis: Record<string, number | null>;
     funnel: Array<{ key: string; label: string; count: number; rate: number | null }>;
-    lanes: Array<{ line: ProductionLine; total: number; inProgress: number; passed: number; pool: number; failed: number; published: number; todayCreated: number; passRate: number | null }>;
+    lanes: Array<{ line: ProductionLine; total: number; inProgress: number; passed: number; pool: number; failed: number; published: number; todayCreated: number; passRate: number | null; inFlight?: number; backpressureThreshold?: number }>;
     alerts: Array<{ kind: string; severity: 'warning' | 'danger' | 'info'; lineId?: string; lineName?: string; title: string; detail: string; count: number }>;
     recentRuns: ProductionRun[];
     rule: { active: boolean; threshold: number | null; maxOptimizeRounds: number | null };
@@ -251,6 +259,42 @@ function OverviewTab({ data }: { data: OverviewResp['overview'] }) {
         </div>
       </div>
 
+      {/* V10.5 持续创作状态卡 */}
+      {data.lanes.some((l) => l.line.config.schedule.mode === 'continuous') ? (
+        <div className="overflow-hidden rounded-xl border border-[#e2e8f0] bg-white">
+          <div className="border-b border-[#e2e8f0] px-4 py-3">
+            <h3 className="text-sm font-semibold text-[#0f172a]">持续创作</h3>
+            <p className="text-xs text-[#94a3b8]">背压驱动的无间隙生产 · 触发粒度 = 调度器 tick · 连续失败达阈值自动熔断</p>
+          </div>
+          <div className="divide-y divide-[#f1f5f9]">
+            {data.lanes
+              .filter((l) => l.line.config.schedule.mode === 'continuous')
+              .map((l) => {
+                const tripped = l.line.consecutiveFailures >= l.line.maxConsecutiveFailures && !!l.line.trippedAt;
+                const inFlight = l.inFlight ?? 0;
+                const threshold = l.backpressureThreshold ?? 0;
+                return (
+                  <div key={l.line.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-[#0f172a]">{l.line.name}</span>
+                    {tripped ? (
+                      <Badge tone="danger">已熔断 · 连续 {l.line.consecutiveFailures} 轮失败</Badge>
+                    ) : !l.line.enabled ? (
+                      <Badge tone="info">已暂停</Badge>
+                    ) : inFlight >= threshold ? (
+                      <Badge tone="warning">生产中(背压)</Badge>
+                    ) : (
+                      <Badge tone="success">生产中</Badge>
+                    )}
+                    <span className="text-xs text-[#64748b]">在飞 {inFlight}/{threshold}</span>
+                    <span className="text-xs text-[#64748b]">每轮 {l.line.config.schedule.count} 篇</span>
+                    <span className="text-xs text-[#64748b]">今日 {l.todayCreated} · 累计 {l.total} · 发布 {l.published}</span>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      ) : null}
+
       {/* 产线泳道 */}
       <div className="overflow-hidden rounded-xl border border-[#e2e8f0] bg-white">
         <div className="border-b border-[#e2e8f0] px-4 py-3">
@@ -314,7 +358,7 @@ function RecentRuns({ runs }: { runs: ProductionRun[] }) {
             <li key={r.id} className="flex items-center gap-3 px-4 py-2.5">
               <RunStatus status={r.status} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-[#0f172a]">{r.trigger === 'daily' ? '每日触发' : '手动触发'} · {r.count} 篇</p>
+                <p className="truncate text-sm text-[#0f172a]">{r.trigger === 'daily' ? '每日触发' : r.trigger === 'continuous' ? '持续触发' : '手动触发'} · {r.count} 篇</p>
                 <p className="text-xs text-[#94a3b8]">{r.runDate} · {formatDateTime(r.createdAt)}</p>
               </div>
               <span className="text-xs text-[#64748b]">{r.items.filter((i) => i.genre).map((i) => i.genre).join(' / ') || '—'}</span>
@@ -346,9 +390,10 @@ interface LineEditorDraft {
   name: string;
   description: string;
   enabled: boolean;
-  mode: 'manual' | 'daily';
+  mode: 'manual' | 'daily' | 'continuous';
   hour: string;
   count: string;
+  maxConsecutiveFailures: string;
   maxPerRun: string;
   dailyLimit: string;
   dailyBudgetUsd: string;
@@ -388,6 +433,7 @@ function toDraft(line: LineWithMeta | null): LineEditorDraft {
     mode: cfg?.schedule?.mode ?? 'manual',
     hour: String(cfg?.schedule?.hour ?? 8),
     count: String(cfg?.schedule?.count ?? 3),
+    maxConsecutiveFailures: String(line?.maxConsecutiveFailures ?? 3),
     maxPerRun: String(cfg?.quota?.maxPerRun ?? ''),
     dailyLimit: String(cfg?.quota?.dailyLimit ?? ''),
     dailyBudgetUsd: String(cfg?.quota?.dailyBudgetUsd ?? ''),
@@ -399,6 +445,11 @@ function toDraft(line: LineWithMeta | null): LineEditorDraft {
     sharedBrief,
     kinds,
   };
+}
+
+/** 已填题材数(用于持续模式随机池提示) */
+function cleanedCount(d: LineEditorDraft): number {
+  return d.kinds.filter((k) => k.genre.trim()).length;
 }
 
 function buildConfig(d: LineEditorDraft): LineConfig {
@@ -420,7 +471,8 @@ function buildConfig(d: LineEditorDraft): LineConfig {
     schedule: {
       mode: d.mode,
       ...(d.mode === 'daily' ? { hour: Number(d.hour) || 8 } : {}),
-      count: Math.max(1, Math.min(50, Number(d.count) || 1)),
+      // 持续模式每轮篇数上限 10(背压阈值 = count*2,防队列堆积)
+      count: Math.max(1, Math.min(d.mode === 'continuous' ? 10 : 50, Number(d.count) || 1)),
     },
   };
   if (Object.keys(brief).length) config.brief = brief;
@@ -440,30 +492,42 @@ function LineEditorDrawer({ open, line, onClose, onSaved }: { open: boolean; lin
   const [draft, setDraft] = useState<LineEditorDraft>(() => toDraft(line));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+  // 持续模式未配预算/每日上限时的二次确认
+  const [confirmUnbounded, setConfirmUnbounded] = useState(false);
   useEffect(() => {
     if (open) {
       setDraft(toDraft(line));
       setErr('');
+      setConfirmUnbounded(false);
     }
   }, [open, line]);
 
   const save = async (): Promise<void> => {
     if (!draft.name.trim()) { setErr('请填写产线名称'); return; }
     const cleaned = draft.kinds.filter((k) => k.genre.trim());
-    if (cleaned.length === 0) { setErr('至少配置一种题材/类型'); return; }
+    // 持续模式允许空题材:未配置 kinds 时启用内置随机题材池(默认即随机)
+    if (cleaned.length === 0 && draft.mode !== 'continuous') { setErr('至少配置一种题材/类型,或切换为「持续」模式使用内置随机题材池'); return; }
+    // 持续模式无每日上限且无预算 → 弹二次确认(可能产生持续费用)
+    const noDailyLimit = !draft.dailyLimit.trim();
+    const noBudget = !draft.dailyBudgetUsd.trim();
+    if (draft.mode === 'continuous' && noDailyLimit && noBudget && !confirmUnbounded) {
+      setConfirmUnbounded(true);
+      return;
+    }
     setSaving(true);
     setErr('');
     try {
+      const body = {
+        name: draft.name.trim(),
+        description: draft.description || null,
+        enabled: draft.enabled,
+        config: buildConfig(draft),
+        maxConsecutiveFailures: Number(draft.maxConsecutiveFailures) || 3,
+      };
       if (draft.id) {
-        await api(`/api/admin/production-lines/${draft.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({ name: draft.name.trim(), description: draft.description || null, enabled: draft.enabled, config: buildConfig(draft) }),
-        });
+        await api(`/api/admin/production-lines/${draft.id}`, { method: 'PUT', body: JSON.stringify(body) });
       } else {
-        await api('/api/admin/production-lines', {
-          method: 'POST',
-          body: JSON.stringify({ name: draft.name.trim(), description: draft.description || null, enabled: draft.enabled, config: buildConfig(draft) }),
-        });
+        await api('/api/admin/production-lines', { method: 'POST', body: JSON.stringify(body) });
       }
       onSaved();
       onClose();
@@ -503,15 +567,28 @@ function LineEditorDrawer({ open, line, onClose, onSaved }: { open: boolean; lin
           <p className="mb-2 text-sm font-semibold text-[#0f172a]">调度</p>
           <div className="grid grid-cols-3 gap-3">
             <Field label="触发模式">
-              <Select value={draft.mode} onChange={(e) => setDraft({ ...draft, mode: e.target.value as 'manual' | 'daily' })}>
-                <option value="manual">手动</option><option value="daily">每日</option>
+              <Select value={draft.mode} onChange={(e) => setDraft({ ...draft, mode: e.target.value as 'manual' | 'daily' | 'continuous' })}>
+                <option value="manual">手动</option><option value="daily">每日</option><option value="continuous">持续(背压驱动)</option>
               </Select>
             </Field>
             {draft.mode === 'daily' ? (
               <Field label="每日时刻"><Input type="time" value={draft.hour.padStart(2, '0')} onChange={(e) => setDraft({ ...draft, hour: e.target.value })} /></Field>
             ) : null}
-            <Field label="每批篇数 (1..50)"><Input type="number" min={1} max={50} value={draft.count} onChange={(e) => setDraft({ ...draft, count: e.target.value })} /></Field>
+            <Field label={draft.mode === 'continuous' ? '每轮篇数 (1..10)' : '每批篇数 (1..50)'}>
+              <Input type="number" min={1} max={draft.mode === 'continuous' ? 10 : 50} value={draft.count} onChange={(e) => setDraft({ ...draft, count: e.target.value })} />
+            </Field>
+            {draft.mode === 'continuous' ? (
+              <Field label="熔断阈值 (连续失败轮数)">
+                <Input type="number" min={1} max={20} value={draft.maxConsecutiveFailures} onChange={(e) => setDraft({ ...draft, maxConsecutiveFailures: e.target.value })} />
+              </Field>
+            ) : null}
           </div>
+          {draft.mode === 'continuous' ? (
+            <p className="mt-2 text-xs leading-relaxed text-[#64748b]">
+              持续模式由调度器按背压驱动:上一批消化到阈值以下即触发下一轮,不设时间间隔。
+              连续失败达阈值自动停线,可人工恢复。未配置每日上限/预算时将持续产生费用。
+            </p>
+          ) : null}
         </div>
 
         <div className="rounded-lg border border-[#e2e8f0] bg-white p-3">
@@ -554,6 +631,11 @@ function LineEditorDrawer({ open, line, onClose, onSaved }: { open: boolean; lin
             <p className="text-sm font-semibold text-[#0f172a]">题材 / 类型清单(支持批量生成不同题材)</p>
             <Button variant="ghost" size="xs" onClick={() => setDraft({ ...draft, kinds: [...draft.kinds, { genre: '', weight: '1', synopsis: '', seeds: '' }] })}><Plus size={13} /> 添加题材</Button>
           </div>
+          {draft.mode === 'continuous' && cleanedCount(draft) === 0 ? (
+            <p className="mb-2 rounded-lg bg-[#eff6ff] px-3 py-2 text-xs leading-relaxed text-[#1d4ed8]">
+              持续模式未配置题材时将使用内置随机题材池(10 种题材 × 种子主题,每轮随机化),默认即随机。
+            </p>
+          ) : null}
           <div className="space-y-3">
             {draft.kinds.map((k, i) => (
               <div key={i} className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3">
@@ -577,11 +659,12 @@ function LineEditorDrawer({ open, line, onClose, onSaved }: { open: boolean; lin
   );
 }
 
-function LinesTab({ lines, onChanged, onRun, onToggle, onDelete }: {
+function LinesTab({ lines, onChanged, onRun, onToggle, onResume, onDelete }: {
   lines: LineWithMeta[];
   onChanged: () => void;
   onRun: (id: string) => void;
   onToggle: (id: string, enabled: boolean) => void;
+  onResume: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
   const [editorLine, setEditorLine] = useState<LineWithMeta | null>(null);
@@ -600,13 +683,18 @@ function LinesTab({ lines, onChanged, onRun, onToggle, onDelete }: {
           {lines.map((line) => {
             const cfg = line.config;
             const totalWeight = cfg.kinds.reduce((s, x) => s + x.weight, 0);
+            const isContinuous = cfg.schedule.mode === 'continuous';
+            const tripped = isContinuous && line.consecutiveFailures >= line.maxConsecutiveFailures && !!line.trippedAt;
             return (
               <div key={line.id} className="flex flex-col rounded-xl border border-[#e2e8f0] bg-white p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="truncate text-base font-semibold text-[#0f172a]">{line.name}</h3>
-                      {!line.enabled ? <Badge tone="info">停用</Badge> : <Badge tone="success">启用</Badge>}
+                      {isContinuous ? <Badge tone="info">持续</Badge> : null}
+                      {tripped ? (
+                        <Badge tone="danger">已熔断</Badge>
+                      ) : !line.enabled ? <Badge tone="info">停用</Badge> : <Badge tone="success">启用</Badge>}
                       {line.lastRunStatus ? <RunStatus status={line.lastRunStatus} /> : null}
                     </div>
                     <p className="mt-1 text-xs text-[#64748b]">{line.description || '未填写描述'}</p>
@@ -616,7 +704,9 @@ function LinesTab({ lines, onChanged, onRun, onToggle, onDelete }: {
                     trigger={<Button variant="ghost" size="xs" title="更多操作">•••</Button>}
                     items={[
                       { label: '编辑', onSelect: () => { setEditorLine(line); setEditorOpen(true); } },
-                      { label: line.enabled ? '停用' : '启用', onSelect: () => onToggle(line.id, !line.enabled) },
+                      ...(tripped
+                        ? [{ label: '恢复运行', onSelect: () => onResume(line.id) }]
+                        : [{ label: line.enabled ? '停用' : '启用', onSelect: () => onToggle(line.id, !line.enabled) }]),
                       { label: '删除', danger: true, onSelect: () => onDelete(line.id) },
                     ]}
                   />
@@ -626,7 +716,7 @@ function LinesTab({ lines, onChanged, onRun, onToggle, onDelete }: {
                 <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 rounded-lg bg-[#f8fafc] px-3 py-2.5 text-xs text-[#334155]">
                   <span className="inline-flex items-center gap-1.5 font-medium text-[#0f172a]">
                     <Clock size={13} className="shrink-0 text-[#64748b]" />
-                    {cfg.schedule.mode === 'daily' ? `每日 ${String(cfg.schedule.hour ?? 8).padStart(2, '0')}:00` : '手动触发'}
+                    {cfg.schedule.mode === 'daily' ? `每日 ${String(cfg.schedule.hour ?? 8).padStart(2, '0')}:00` : cfg.schedule.mode === 'continuous' ? '持续(背压)' : '手动触发'}
                   </span>
                   <span className="inline-flex items-center gap-1.5">
                     <Layers size={13} className="shrink-0 text-[#64748b]" />
@@ -637,6 +727,11 @@ function LinesTab({ lines, onChanged, onRun, onToggle, onDelete }: {
                   {cfg.quota?.dailyBudgetUsd ? <span>预算 ${cfg.quota.dailyBudgetUsd}/日</span> : null}
                   {cfg.qualityGate?.minScore ? <span>达标线 {cfg.qualityGate.minScore} 分</span> : null}
                   {cfg.qualityGate?.publishOnPass ? <span className="text-[#047857]">自动发布</span> : null}
+                  {isContinuous ? (
+                    <span className={line.consecutiveFailures >= line.maxConsecutiveFailures ? 'font-medium text-[#b91c1c]' : ''}>
+                      连续失败 {line.consecutiveFailures}/{line.maxConsecutiveFailures}
+                    </span>
+                  ) : null}
                 </div>
 
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -658,7 +753,12 @@ function LinesTab({ lines, onChanged, onRun, onToggle, onDelete }: {
                       ? `上次 ${formatRelativeTime(line.lastRunAt)}${line.lastRunTitle ? ` · ${line.lastRunTitle}` : ''}`
                       : '尚未运行'}
                   </span>
-                  <Button variant="primary" size="sm" disabled={!line.enabled} onClick={() => onRun(line.id)}><Play size={13} /> 运行</Button>
+                  <div className="flex items-center gap-2">
+                    {isContinuous ? (
+                      <span className="text-xs text-[#64748b]">在飞 {line.inFlight ?? 0}/{line.backpressureThreshold ?? '—'}</span>
+                    ) : null}
+                    <Button variant="primary" size="sm" disabled={!line.enabled} onClick={() => onRun(line.id)}><Play size={13} /> 运行</Button>
+                  </div>
                 </div>
               </div>
             );
@@ -806,11 +906,11 @@ function ExceptionsTab({ items, onAction }: { items: ExceptionsResp['exceptions'
 }
 
 function exceptionKindLabel(kind: string): string {
-  const map: Record<string, string> = { failed_task: '失败任务', failed_story: '失败创作', pool_story: '低质池', quota: '配额', budget: '预算', offline_rule: '规则离线', disabled_line: '停用产线' };
+  const map: Record<string, string> = { failed_task: '失败任务', failed_story: '失败创作', pool_story: '低质池', quota: '配额', budget: '预算', offline_rule: '规则离线', disabled_line: '停用产线', tripped_line: '熔断产线' };
   return map[kind] ?? kind;
 }
 function actionLabel(type: string): string {
-  const map: Record<string, string> = { retry_task: '重试任务', retry_story: '重新生成', optimize_story: '手动优化', delete_story: '删除', enable_line: '启用产线', publish: '发布', none: '' };
+  const map: Record<string, string> = { retry_task: '重试任务', retry_story: '重新生成', optimize_story: '手动优化', delete_story: '删除', enable_line: '启用产线', resume_line: '恢复产线', publish: '发布', none: '' };
   return map[type] ?? type;
 }
 
@@ -1098,6 +1198,17 @@ export default function CreationPage() {
     }
   };
 
+  // 恢复熔断的持续产线
+  const doResume = async (id: string): Promise<void> => {
+    try {
+      await api(`/api/admin/production-lines/${id}/resume`, { method: 'POST' });
+      setToast({ tone: 'success', msg: '已恢复持续产线,继续背压驱动生产。' });
+      void load();
+    } catch (err) {
+      setToast({ tone: 'error', msg: err instanceof Error ? err.message : '恢复失败' });
+    }
+  };
+
   const doExceptionAction = async (item: ExceptionsResp['exceptions'][number]): Promise<void> => {
     const a = item.action;
     if (!a) return;
@@ -1111,6 +1222,8 @@ export default function CreationPage() {
       await api(`/api/admin/short-stories/${a.targetId}`, { method: 'DELETE' });
     } else if (a.type === 'enable_line') {
       await api(`/api/admin/production-lines/${a.targetId}/toggle`, { method: 'POST', body: JSON.stringify({ enabled: true }) });
+    } else if (a.type === 'resume_line') {
+      await api(`/api/admin/production-lines/${a.targetId}/resume`, { method: 'POST' });
     }
     setToast({ tone: 'success', msg: '操作已执行。' });
     void load();
@@ -1153,7 +1266,7 @@ export default function CreationPage() {
 
       {loading && !overview ? <div className="py-16 text-center text-sm text-[#64748b]">加载中…</div> : null}
       {!loading && tab === 'overview' && overview ? <OverviewTab data={overview} /> : null}
-      {!loading && tab === 'lines' && lines ? <LinesTab lines={lines} onChanged={() => void load()} onRun={(id) => void doRun(id)} onToggle={(id, e) => void doToggle(id, e)} onDelete={(id) => setConfirm({ type: 'line', targetId: id, label: '删除产线' })} /> : null}
+      {!loading && tab === 'lines' && lines ? <LinesTab lines={lines} onChanged={() => void load()} onRun={(id) => void doRun(id)} onToggle={(id, e) => void doToggle(id, e)} onResume={(id) => void doResume(id)} onDelete={(id) => setConfirm({ type: 'line', targetId: id, label: '删除产线' })} /> : null}
       {!loading && tab === 'queue' && queue ? <QueueTab data={queue} /> : null}
       {!loading && tab === 'gate' && gate ? <GateTab data={gate} /> : null}
       {!loading && tab === 'exceptions' && exceptions ? <ExceptionsTab items={exceptions} onAction={(i) => void doExceptionAction(i)} /> : null}
