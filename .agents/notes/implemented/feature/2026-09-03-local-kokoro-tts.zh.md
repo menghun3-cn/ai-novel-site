@@ -24,9 +24,12 @@ TTS 合成)两种引擎:Edge 依赖微软在线服务,离线不可用。本地�
 
 - **条件构建。** `Dockerfile` 新增 `ARG ENABLE_LOCAL_TTS=0`;置 1 时 deps 阶段
   额外安装 `kokoro-js-zh` + `onnxruntime-node`(`--no-save`,不动
-  package.json/lock,`=0` 镜像体积不变),把 `espeak-ng` 依赖包里的
+  package.json/lock,`=0` 镜像体积不变)并执行
+  `scripts/fetch-kokoro-voices.mjs` —— 把 `espeak-ng` 依赖包里的
   `espeak-ng.wasm` 复制进 `kokoro-js-zh/dist/`(原包漏发,不复制中文 G2P 直接
   Abort),并预下载 8 个语音 `.bin`(Node 端构建离线可用;构建时跳过则运行时补齐)。
+  资产逻辑放在独立脚本而非 Dockerfile 内联 `node -e`:行尾续行(`\`)无法承载
+  多行单引号脚本,会在 `const` 处报 "unknown instruction" parse error。
 - **运行时探测 + Edge 回退。** `web/lib/kokoro-server.ts` 的
   `kokoroAvailable()` 仅在依赖已装 **且** `KOKORO_MODEL_DIR`(docker 卷挂载,
   须含 `.onnx`)存在或缓存目录可写(在线下载)时为真。`/api/tts` 在
