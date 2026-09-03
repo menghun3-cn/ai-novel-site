@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### V10.5 持续创作产线(背压驱动的无间隙生产)
+
+- **产线新增 `continuous` 持续模式**:不设时间间隔,由调度器按背压驱动——上一批短篇消化到阈值以下即触发下一轮(在飞数含 draft,阈值 = max(2, count×2)),真实节奏由 LLM 消费速度决定,永不停止、不堆积。
+- **停止门禁**:人工暂停(`enabled=false`)+ 连续失败自动熔断——连续 `max_consecutive_failures`(默认 3)轮运行失败自动停线并记录熔断原因/时间,「恢复」一键清零续跑;熔断阈值可在产线编辑中配置(1..20)。
+- **默认随机题材池**:持续模式未配置题材时启用内置 10 题材 × 3 种子主题的 `DEFAULT_KINDS`,每轮题材 shuffle + 权重抖动,保证多轮不重样;指定题材配置优先。
+- **调度器接入**:`fireDueContinuousProductionRuns()` 每个 tick 检查一次(触发粒度 = `PUBLISH_TICK_SECONDS`),单线失败不阻断其他线。
+- **创作中心 UI**:产线编辑新增「持续(背压驱动)」模式、每轮篇数(1..10)、熔断阈值;未配置每日上限/预算时二次确认;产线卡片与总览「持续创作」状态卡显示 生产中/已暂停/已熔断、在飞数/背压阈值、连续失败计数;异常分诊新增「熔断产线」一键恢复。
+- **观测**:总览告警新增 `tripped_line`(持续产线已熔断);产线清单与总览 lanes 返回在飞数与背压阈值。
+- **新增表列**(列迁移,幂等):`production_lines` + `consecutive_failures` / `max_consecutive_failures` / `tripped_reason` / `tripped_at`。
+- **验收**:`scripts/verify-continuous-production-line.ts`(连跑多轮、背压拦截、熔断→恢复、随机题材池、观测聚合)。
+
 ### V10.2.1 构建修复(v8.2.2)
 
 - **修复 `next build` 编译失败(UnhandledSchemeError: node:crypto)**:`lib/markdown.ts` 原先用 `node:crypto` 生成缓存键,但该模块同时被客户端组件(admin 作品详情页「渲染预览」)引用,webpack 打包浏览器 bundle 时无法解析 `node:` scheme。缓存键改为纯 JS 双通道 FNV-1a(64 位),服务端与浏览器行为一致,内容寻址语义不变。
