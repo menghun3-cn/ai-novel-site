@@ -1,0 +1,44 @@
+title:
+  en: "scheduler-lock test must match the cross-host renewal semantics"
+  zh: "scheduler-lock 测试需对齐跨宿主续约语义"
+summary:
+  en: |
+    `scripts/verify-scheduler-lock.ts` step 4 simulated a crashed holder with
+    `{pid: 999999999, hostname: 'ghost', at: <now>}` and expected takeover. Since
+    `29b21a3` judges cross-host holders by renewal time (`at` within
+    `STALE_GRACE_MS`), that fixture is a live holder, `acquireSchedulerLock()`
+    returns `null`, and the test crashed. Split the case into the three rules the
+    implementation enforces — same-host dead pid → takeover; cross-host stale →
+    takeover; cross-host fresh → refuse — and updated the file-header comment.
+    No production code changed.
+  zh: |
+    `scripts/verify-scheduler-lock.ts` 第 4 步用 `{pid: 999999999, hostname: 'ghost', at: <当前时间>}`
+    模拟崩溃残留并断言接管。自 `29b21a3` 起跨宿主持有者按续约时间判定(`at` 在 `STALE_GRACE_MS` 内
+    即视为存活),该夹具是存活持有者,`acquireSchedulerLock()` 返回 `null`,测试崩溃。拆分为实现
+    实际执行的三种规则——同宿主死 pid → 接管;跨宿主过期 → 接管;跨宿主新鲜 → 拒绝——并更新文件头
+    注释。未改动任何生产代码。
+
+steps:
+  en:
+    - "Rewrote `scripts/verify-scheduler-lock.ts` step 4 to use the current hostname plus a nonexistent pid (same-host dead holder)."
+    - "Added step 5: cross-host holder with `at` older than `STALE_GRACE_MS` is taken over."
+    - "Added step 6: cross-host holder with a fresh `at` is treated as live and takeover is refused (lock file left in place, cleaned up in-test)."
+    - "Renumbered the damaged-lock and foreign-lock release cases; enumerated all rules in the file-header comment."
+    - "Verified `npm run test:scheduler-lock` green (13 assertions on POSIX; 12 + one platform skip on Windows)."
+  zh:
+    - "重写 `scripts/verify-scheduler-lock.ts` 第 4 步:当前 hostname + 不存在的 pid(同宿主死持有者)。"
+    - "新增第 5 步:跨宿主持有者 `at` 早于 `STALE_GRACE_MS` → 接管。"
+    - "新增第 6 步:跨宿主持有者 `at` 新鲜 → 视为存活,拒绝接管(锁文件保留,测试内手动清理)。"
+    - "重排损坏锁与「不误删他人锁」用例;文件头注释枚举全部规则。"
+    - "验证 `npm run test:scheduler-lock` 全绿(POSIX 13 项断言;Windows 12 项 + 一项平台跳过)。"
+
+follow-up:
+  en: |
+    - None. The liveness rules themselves were not changed; this only aligns the test with the
+      `29b21a3` behavior. A future rule change now fails loudly in this test.
+  zh: |
+    - 无。存活规则本身未改动,仅让测试与 `29b21a3` 行为对齐;未来改动规则会在该测试中响亮失败。
+
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/new/fix/scheduler-lock-test"
+  branch: "fix/scheduler-lock-test"

@@ -52,6 +52,7 @@
     "test:arc-review": "tsx scripts/verify-arc-review.ts",
     "test:scheduler-tasks": "tsx scripts/verify-scheduler-tasks.ts",
     "test:scheduler-lock": "tsx scripts/verify-scheduler-lock.ts",
+    "test:stale-task-recovery": "tsx scripts/verify-stale-task-recovery.ts",
     "test:review-stats": "tsx scripts/verify-review-stats.ts",
     "test:production-line": "tsx scripts/verify-production-line.ts",
     "test:continuous-production-line": "tsx scripts/verify-continuous-production-line.ts",
