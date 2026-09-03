@@ -497,6 +497,10 @@ CREATE TABLE IF NOT EXISTS production_lines (
   config_json TEXT NOT NULL DEFAULT '{}',
   last_run_at TEXT,
   last_run_date TEXT,
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  max_consecutive_failures INTEGER NOT NULL DEFAULT 3,
+  tripped_reason TEXT,
+  tripped_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -504,7 +508,7 @@ CREATE TABLE IF NOT EXISTS production_lines (
 CREATE TABLE IF NOT EXISTS production_runs (
   id TEXT PRIMARY KEY,
   line_id TEXT NOT NULL REFERENCES production_lines(id) ON DELETE CASCADE,
-  trigger TEXT NOT NULL,              -- 'manual' | 'daily'
+  trigger TEXT NOT NULL,              -- 'manual' | 'daily' | 'continuous'
   run_date TEXT NOT NULL,             -- 服务器本地 'YYYY-MM-DD'
   count INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending', -- pending|executing|done|failed|cancelled
@@ -663,6 +667,25 @@ function migrateBatchScheduleColumns(db: Database.Database): void {
   }
 }
 
+/**
+ * 轻量迁移:V10.5 持续创作——production_lines 补熔断列(旧库升级;新库由 DDL 直接建出)
+ */
+function migrateProductionLineColumns(db: Database.Database): void {
+  const cols = (db.prepare('PRAGMA table_info(production_lines)').all() as { name: string }[]).map((c) => c.name);
+  if (!cols.includes('consecutive_failures')) {
+    db.exec('ALTER TABLE production_lines ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.includes('max_consecutive_failures')) {
+    db.exec('ALTER TABLE production_lines ADD COLUMN max_consecutive_failures INTEGER NOT NULL DEFAULT 3');
+  }
+  if (!cols.includes('tripped_reason')) {
+    db.exec('ALTER TABLE production_lines ADD COLUMN tripped_reason TEXT');
+  }
+  if (!cols.includes('tripped_at')) {
+    db.exec('ALTER TABLE production_lines ADD COLUMN tripped_at TEXT');
+  }
+}
+
 export function getDb(): Database.Database {
   if (!sqlite) {
     ensureDataDir();
@@ -680,6 +703,7 @@ export function getDb(): Database.Database {
     migrateBooksReviewColumns(sqlite);
     migrateReviewRecordsRefColumns(sqlite);
     migrateBatchScheduleColumns(sqlite);
+    migrateProductionLineColumns(sqlite);
   }
   return sqlite;
 }

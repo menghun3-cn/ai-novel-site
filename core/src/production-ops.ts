@@ -5,7 +5,7 @@
 
 import { getDb } from './db';
 import { getActiveRuleVersion } from './review-rule';
-import { listProductionLines, listProductionRuns } from './production-line';
+import { backpressureThreshold, countInFlightForLine, listProductionLines, listProductionRuns } from './production-line';
 import type { ProductionLine, StoryBrief } from './domain';
 
 function localDateKey(d: Date): string {
@@ -45,9 +45,13 @@ export interface ProductionOverview {
     published: number;
     todayCreated: number;
     passRate: number | null;
+    /** 持续模式:在飞短篇数(背压判定) */
+    inFlight?: number;
+    /** 持续模式:背压阈值 */
+    backpressureThreshold?: number;
   }>;
   alerts: Array<{
-    kind: 'failed_task' | 'failed_story' | 'pool' | 'quota' | 'budget' | 'offline_rule' | 'disabled_line';
+    kind: 'failed_task' | 'failed_story' | 'pool' | 'quota' | 'budget' | 'offline_rule' | 'disabled_line' | 'tripped_line';
     severity: 'warning' | 'danger' | 'info';
     lineId?: string;
     lineName?: string;
@@ -96,7 +100,7 @@ export interface ProductionGate {
   }>;
 }
 
-export type ExceptionKind = 'failed_task' | 'failed_story' | 'pool_story' | 'quota' | 'budget' | 'offline_rule' | 'disabled_line';
+export type ExceptionKind = 'failed_task' | 'failed_story' | 'pool_story' | 'quota' | 'budget' | 'offline_rule' | 'disabled_line' | 'tripped_line';
 
 export interface ProductionException {
   kind: ExceptionKind;
@@ -107,7 +111,7 @@ export interface ProductionException {
   title: string;
   detail: string;
   /** 可执行的修复动作提示(供前端映射为 button) */
-  action?: { type: 'retry_task' | 'retry_story' | 'optimize_story' | 'delete_story' | 'enable_line' | 'publish' | 'none'; targetId: string };
+  action?: { type: 'retry_task' | 'retry_story' | 'optimize_story' | 'delete_story' | 'enable_line' | 'resume_line' | 'publish' | 'none'; targetId: string };
   createdAt: string | null;
 }
 
@@ -219,7 +223,7 @@ export function getProductionOverview(): ProductionOverview {
     const a = aggs.get(line.id) ?? { line_id: line.id, total: 0, passed: 0, pool: 0, in_progress: 0, failed: 0, published: 0 };
     const todayCreated = todayMap.get(line.id) ?? 0;
     const passRate = a.total > 0 ? Math.round((a.passed / a.total) * 100) : null;
-    return {
+    const lane: ProductionOverview['lanes'][number] = {
       line,
       total: a.total,
       inProgress: a.in_progress,
@@ -230,6 +234,11 @@ export function getProductionOverview(): ProductionOverview {
       todayCreated,
       passRate,
     };
+    if (line.config.schedule.mode === 'continuous') {
+      lane.inFlight = countInFlightForLine(line.id);
+      lane.backpressureThreshold = backpressureThreshold(line.config);
+    }
+    return lane;
   });
 
   const total = lanes.reduce((s, l) => s + l.total, 0);
@@ -383,6 +392,20 @@ function buildAlerts(
       title: '产线已停用',
       detail: `「${l.name}」为每日产线但已停用,将不再自动触发。`,
       count: 1,
+    });
+  }
+
+  // V10.5 持续模式熔断告警:连续失败达阈值自动停线,需人工恢复
+  const tripped = lines.filter((l) => l.config.schedule.mode === 'continuous' && l.consecutiveFailures >= l.maxConsecutiveFailures && !!l.trippedAt);
+  for (const l of tripped) {
+    alerts.push({
+      kind: 'tripped_line',
+      severity: 'danger',
+      lineId: l.id,
+      lineName: l.name,
+      title: '持续产线已熔断停线',
+      detail: `「${l.name}」连续 ${l.consecutiveFailures} 轮失败(阈值 ${l.maxConsecutiveFailures}),已自动停线:${l.trippedReason ?? '未知原因'}`,
+      count: l.consecutiveFailures,
     });
   }
 
@@ -642,6 +665,23 @@ export function getProductionExceptions(): ProductionException[] {
     }
   }
 
+  // V10.5 持续模式熔断:连续失败达阈值自动停线,提供一键恢复
+  for (const line of lines) {
+    if (line.config.schedule.mode === 'continuous' && line.consecutiveFailures >= line.maxConsecutiveFailures && !!line.trippedAt) {
+      out.push({
+        kind: 'tripped_line',
+        severity: 'danger',
+        id: `trip-${line.id}`,
+        lineId: line.id,
+        lineName: line.name,
+        title: '持续产线已熔断停线',
+        detail: `连续 ${line.consecutiveFailures} 轮失败(阈值 ${line.maxConsecutiveFailures}):${line.trippedReason ?? '未知原因'}`,
+        action: { type: 'resume_line', targetId: line.id },
+        createdAt: line.trippedAt,
+      });
+    }
+  }
+
   return out;
 }
 
@@ -746,6 +786,10 @@ export interface ProductionLineWithMeta extends ProductionLine {
   passRate: number | null;
   lastRunTitle: string | null;
   lastRunStatus: string | null;
+  /** 持续模式:在飞短篇数(背压判定) */
+  inFlight?: number;
+  /** 持续模式:背压阈值 */
+  backpressureThreshold?: number;
 }
 
 export function getProductionLinesWithMeta(): ProductionLineWithMeta[] {
@@ -756,7 +800,7 @@ export function getProductionLinesWithMeta(): ProductionLineWithMeta[] {
     const a = aggs.get(line.id) ?? { line_id: line.id, total: 0, passed: 0, pool: 0, in_progress: 0, failed: 0, published: 0 };
     const runs = listProductionRuns({ lineId: line.id, limit: 1 });
     const last = runs[0] ?? null;
-    return {
+    const meta: ProductionLineWithMeta = {
       ...line,
       total: a.total,
       todayCreated: todayMap.get(line.id) ?? 0,
@@ -765,8 +809,13 @@ export function getProductionLinesWithMeta(): ProductionLineWithMeta[] {
       failed: a.failed,
       published: a.published,
       passRate: a.total > 0 ? Math.round((a.passed / a.total) * 100) : null,
-      lastRunTitle: last?.error ? last.error : last ? `${last.trigger === 'daily' ? '每日' : '手动'} · ${last.count} 篇` : null,
+      lastRunTitle: last?.error ? last.error : last ? `${last.trigger === 'daily' ? '每日' : last.trigger === 'continuous' ? '持续' : '手动'} · ${last.count} 篇` : null,
       lastRunStatus: last?.status ?? null,
     };
+    if (line.config.schedule.mode === 'continuous') {
+      meta.inFlight = countInFlightForLine(line.id);
+      meta.backpressureThreshold = backpressureThreshold(line.config);
+    }
+    return meta;
   });
 }

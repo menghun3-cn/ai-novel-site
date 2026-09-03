@@ -11,6 +11,7 @@ const patchSchema = z.object({
   description: z.string().max(500).nullish(),
   enabled: z.boolean().optional(),
   config: z.unknown().optional(),
+  maxConsecutiveFailures: z.number().int().min(1).max(20).optional(),
 });
 
 export const GET = withAdmin<Ctx>(async (_req, ctx) => {
