@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
@@ -18,8 +17,27 @@ import { LruCache } from '@/lib/cache';
  */
 const htmlCache = new LruCache<string, string>({ maxSize: 1000, ttlMs: 60 * 60 * 1000 });
 
+/**
+ * 内容寻址缓存键:确定性纯 JS 哈希(双通道 FNV-1a,共 64 位)。
+ *
+ * 不用 node:crypto 的原因:本模块同时被服务端页面和客户端组件
+ * (admin 渲染预览)引用;`node:` scheme 在客户端 webpack 打包时
+ * 会报 UnhandledSchemeError。FNV-1a 无密码学强度要求,64 位对
+ * ≤1000 条 LRU 条目碰撞概率可忽略,且跨环境确定性一致。
+ */
+function hash32(s: string, seed: number): number {
+  let h = seed >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
 function cacheKey(md: string): string {
-  return createHash('sha256').update(md).digest('hex');
+  const a = hash32(md, 0x811c9dc5).toString(16).padStart(8, '0');
+  const b = hash32(md, 0x9e3779b9).toString(16).padStart(8, '0');
+  return a + b;
 }
 
 function renderSync(md: string): Promise<string> {
