@@ -229,3 +229,31 @@ export function claimPendingTasks(limit: number): AiTask[] {
     .all(Math.max(1, limit)) as TaskRow[];
   return rows.map(toTask);
 }
+
+/**
+ * 僵尸 RUNNING 任务恢复:started_at 早于 now - maxAgeMs 仍为 RUNNING 的任务,
+ * 判定执行进程已消失(容器重建/崩溃/被杀),重置回 PENDING 供调度器重新认领。
+ * - 只清执行痕迹(started_at/finished_at/duration_ms/error/output),attempt 保留历史尝试次数
+ * - 阈值必须大于正常任务最长耗时(整篇生成约 3 分钟)以免误伤正在执行的任务
+ * - 由调度器 tick 调用(web 侧 story-worker 不做恢复,防止与执行中的任务双跑)
+ */
+export function recoverStaleRunningTasks(maxAgeMs = 10 * 60 * 1000): AiTask[] {
+  const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
+  const rows = getDb()
+    .prepare(
+      "SELECT * FROM ai_tasks WHERE status = 'RUNNING' AND started_at IS NOT NULL AND started_at < ?"
+    )
+    .all(cutoff) as TaskRow[];
+  if (rows.length === 0) return [];
+  const db = getDb();
+  const tx = db.transaction(() => {
+    const reset = db.prepare(
+      `UPDATE ai_tasks SET status = 'PENDING', started_at = NULL, finished_at = NULL,
+         duration_ms = NULL, error = NULL, output_json = NULL
+       WHERE id = ?`
+    );
+    for (const row of rows) reset.run(row.id);
+  });
+  tx();
+  return rows.map(toTask);
+}

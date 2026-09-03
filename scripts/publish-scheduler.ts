@@ -9,6 +9,8 @@
  * 环境变量:
  *   NOVEL_DATA_DIR         数据目录(默认仓库 data/)
  *   PUBLISH_TICK_SECONDS   扫描间隔,默认 60 秒(下限 5)
+ *   AI_TASK_STALE_GRACE_MS 僵尸 RUNNING 任务恢复阈值,默认 600000(10 分钟,下限 60000)。
+ *                          执行进程消失(容器重建/崩溃)的任务超时后重置回 PENDING 重新执行
  *
  * 单实例互斥:启动时获取 <数据目录>/scheduler.lock(O_EXCL + pid 存活检测,崩溃残留自动接管)。
  * 第二个实例会启动失败退出;NOVEL_SCHEDULER_LOCK=0 可跳过锁(自行保证单实例时使用)。
@@ -23,6 +25,7 @@ import {
   listDueBatchSchedules,
   listDueScheduledShortStories,
   processAiTasks,
+  recoverStaleRunningTasks,
   runAiSerializationCycle,
   runPublishCycle,
   type SerializationCycleResult,
@@ -32,6 +35,15 @@ import { ensureSchedulerSingleInstance, refreshSchedulerLock } from './scheduler
 const tickSeconds = Number(process.env.PUBLISH_TICK_SECONDS ?? 60);
 if (!Number.isFinite(tickSeconds) || tickSeconds < 5) {
   console.error(`[scheduler] PUBLISH_TICK_SECONDS must be a number >= 5, got: ${process.env.PUBLISH_TICK_SECONDS}`);
+  process.exit(1);
+}
+
+// 僵尸 RUNNING 任务恢复阈值(毫秒):执行进程消失(容器重建/崩溃)的任务,
+// started_at 超过该时长仍为 RUNNING 即判定为僵尸,重置回 PENDING 重新执行。
+// 默认 10 分钟,远超整篇生成最长耗时(约 3 分钟),不会误伤正常执行中的任务。
+const staleTaskGraceMs = Number(process.env.AI_TASK_STALE_GRACE_MS ?? 10 * 60 * 1000);
+if (!Number.isFinite(staleTaskGraceMs) || staleTaskGraceMs < 60 * 1000) {
+  console.error(`[scheduler] AI_TASK_STALE_GRACE_MS must be a number >= 60000, got: ${process.env.AI_TASK_STALE_GRACE_MS}`);
   process.exit(1);
 }
 
@@ -133,6 +145,21 @@ async function tick(): Promise<void> {
     }
   } catch (err) {
     console.error(`[${new Date().toISOString()}] continuous production cycle failed:`, err);
+  }
+
+  // V10.6 僵尸 RUNNING 恢复:容器重建/崩溃导致执行进程消失的任务重置回 PENDING,
+  // 本 tick 的 processAiTasks 随即重新认领执行(防止创作中心"执行中"永久卡死)
+  try {
+    const recovered = recoverStaleRunningTasks(staleTaskGraceMs);
+    if (recovered.length > 0) {
+      console.log(
+        `[${new Date().toISOString()}] stale-recovered: count=${recovered.length} ids=${recovered
+          .map((t) => t.id)
+          .join(',')}`
+      );
+    }
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] stale task recovery failed:`, err);
   }
 
   // V9 阶段二:统一处理 ai_tasks(章节评审/弧级评审/PROCESS 等待任务),后台驱动长篇评审

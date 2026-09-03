@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### V10.6 僵尸任务自动恢复(v8.3.0)
+
+- **修复创作中心「执行中」永久卡死**:容器重建/崩溃导致执行进程消失时,被认领为 `RUNNING` 的 AI 任务因无超时机制永远不再被重新认领(调度器只领取 `PENDING`)。调度器每个 tick 新增 `recoverStaleRunningTasks()`——`started_at` 超过 `AI_TASK_STALE_GRACE_MS`(默认 10 分钟)仍为 `RUNNING` 的任务重置回 `PENDING` 自动重跑,执行痕迹清空、attempt 历史保留。
+- **阈值可配**:`AI_TASK_STALE_GRACE_MS` 环境变量(毫秒,下限 60000),默认 10 分钟——远超整篇生成最长耗时(约 3 分钟),不会误伤正常执行中的任务;web 侧 story-worker 不做恢复,防止与执行中任务双跑。
+- **验收**:`scripts/verify-stale-task-recovery.ts`(僵尸恢复、阈值内不误伤、状态不受扰、恢复后可重新认领并执行成功)。
+
 ### V10.5 持续创作产线(背压驱动的无间隙生产)
 
 - **产线新增 `continuous` 持续模式**:不设时间间隔,由调度器按背压驱动——上一批短篇消化到阈值以下即触发下一轮(在飞数含 draft,阈值 = max(2, count×2)),真实节奏由 LLM 消费速度决定,永不停止、不堆积。
