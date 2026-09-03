@@ -1,8 +1,11 @@
+# syntax=docker/dockerfile:1
 # Novel Web Publisher 运行镜像
 # 设计目标:服务器上零编译——better-sqlite3 直接下载 npmmirror 的 linux-x64 预编译二进制,
 #          npm 包全部走国内镜像;海外环境用 build-arg 覆盖即可切回官方源。
 #
 # 层缓存:依赖清单未变时,deps 阶段直接命中缓存,重复 ./rebuild.sh 秒级完成。
+# npm 下载缓存:BuildKit cache mount 把 /root/.npm 跨构建持久化——即使 deps 层因
+#              清单变更重建,包也走本地缓存,不再重复走网络下载所有依赖。
 
 # ── Stage 1: 依赖安装(仅下载,无编译) ──
 FROM node:22-slim AS deps
@@ -16,7 +19,9 @@ COPY package.json package-lock.json* ./
 COPY core/package.json   ./core/
 COPY web/package.json    ./web/
 COPY importer/package.json ./importer/
-RUN npm config set registry "$NPM_REGISTRY" && npm install
+# cache mount 让 npm 下载缓存(/root/.npm)跨构建复用;--prefer-offline 让有缓存时
+# 不再向 registry 反复请求元数据。即使 ./rebuild.sh --clean 也受益(缓存挂载与层缓存无关)。
+RUN --mount=type=cache,target=/root/.npm npm config set registry "$NPM_REGISTRY" && npm install --prefer-offline
 
 # ── Stage 2: Next.js 构建(纯 JS 打包,不涉及原生编译) ──
 FROM deps AS build
@@ -24,7 +29,8 @@ COPY core/    ./core/
 COPY web/     ./web/
 COPY tsconfig.json ./
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build -w web
+# Next.js 编译缓存跨构建复用,依赖层重建时也无需全量重编译
+RUN --mount=type=cache,target=/app/web/.next/cache npm run build -w web
 
 # ── Stage 3: 生产镜像 ──
 FROM node:22-slim

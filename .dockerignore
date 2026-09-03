@@ -5,5 +5,9 @@ novels
 output
 bookdock
 logs
+data
+web/public/covers
+web/.next
+.dsh-tmp
 .git
 *.log

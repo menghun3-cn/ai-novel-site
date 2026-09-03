@@ -1,0 +1,41 @@
+title:
+  en: "Docker builds reuse npm downloads via BuildKit cache mounts"
+  zh: "Docker 构建通过 BuildKit cache mount 复用 npm 下载"
+summary:
+  en: |
+    Server-side `docker compose build` re-downloaded the full npm tree whenever the install
+    layer re-ran (manifest change, `--clean`, pruned cache, `--pull`), because the npm cache
+    lived inside the container layer. Added `# syntax=docker/dockerfile:1`, an npm cache mount
+    (`RUN --mount=type=cache,target=/root/.npm npm install --prefer-offline`), a Next.js
+    compile-cache mount (`target=/app/web/.next/cache`), and expanded `.dockerignore` to drop
+    `data`, `web/public/covers`, `web/.next`, `.dsh-tmp`. `npm install` is kept over `npm ci`
+    because release bumps can drift `package-lock.json`.
+  zh: |
+    服务器端 `docker compose build` 一旦 install 层重跑(清单变更、`--clean`、缓存被 prune、
+    `--pull`),就会重新下载整个 npm 依赖树,因为 npm 缓存位于容器层内。本次新增
+    `# syntax=docker/dockerfile:1`、npm 缓存挂载(`RUN --mount=type=cache,target=/root/.npm
+    npm install --prefer-offline`)、Next.js 编译缓存挂载(`target=/app/web/.next/cache`),
+    并扩展 `.dockerignore` 排除 `data`、`web/public/covers`、`web/.next`、`.dsh-tmp`。
+    保留 `npm install` 而非 `npm ci`,因为发布 bump 可能使 `package-lock.json` 漂移。
+steps:
+  en:
+    - "Added `# syntax=docker/dockerfile:1` to the `Dockerfile` for BuildKit cache-mount support."
+    - "Changed the `deps` stage install to `RUN --mount=type=cache,target=/root/.npm npm config set registry \"$NPM_REGISTRY\" && npm install --prefer-offline`."
+    - "Changed the `build` stage to `RUN --mount=type=cache,target=/app/web/.next/cache npm run build -w web`."
+    - "Added `data`, `web/public/covers`, `web/.next`, `.dsh-tmp` to `.dockerignore`."
+  zh:
+    - "在 `Dockerfile` 顶部新增 `# syntax=docker/dockerfile:1` 以启用 BuildKit cache mount。"
+    - "`deps` 阶段安装改为 `RUN --mount=type=cache,target=/root/.npm npm config set registry \"$NPM_REGISTRY\" && npm install --prefer-offline`。"
+    - "`build` 阶段改为 `RUN --mount=type=cache,target=/app/web/.next/cache npm run build -w web`。"
+    - "`.dockerignore` 新增 `data`、`web/public/covers`、`web/.next`、`.dsh-tmp`。"
+follow-up:
+  en: |
+    - Requires BuildKit; legacy builder would fail on the cache mounts (by design, loudly).
+    - If release bumps are later locked to always regenerate `package-lock.json`, consider
+      switching to `npm ci` for deterministic installs.
+  zh: |
+    - 依赖 BuildKit;传统 builder 会在 cache mount 上报错(刻意为之,大声失败)。
+    - 若后续把发布流程锁定为每次重新生成 `package-lock.json`,可考虑改用 `npm ci` 以获得确定性安装。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/new/chore/docker-npm-cache"
+  branch: "chore/docker-npm-cache"
