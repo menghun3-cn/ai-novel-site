@@ -48,10 +48,14 @@ TTS 合成)两种引擎:Edge 依赖微软在线服务,离线不可用。本地�
   `npm run test:tts-local`。`--no-tts` / `--no-model` 是逃生门(仅 Edge 镜像 /
   跳过模型下载)。引擎只加载 `onnx/model_quantized.onnx`:transformers.js 默认
   `subfolder='onnx'` 且 dtype `q8` 映射 `_quantized` 后缀。条件 npm install
-  设置 `ONNXRUNTIME_NODE_INSTALL=skip`:onnxruntime-node 1.29+ 的 Linux x64
-  CPU 二进制已捆绑在 npm 包内,其 install 脚本默认还要下载未捆绑的
-  CUDA/GPU 二进制(NuGet 302 重定向且无镜像支持,国内构建必失败);CPU 推理
-  用不到,整段跳过(无 `ONNX_BINARY_MIRROR` build-arg)。
+  设置**两个**环境变量 `ONNXRUNTIME_NODE_INSTALL=skip` 与
+  `ONNXRUNTIME_NODE_INSTALL_CUDA=skip`:onnxruntime-node 的 Linux x64 CPU
+  二进制已捆绑在 npm 包内,其 install 脚本默认还要下载未捆绑的 CUDA/GPU
+  二进制(NuGet/GitHub 302 重定向且无镜像支持,国内构建必失败);CPU 推理
+  用不到,整段跳过(无 `ONNX_BINARY_MIRROR` build-arg)。两个变量都必设:
+  `@huggingface/transformers@3.8.1` 硬编码依赖精确版本
+  `onnxruntime-node@1.21.0`,npm 会在其下嵌套安装一份,该 1.21.0 旧安装脚本
+  只认 `_CUDA` 变量(新变量仅 1.29+ 读取),不设则仍去 GitHub 下载 GPU tgz。
 
 ## Alternatives considered
 
