@@ -343,12 +343,9 @@ docker compose build \
 #   docker compose build --build-arg ENABLE_LOCAL_TTS=1   # 镜像内置 kokoro-js-zh + 语音
 #   ./rebuild.sh --model                                  # 模型权重下载到 ./models/kokoro
 ```
-国内 onnxruntime-node 二进制走 GitHub 慢时，加环境变量再跑：
-```bash
-ONNX_BINARY_MIRROR=https://registry.npmmirror.com/-/binary/onnxruntime ./rebuild.sh
-```
 说明：
 - **默认行为**：`--tts`（镜像内置 kokoro-js-zh 中文 fork + onnxruntime-node + espeak-ng.wasm + 8 个中文语音）与 `--model`（下载 `onnx/model_quantized.onnx` 到 `./models/kokoro`）都默认开启；**模型已存在时自动跳过下载、零网络请求**。
+- **onnxruntime-node 离线安装**：1.29+ 的 Linux x64 CPU 二进制已捆绑在 npm 包内，构建时用 `ONNXRUNTIME_NODE_INSTALL=skip` 跳过其 install 脚本对未捆绑 CUDA/GPU 二进制的下载（该下载走 NuGet 302 重定向且无镜像可用，国内构建必失败；CPU 推理用不到）。无需任何二进制镜像配置。
 - **逃生门**：不需要本地引擎时 `./rebuild.sh --no-tts`（镜像不含本地引擎、体积不变，听书回退 Edge 在线合成）；模型已手动放置时 `./rebuild.sh --no-model`。
 - `--model` 下载的是 `onnx-community/Kokoro-82M-v1.0-ONNX` 的 `onnx/model_quantized.onnx`（q8 量化）等文件（compose 已挂载为 `/app/models/kokoro`）。**必须下载 `onnx/model_quantized.onnx`**——引擎 q8 固定找 `_quantized` 后缀 + `onnx/` 子目录，其它文件（model.onnx / model_q8.onnx）不会被加载。模型卡: https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX
 - 模型远端默认走 **hf-mirror**（国内可直连）；海外服务器设 `KOKORO_HF_ENDPOINT=https://huggingface.co` 切官方源。

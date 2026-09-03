@@ -43,12 +43,15 @@ TTS 合成)两种引擎:Edge 依赖微软在线服务,离线不可用。本地�
 - **白名单门禁。** 仅暴露 8 个中文语音(`web/lib/kokoro.ts`);按产品硬性要求
   不要英文语音,英文语音刻意排除。
 - **一键启用。** `rebuild.sh` **默认启用**本地 TTS:构建带
-  `ENABLE_LOCAL_TTS=1`,设置 `ONNX_BINARY_MIRROR` 时透传为 build-arg,把 q8
-  权重下载到 `./models/kokoro/`(`onnx/model_quantized.onnx` 已存在时整段跳过、
-  零网络请求),启动后在容器内跑 `npm run test:tts-local`。`--no-tts` /
-  `--no-model` 是逃生门(仅 Edge 镜像 / 跳过模型下载)。引擎只加载
-  `onnx/model_quantized.onnx`:transformers.js 默认 `subfolder='onnx'` 且
-  dtype `q8` 映射 `_quantized` 后缀。
+  `ENABLE_LOCAL_TTS=1`,把 q8 权重下载到 `./models/kokoro/`(`onnx/
+  model_quantized.onnx` 已存在时整段跳过、零网络请求),启动后在容器内跑
+  `npm run test:tts-local`。`--no-tts` / `--no-model` 是逃生门(仅 Edge 镜像 /
+  跳过模型下载)。引擎只加载 `onnx/model_quantized.onnx`:transformers.js 默认
+  `subfolder='onnx'` 且 dtype `q8` 映射 `_quantized` 后缀。条件 npm install
+  设置 `ONNXRUNTIME_NODE_INSTALL=skip`:onnxruntime-node 1.29+ 的 Linux x64
+  CPU 二进制已捆绑在 npm 包内,其 install 脚本默认还要下载未捆绑的
+  CUDA/GPU 二进制(NuGet 302 重定向且无镜像支持,国内构建必失败);CPU 推理
+  用不到,整段跳过(无 `ONNX_BINARY_MIRROR` build-arg)。
 
 ## Alternatives considered
 
