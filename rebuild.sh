@@ -30,12 +30,6 @@ done
 BUILD_ARGS=""
 if [ "$ENABLE_TTS" = "1" ]; then
   BUILD_ARGS="$BUILD_ARGS --build-arg ENABLE_LOCAL_TTS=1"
-  # onnxruntime-node 预编译二进制走 GitHub releases,国内构建慢/失败时设置该环境变量:
-  #   ONNX_BINARY_MIRROR=https://registry.npmmirror.com/-/binary/onnxruntime ./rebuild.sh
-  if [ -n "${ONNX_BINARY_MIRROR:-}" ]; then
-    BUILD_ARGS="$BUILD_ARGS --build-arg ONNX_BINARY_MIRROR=$ONNX_BINARY_MIRROR"
-    echo "[rebuild]   已透传 ONNX_BINARY_MIRROR=$ONNX_BINARY_MIRROR"
-  fi
 else
   echo "[rebuild] 未启用本地 Kokoro TTS(--no-tts):听书仅 Edge 在线合成"
 fi
