@@ -39,6 +39,11 @@ TTS 合成)两种引擎:Edge 依赖微软在线服务,离线不可用。本地�
   `KOKORO_HF_ENDPOINT` 可切海外官方源)。模型下载缓存到 `/app/data/.kokoro-cache`。
 - **白名单门禁。** 仅暴露 8 个中文语音(`web/lib/kokoro.ts`);按产品硬性要求
   不要英文语音,英文语音刻意排除。
+- **一键启用。** `rebuild.sh` 新增 `--tts`(带 `ENABLE_LOCAL_TTS=1` 构建,设置
+  `ONNX_BINARY_MIRROR` 时透传为 build-arg,启动后在容器内跑
+  `npm run test:tts-local`)与 `--model`(把 q8 权重下载到 `./models/kokoro/` ——
+  引擎只加载 `onnx/model_quantized.onnx`:transformers.js 默认
+  `subfolder='onnx'` 且 dtype `q8` 映射 `_quantized` 后缀)。
 
 ## Alternatives considered
 
