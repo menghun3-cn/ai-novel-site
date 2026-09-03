@@ -29,10 +29,14 @@ Key mechanisms:
 - **Conditional build.** `Dockerfile` gains `ARG ENABLE_LOCAL_TTS=0`; when set
   to `1`, the deps stage additionally installs `kokoro-js-zh` +
   `onnxruntime-node` (via `--no-save`, so `package.json`/lock are untouched and
-  `=0` images keep their exact size), copies `espeak-ng.wasm` from the
+  `=0` images keep their exact size) and runs
+  `scripts/fetch-kokoro-voices.mjs`, which copies `espeak-ng.wasm` from the
   `espeak-ng` dependency into `kokoro-js-zh/dist/` (the package ships without
-  it, which aborts Chinese G2P), and pre-downloads the eight voice `.bin` files
-  (Node builds offline; runtime re-fetches if skipped).
+  it, which aborts Chinese G2P) and pre-downloads the eight voice `.bin` files
+  (Node builds offline; runtime re-fetches if skipped). The asset logic lives
+  in a standalone script rather than an inline `node -e` block: Dockerfile
+  line-continuation (`\`) cannot carry a multi-line single-quoted script, which
+  fails at parse time with "unknown instruction: const".
 - **Runtime detection with Edge fallback.** `web/lib/kokoro-server.ts`
   (`kokoroAvailable()`) reports the engine only when the dependency is
   installed **and** either `KOKORO_MODEL_DIR` (docker volume mount, must

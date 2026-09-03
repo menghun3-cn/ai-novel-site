@@ -26,6 +26,9 @@ COPY package.json package-lock.json* ./
 COPY core/package.json   ./core/
 COPY web/package.json    ./web/
 COPY importer/package.json ./importer/
+# 本地 TTS 资产补齐脚本(deps 阶段条件调用;勿内联 JS 到 Dockerfile——多行单引号脚本
+# 无法用行尾 `\` 续行,会在 `const` 处触发 "unknown instruction" parse error)
+COPY scripts/fetch-kokoro-voices.mjs ./scripts/
 # cache mount 让 npm 下载缓存(/root/.npm)跨构建复用;--prefer-offline 让有缓存时
 # 不再向 registry 反复请求元数据。即使 ./rebuild.sh --clean 也受益(缓存挂载与层缓存无关)。
 RUN --mount=type=cache,target=/root/.npm npm config set registry "$NPM_REGISTRY" && npm install --prefer-offline
@@ -35,36 +38,11 @@ RUN --mount=type=cache,target=/root/.npm npm config set registry "$NPM_REGISTRY"
 # 构建时同时补齐 kokoro-js-zh 的 Node 端硬性文件(见 kokoro-server.ts ensureRuntimeAssets):
 #   - espeak-ng.wasm ← 从 espeak-ng 依赖包复制(该 npm 包漏发,不复制则中文 G2P 无法启动);
 #   - 8 个中文语音 voices/*.bin ← 从 HF 下载(默认 hf-mirror;离线构建可跳过,运行时自动补)。
-# node:22-slim 无 curl,用 Node 内置 fetch 下载。
 ARG KOKORO_HF_ENDPOINT=https://hf-mirror.com
 RUN if [ "$ENABLE_LOCAL_TTS" = "1" ]; then \
       npm install --no-save --package-lock=false kokoro-js-zh@2.1.7 onnxruntime-node@1.29.0 --prefer-offline \
-      && PKG_DIR=node_modules/kokoro-js-zh \
-      && mkdir -p "$PKG_DIR/dist" "$PKG_DIR/voices" \
-      && cp node_modules/espeak-ng/dist/espeak-ng.wasm "$PKG_DIR/dist/espeak-ng.wasm" \
-      && export KOKORO_HF_ENDPOINT="$KOKORO_HF_ENDPOINT" \
-      && node -e '
-          const fs = require("fs"), path = require("path");
-          const voices = ["zf_xiaoxiao","zf_xiaobei","zf_xiaoni","zf_xiaoyi","zm_yunjian","zm_yunxi","zm_yunxia","zm_yunyang"];
-          const base = process.env.KOKORO_HF_ENDPOINT + "/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/";
-          (async () => {
-            let failed = 0;
-            for (const v of voices) {
-              const dest = path.join("node_modules/kokoro-js-zh/voices", v + ".bin");
-              if (fs.existsSync(dest)) continue;
-              try {
-                const r = await fetch(base + v + ".bin", { signal: AbortSignal.timeout(60000) });
-                if (!r.ok) throw new Error("HTTP " + r.status);
-                fs.writeFileSync(dest, Buffer.from(await r.arrayBuffer()));
-                console.log("voice ok:", v);
-              } catch (e) {
-                failed++;
-                console.log("WARN: voice download failed (" + v + "): " + e.message + " — 运行时自动补下");
-              }
-            }
-            if (failed) console.log("WARN: " + failed + " 个语音文件构建时未下载,首次合成时自动补齐(需容器可访问 HF)");
-          })();
-        '; \
+      && node scripts/fetch-kokoro-voices.mjs "$KOKORO_HF_ENDPOINT" \
+      && rm -f scripts/fetch-kokoro-voices.mjs; \
     fi
 
 # ── Stage 2: Next.js 构建(纯 JS 打包,不涉及原生编译) ──
