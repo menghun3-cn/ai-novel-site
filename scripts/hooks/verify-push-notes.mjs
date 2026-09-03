@@ -58,7 +58,14 @@ for (const [localRef, localSha, , remoteSha] of refs) {
 
   let changed = [];
   try {
-    changed = git(['diff', '--name-only', base, localSha]).split('\n').filter(Boolean);
+    // --numstat 区分纯文件模式改动(chmod, 0 0)与内容改动:
+    // 模式改动判平凡,不给 chmod 强加笔记;仅收集有增删行的文件。
+    changed = git(['diff', '--numstat', base, localSha])
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => l.split('\t'))
+      .filter(([a, d]) => !(a === '0' && d === '0'))
+      .map((p) => p[p.length - 1]);
   } catch {
     continue;
   }

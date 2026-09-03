@@ -23,9 +23,10 @@ git hooks、没有 CI workflow,且 GitHub Actions 被明确推迟,于是规则�
   设置:`git config core.hooksPath .githooks`)。
 - `scripts/hooks/verify-push-notes.mjs` — 零依赖 Node 门禁:
   1. 读取 pre-push stdin 的 ref 行(`<local ref> <local sha> <remote ref>
-     <remote sha>`),跳过删除分支与 tag,用 `git diff --name-only <base> <local>`
+     <remote sha>`),跳过删除分支与 tag,用 `git diff --numstat <base> <local>`
      计算变更文件集(base = 远端 SHA;新分支退化为与 `origin/master` 的
-     `merge-base`)。
+     `merge-base`)。增删行为 `0 0` 的行——纯文件模式改动(chmod)——被剔除:
+     它们不携带内容,不应强制笔记。
   2. 把文件分为平凡与非平凡:`*.md`(文档)、`package.json`/锁文件/`.gitignore`
      等判为平凡;笔记自身(`.agents/notes/{proposed,implemented,rejected}/`)
      视为"携带了笔记"。其余文件(代码、配置、脚本)均为非平凡。

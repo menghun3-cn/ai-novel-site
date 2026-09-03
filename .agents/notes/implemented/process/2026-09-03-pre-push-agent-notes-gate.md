@@ -29,8 +29,10 @@ Add a **shared local pre-push hook** that enforces both halves mechanically:
 - `scripts/hooks/verify-push-notes.mjs` — zero-dependency Node gate that:
   1. Reads the pre-push stdin ref lines (`<local ref> <local sha> <remote ref>
      <remote sha>`), skips deletions and tags, and computes the changed-file
-     set with `git diff --name-only <base> <local>` (base = remote SHA, or
-     `merge-base` with `origin/master` for new branches).
+     set with `git diff --numstat <base> <local>` (base = remote SHA, or
+     `merge-base` with `origin/master` for new branches). Rows with `0 0`
+     added/deleted lines — pure file-mode changes (chmod) — are dropped:
+     they carry no content and must not force a note.
   2. Classifies files as non-trivial vs trivial: `*.md` (docs),
      `package.json`/lockfiles/`.gitignore` etc. are trivial; notes themselves
      (`.agents/notes/{proposed,implemented,rejected}/`) count as carrying a
