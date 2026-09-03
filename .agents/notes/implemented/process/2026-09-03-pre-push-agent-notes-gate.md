@@ -41,6 +41,13 @@ Add a **shared local pre-push hook** that enforces both halves mechanically:
      prints the offending files and exits 1 — **blocking the push**.
   4. Otherwise runs `pnpm run doc-sync` and blocks the push if the notes tree
      is not fully green.
+- A **master direct-push guard** in the same script: a push whose local ref is
+  `refs/heads/master` and whose SHA differs from the remote is rejected with a
+  pointer to the PR flow. The authoritative enforcement is the GitHub branch
+  protection rule on `master` (require a pull request before merging,
+  `enforce_admins: true`, force pushes disabled); the local guard exists only
+  to fail fast and explain *why*, since a protected-branch rejection from the
+  server is terse.
 
 ## Alternatives considered
 
@@ -72,3 +79,6 @@ small Node script plus a sh wrapper already does; rejected as over-tooling.
   force a note even though it can be non-trivial; acceptable for v1, and the
   gate errs toward not blocking routine pushes.
 - Push latency increases by the `doc-sync` runtime (~a few seconds).
+- Direct pushes to `master` are rejected twice: locally by the pre-push guard
+  (fast, explanatory) and server-side by the branch protection rule (final).
+  All master changes must flow through a develop → master PR.

@@ -43,6 +43,18 @@ let checkedAny = false;
 for (const [localRef, localSha, , remoteSha] of refs) {
   if (/^0+$/.test(localSha)) continue; // 删除分支
   if (localRef.startsWith('refs/tags/')) continue; // tag 推送不要求笔记
+
+  // master 直推守卫:master 只能通过 PR 合并(GitHub 分支保护已强制,
+  // 本地提前报错给出更快的反馈)。
+  if (localRef === 'refs/heads/master' && remoteSha && !/^0+$/.test(remoteSha) && localSha !== remoteSha) {
+    process.stderr.write(
+      `[notes-gate] 拦截:禁止直接推送 master。\n` +
+        `  master 受分支保护,只能通过 PR 合并(develop → master)。\n` +
+        `  正确做法:git push origin <你的分支> → 开 PR → gh pr merge。\n`
+    );
+    process.exit(1);
+  }
+
   checkedAny = true;
 
   let base = remoteSha;
