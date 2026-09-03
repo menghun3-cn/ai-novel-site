@@ -62,11 +62,17 @@ Key mechanisms:
   (Edge-only image, or skip the model download). The engine only loads
   `onnx/model_quantized.onnx`: transformers.js defaults `subfolder='onnx'` and
   maps dtype `q8` to the `_quantized` suffix. The conditional npm install sets
-  `ONNXRUNTIME_NODE_INSTALL=skip`: onnxruntime-node 1.29+ bundles the Linux x64
+  **two** env vars, `ONNXRUNTIME_NODE_INSTALL=skip` and
+  `ONNXRUNTIME_NODE_INSTALL_CUDA=skip`: onnxruntime-node bundles the Linux x64
   CPU binary in the npm package, and its install script would otherwise try to
-  fetch unbundled CUDA/GPU binaries from NuGet (302 redirect with no mirror
+  fetch unbundled CUDA/GPU binaries (NuGet/GitHub 302 redirect with no mirror
   support — fails on CN networks); CPU inference needs none of that, so the
-  download is skipped entirely (no `ONNX_BINARY_MIRROR` build-arg exists).
+  download is skipped entirely (no `ONNX_BINARY_MIRROR` build-arg exists). Both
+  vars are required because `@huggingface/transformers@3.8.1` hard-pins
+  `onnxruntime-node@1.21.0` (exact version), which npm nests under
+  `node_modules/@huggingface/transformers/`; that 1.21.0 copy's legacy install
+  script reads only the `_CUDA` var (the new one is 1.29+-only), and without it
+  still tries to download the GPU tgz from GitHub.
 
 ## Alternatives considered
 
