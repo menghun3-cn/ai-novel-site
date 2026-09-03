@@ -38,10 +38,16 @@ RUN --mount=type=cache,target=/root/.npm npm config set registry "$NPM_REGISTRY"
 #   - espeak-ng.wasm ← 从 espeak-ng 依赖包复制(该 npm 包漏发,不复制则中文 G2P 无法启动);
 #   - 8 个中文语音 voices/*.bin ← 从 HF 下载(默认 hf-mirror;离线构建可跳过,运行时自动补)。
 ARG KOKORO_HF_ENDPOINT=https://hf-mirror.com
-# ONNXRUNTIME_NODE_INSTALL=skip:跳过 install 脚本对未捆绑 CUDA/GPU 二进制的下载
-# (NuGet 302 重定向不可用;CPU 二进制已捆绑,skip 后完全离线安装,实测合成正常)。
+# 跳过 onnxruntime-node install 脚本对未捆绑 CUDA/GPU 二进制的下载(CPU 推理用不到;
+# CPU 二进制已捆绑在 npm 包内,skip 后完全离线安装,实测合成正常)。
+# 注意两个变量都要设,覆盖两个版本的安装脚本:
+#   - ONNXRUNTIME_NODE_INSTALL=skip        ← onnxruntime-node 1.29+(顶层显式安装);
+#   - ONNXRUNTIME_NODE_INSTALL_CUDA=skip   ← onnxruntime-node 1.21.0(@huggingface/
+#     transformers@3.8.1 硬编码依赖精确版本 1.21.0,会嵌套安装一份,其旧脚本只认
+#     旧变量;不设则仍去 GitHub 下载 GPU tgz,国内网络 ECONNRESET 失败)。
+# (嵌套副本仅在 1.21.0 的安装脚本里读取旧变量,运行时仍能正常加载 CPU 二进制。)
 RUN if [ "$ENABLE_LOCAL_TTS" = "1" ]; then \
-      ONNXRUNTIME_NODE_INSTALL=skip npm install --no-save --package-lock=false kokoro-js-zh@2.1.7 onnxruntime-node@1.29.0 --prefer-offline \
+      ONNXRUNTIME_NODE_INSTALL=skip ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install --no-save --package-lock=false kokoro-js-zh@2.1.7 onnxruntime-node@1.29.0 --prefer-offline \
       && node scripts/fetch-kokoro-voices.mjs "$KOKORO_HF_ENDPOINT" \
       && rm -f scripts/fetch-kokoro-voices.mjs; \
     fi
