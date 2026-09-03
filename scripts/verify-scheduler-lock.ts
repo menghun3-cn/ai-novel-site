@@ -2,7 +2,9 @@
  * V9.5 阶段二补丁:调度器单实例互斥锁
  * - 首次获取成功;重复获取失败(持有者存活)
  * - release 后可重新获取
- * - 崩溃残留(死 pid)→ 自动接管
+ * - 同宿主崩溃残留(死 pid)→ 自动接管
+ * - 跨宿主 + 超过 STALE_GRACE_MS 未续约 → 自动接管
+ * - 跨宿主 + 宽限期内续约 → 视为存活,拒绝接管
  * - 锁内容损坏/不可读 → 视为 stale,接管
  * - release 只删自己的锁:他人新锁不被误删
  *
@@ -44,21 +46,44 @@ assertOk(!fs.existsSync(lockPath), 'release 删除锁文件');
 const lock2 = acquireSchedulerLock(dataDir);
 assertOk(lock2 !== null, '释放后可重新获取');
 
-// 4. 崩溃残留:写入不存在的 pid → 接管
+// 4. 同宿主崩溃残留:写入不存在的 pid(hostname 与当前一致)→ 接管
 lock2!.release();
-fs.writeFileSync(lockPath, JSON.stringify({ pid: 999999999, hostname: 'ghost', at: new Date().toISOString() }));
+fs.writeFileSync(
+  lockPath,
+  JSON.stringify({ pid: 999999999, hostname: os.hostname(), at: new Date().toISOString() })
+);
 const lock3 = acquireSchedulerLock(dataDir);
-assertOk(lock3 !== null, '死 pid 锁被自动接管');
+assertOk(lock3 !== null, '同宿主死 pid 锁被自动接管');
 
-// 5. 锁文件损坏 → 接管
+// 5. 跨宿主崩溃残留:不同宿主 + 超过 STALE_GRACE_MS 未续约 → 接管
 lock3!.release();
-fs.writeFileSync(lockPath, 'not-json{{');
+fs.writeFileSync(
+  lockPath,
+  JSON.stringify({ pid: 1, hostname: 'ghost', at: new Date(Date.now() - 10 * 60 * 1000).toISOString() })
+);
 const lock4 = acquireSchedulerLock(dataDir);
-assertOk(lock4 !== null, '损坏锁文件被自动接管');
+assertOk(lock4 !== null, '跨宿主过期锁被自动接管');
 
-// 6. release 不误删他人新锁
+// 6. 跨宿主存活持有者:不同宿主 + 续约时间在宽限期内 → 拒绝接管
 lock4!.release();
-// 模拟他人持有(存活 pid = 当前进程,但 release 由 lock4 的句柄做)
+fs.writeFileSync(
+  lockPath,
+  JSON.stringify({ pid: 1, hostname: 'ghost', at: new Date().toISOString() })
+);
+assertOk(acquireSchedulerLock(dataDir) === null, '跨宿主新鲜续约视为存活,拒绝接管');
+fs.unlinkSync(lockPath); // 清理
+
+// 7. 锁文件损坏 → 接管
+const lock5 = acquireSchedulerLock(dataDir);
+assertOk(lock5 !== null, '重建锁');
+lock5!.release();
+fs.writeFileSync(lockPath, 'not-json{{');
+const lock6 = acquireSchedulerLock(dataDir);
+assertOk(lock6 !== null, '损坏锁文件被自动接管');
+
+// 8. release 不误删他人新锁
+lock6!.release();
+// 模拟他人持有(存活 pid = 当前进程,但 release 由 lock6 的句柄做)
 const foreign = acquireSchedulerLock(dataDir);
 assertOk(foreign !== null, '重建锁');
 // 手动把内容改成"别人的 pid"(用 1 —— 系统进程,必存活)
