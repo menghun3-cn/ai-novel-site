@@ -1,0 +1,35 @@
+title:
+  en: "Production line cards surface key config; editor moves to a drawer"
+  zh: "产线卡片前置关键配置信息;编辑器弹窗改为抽屉"
+summary:
+  en: |
+    The production-line card in the creation center hid the execution schedule (daily HH:00 /
+    manual), batch size, quota, and quality-gate threshold behind the edit dialog — the schedule
+    only rendered while a line had never run. The editor was a cramped 512px modal with five
+    configuration sections. Redesigned the card to surface schedule, batch size, quota, gate
+    chips, and last-run status directly, and switched editing to the shared right-side `Drawer`
+    (720px, full height) with white bordered form sections.
+  zh: |
+    创作中心的产线卡片把执行调度(每日 HH:00 / 手动)、每批篇数、配额与质量闸门阈值藏在
+    编辑弹窗后面——调度只在产线从未运行过时渲染;编辑器是承载五个配置区块的 512px 窄弹窗。
+    本次重设计让卡片直接展示调度、每批篇数、配额、闸门标签与上次运行状态,并将编辑改用
+    共用的右侧 `Drawer`(720px、整屏高),表单区块改为白底描边。
+steps:
+  en:
+    - "Added an 执行配置 strip to the line card: schedule (每日 HH:00 / 手动触发) + 每批 N 篇, plus conditional 单次上限 / 每日上限 / 预算 / 达标线 / 自动发布 chips."
+    - "Added 启用/停用 badge and last-run status badge (`RunStatus`) next to the card title; footer now shows last-run time + run title, or 尚未运行."
+    - "Replaced the `LineEditorModal` (512px `Modal`) with `LineEditorDrawer` using the shared `Drawer` (720px, full height); form sections switched from gray blocks to white bordered cards."
+  zh:
+    - "产线卡片新增 执行配置 条:调度(每日 HH:00 / 手动触发)+ 每批 N 篇,并条件显示 单次上限 / 每日上限 / 预算 / 达标线 / 自动发布 标签。"
+    - "卡片标题旁新增 启用/停用 徽章与最近运行状态徽章(`RunStatus`);底栏展示上次运行时间 + 运行标题,无记录时显示 尚未运行。"
+    - "将 `LineEditorModal`(512px `Modal`)替换为使用共用 `Drawer`(720px、整屏高)的 `LineEditorDrawer`;表单区块由灰色块改为白底描边卡片。"
+follow-up:
+  en: |
+    - Modal remains for 运行产线 / 删除产线 confirmations; only editing uses the drawer.
+    - The `lg` two-column card grid still fits; revisit if cards gain more rows later.
+  zh: |
+    - 运行产线 / 删除产线 的确认仍用弹窗;仅编辑使用抽屉。
+    - `lg` 两列卡片网格仍可容纳;若后续卡片再增行数需复查。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/101"
+  branch: "chore/release-v8.2.1"
