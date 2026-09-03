@@ -147,19 +147,35 @@ function toChapter(r: ChapterRow): Chapter {
 }
 
 // 小说列表基础 SQL(含聚合元数据),WHERE 与 ORDER 由调用方拼接
+// 性能:用「分组聚合子查询 + 窗口函数取最新章节」替代每个书 6 个关联子查询,
+// 全书只扫描两遍 chapters(统计一遍、已发布章节窗口一遍),100 本书级列表不再出现数百次子查询。
 const BOOK_LIST_SQL = `
 SELECT b.*,
        a.name AS author_name,
        c.name AS category_name,
-       (SELECT COUNT(*) FROM chapters ch WHERE ch.book_id = b.id) AS chapter_count,
-       (SELECT COUNT(*) FROM chapters ch WHERE ch.book_id = b.id AND ch.status = 'published') AS published_count,
-       (SELECT COUNT(*) FROM chapters ch WHERE ch.book_id = b.id AND ch.status = 'pending_review') AS pending_review_count,
-       (SELECT ch.number FROM chapters ch WHERE ch.book_id = b.id AND ch.status = 'published' ORDER BY ch.number DESC LIMIT 1) AS latest_chapter_number,
-       (SELECT ch.title FROM chapters ch WHERE ch.book_id = b.id AND ch.status = 'published' ORDER BY ch.number DESC LIMIT 1) AS latest_chapter_title,
-       (SELECT ch.published_at FROM chapters ch WHERE ch.book_id = b.id AND ch.status = 'published' ORDER BY ch.number DESC LIMIT 1) AS latest_published_at
+       COALESCE(stats.chapter_count, 0) AS chapter_count,
+       COALESCE(stats.published_count, 0) AS published_count,
+       COALESCE(stats.pending_review_count, 0) AS pending_review_count,
+       latest.number AS latest_chapter_number,
+       latest.title AS latest_chapter_title,
+       latest.published_at AS latest_published_at
 FROM books b
 JOIN authors a ON a.id = b.author_id
-JOIN categories c ON c.id = b.category_id`;
+JOIN categories c ON c.id = b.category_id
+LEFT JOIN (
+  SELECT book_id,
+         COUNT(*) AS chapter_count,
+         SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published_count,
+         SUM(CASE WHEN status = 'pending_review' THEN 1 ELSE 0 END) AS pending_review_count
+  FROM chapters
+  GROUP BY book_id
+) stats ON stats.book_id = b.id
+LEFT JOIN (
+  SELECT book_id, number, title, published_at,
+         ROW_NUMBER() OVER (PARTITION BY book_id ORDER BY number DESC) AS rn
+  FROM chapters
+  WHERE status = 'published'
+) latest ON latest.book_id = b.id AND latest.rn = 1`;
 
 function tagsForBooks(bookIds: string[]): Map<string, string[]> {
   if (bookIds.length === 0) return new Map();
@@ -398,11 +414,37 @@ export function getBookById(id: string): BookWithMeta | null {
 export interface ListBooksOptions {
   categorySlug?: string;
   q?: string;
+  /** 按种类过滤:long=长篇连载;short=短篇发布物化 */
+  kind?: 'short' | 'long';
   limit?: number;
   offset?: number;
 }
 
-/** 小说列表(公开):隐藏书籍不可见;支持分类筛选、书名/作者/标签模糊搜索 */
+/** 公开小说总数(与 listBooks 同一可见性/过滤口径,供“共 N 本”展示) */
+export function countPublicBooks(opts: ListBooksOptions = {}): number {
+  const db = getDb();
+  const where: string[] = [PUBLIC_BOOK_VISIBLE];
+  const params: unknown[] = [];
+  if (opts.categorySlug) {
+    where.push('c.slug = ?');
+    params.push(opts.categorySlug);
+  }
+  if (opts.kind) {
+    where.push('b.kind = ?');
+    params.push(opts.kind);
+  }
+  if (opts.q) {
+    where.push('(b.title LIKE ? OR a.name LIKE ?)');
+    const like = `%${opts.q}%`;
+    params.push(like, like);
+  }
+  const row = db
+    .prepare(`SELECT COUNT(*) AS n FROM books b JOIN authors a ON a.id = b.author_id JOIN categories c ON c.id = b.category_id WHERE ${where.join(' AND ')}`)
+    .get(...params) as { n: number };
+  return row.n;
+}
+
+/** 小说列表(公开):隐藏书籍不可见;支持分类/种类/书名作者标签模糊搜索 */
 export function listBooks(opts: ListBooksOptions = {}): BookWithMeta[] {
   const db = getDb();
   const where: string[] = [PUBLIC_BOOK_VISIBLE];
@@ -410,6 +452,10 @@ export function listBooks(opts: ListBooksOptions = {}): BookWithMeta[] {
   if (opts.categorySlug) {
     where.push('c.slug = ?');
     params.push(opts.categorySlug);
+  }
+  if (opts.kind) {
+    where.push('b.kind = ?');
+    params.push(opts.kind);
   }
   if (opts.q) {
     where.push(
@@ -434,12 +480,17 @@ export function searchBooks(q: string): BookWithMeta[] {
   return listBooks({ q });
 }
 
+/** 分类及公开书籍统计:与 listBooks 同口径(仅统计 status<>'hidden'),并拆出长篇/短篇计数 */
 export function listCategories(): CategoryWithCount[] {
   const db = getDb();
   return db
     .prepare(
-      `SELECT c.slug AS slug, c.name AS name, COUNT(b.id) AS count
-       FROM categories c LEFT JOIN books b ON b.category_id = c.id
+      `SELECT c.id AS id, c.slug AS slug, c.name AS name,
+              COUNT(b.id) AS count,
+              SUM(CASE WHEN b.kind = 'long' THEN 1 ELSE 0 END) AS longCount,
+              SUM(CASE WHEN b.kind = 'short' THEN 1 ELSE 0 END) AS shortCount
+       FROM categories c
+       LEFT JOIN books b ON b.category_id = c.id AND ${PUBLIC_BOOK_VISIBLE}
        GROUP BY c.id
        ORDER BY count DESC, c.name`
     )

@@ -84,19 +84,31 @@ export interface FeedBookRow {
 const FEED_SELECT = `SELECT b.id, b.slug, b.title, a.name AS author_name, b.description, b.cover_path, b.status,
     b.category_id AS category_id,
     b.created_at, b.updated_at,
-    (SELECT MAX(c.published_at) FROM chapters c WHERE c.book_id = b.id AND c.status = 'published') AS last_published_at,
-    (SELECT MAX(c.number) FROM chapters c WHERE c.book_id = b.id AND c.status = 'published') AS latest_chapter_number,
-    (SELECT COUNT(*) FROM chapters c WHERE c.book_id = b.id AND c.status = 'published') AS published_count,
+    st.last_published_at,
+    st.latest_chapter_number,
+    COALESCE(st.published_count, 0) AS published_count,
     b.view_count AS view_count,
-    (SELECT COUNT(*) FROM favorites f WHERE f.book_id = b.id) AS favorite_count,
-    CASE WHEN COALESCE((SELECT SUM(c.view_count) FROM chapters c WHERE c.book_id = b.id AND c.status = 'published'), 0) > 0
-      THEN MIN(1.0, CAST((SELECT SUM(c.finish_count) FROM chapters c WHERE c.book_id = b.id AND c.status = 'published') AS REAL)
-                 / (SELECT SUM(c.view_count) FROM chapters c WHERE c.book_id = b.id AND c.status = 'published'))
+    COALESCE(fav.favorite_count, 0) AS favorite_count,
+    CASE WHEN COALESCE(st.view_sum, 0) > 0
+      THEN MIN(1.0, CAST(COALESCE(st.finish_sum, 0) AS REAL) / st.view_sum)
       ELSE 0 END AS finish_rate,
-    k.name AS category_name
+    k.name AS category_name,
+    b.kind AS kind
   FROM books b
   JOIN authors a ON a.id = b.author_id
-  JOIN categories k ON k.id = b.category_id`;
+  JOIN categories k ON k.id = b.category_id
+  LEFT JOIN (
+    SELECT book_id,
+           MAX(CASE WHEN status = 'published' THEN published_at END) AS last_published_at,
+           MAX(CASE WHEN status = 'published' THEN number END) AS latest_chapter_number,
+           SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published_count,
+           SUM(CASE WHEN status = 'published' THEN view_count ELSE 0 END) AS view_sum,
+           SUM(CASE WHEN status = 'published' THEN finish_count ELSE 0 END) AS finish_sum
+    FROM chapters GROUP BY book_id
+  ) st ON st.book_id = b.id
+  LEFT JOIN (
+    SELECT book_id, COUNT(*) AS favorite_count FROM favorites GROUP BY book_id
+  ) fav ON fav.book_id = b.id`;
 
 function toSection(row: FeedBookRow, score = 0, reason?: string): DiscoverySection['items'][number] {
   return {

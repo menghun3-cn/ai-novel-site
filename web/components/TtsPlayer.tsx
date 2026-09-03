@@ -92,7 +92,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
   // 移动端 getVoices() 首次常为空且 voiceschanged 可能不触发:轮询 + 回前台兜底 + 手动重试。
   useEffect(() => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      setTtsError('当前浏览器不支持系统语音朗读;可改用「AI 情感朗读」');
+      setTtsError('当前浏览器不支持系统语音听书;可改用「AI 情感听书」');
       return;
     }
     setSupported(true);
@@ -237,7 +237,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
         // canceled/interrupted 是主动 cancel() 的正常伴生事件;其余错误才中断播放
         if (!playingRef.current || ev.error === 'canceled' || ev.error === 'interrupted') return;
         console.warn('[TTS] 朗读出错:', ev.error);
-        setTtsError('系统语音朗读出错,可切换「AI 情感朗读」');
+        setTtsError('系统语音听书出错,可切换「AI 情感听书」');
         stop();
       };
       window.speechSynthesis.speak(u);
@@ -468,7 +468,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
   const startEdge = useCallback(() => {
     const units = buildEdgeUnits();
     if (units.length === 0) {
-      setTtsError('未找到可朗读的正文内容');
+      setTtsError('未找到可听书的正文内容');
       return;
     }
     edgeQueueRef.current = units;
@@ -622,7 +622,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
             className="flex h-9 items-center gap-1.5 rounded-full bg-sky-600 px-4 text-xs font-medium text-white transition hover:bg-sky-500 active:scale-95"
           >
             <span aria-hidden>▶</span>
-            {paused ? '继续' : '朗读'}
+            {paused ? '继续' : '听书'}
           </button>
         ) : (
           <button
@@ -649,10 +649,10 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
           value={engine}
           onChange={(e) => onChangeEngine(e.target.value as Engine)}
           className="h-9 max-w-[190px] rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-          aria-label="选择朗读引擎"
-          title="AI 情感朗读走免费 Edge 神经语音(情感自然);本地语音走 Kokoro 模型(离线可用,需镜像启用 ENABLE_LOCAL_TTS 并挂载模型);系统语音用浏览器内置语音"
+          aria-label="选择听书引擎"
+          title="AI 情感听书走免费 Edge 神经语音(情感自然);本地语音走 Kokoro 模型(离线可用,需镜像启用 ENABLE_LOCAL_TTS 并挂载模型);系统语音用浏览器内置语音"
         >
-          <option value="edge">✨ AI 情感朗读</option>
+          <option value="edge">✨ AI 情感听书</option>
           {kokoroOk ? <option value="kokoro">🎧 本地语音</option> : null}
           <option value="native">系统语音</option>
         </select>
@@ -734,8 +734,8 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
 
       {engine === 'native' && voices.length === 0 && supported ? (
         <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
-          未获取到系统语音列表:部分移动浏览器需先点一次「朗读」才会返回;如一直为空,可能是浏览器权限/WebView 限制,
-          建议改用「✨ AI 情感朗读」(不需要系统语音)。
+          未获取到系统语音列表:部分移动浏览器需先点一次「听书」才会返回;如一直为空,可能是浏览器权限/WebView 限制,
+          建议改用「✨ AI 情感听书」(不需要系统语音)。
           <button
             type="button"
             onClick={() => setVoiceRetry((n) => n + 1)}
@@ -752,7 +752,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
 
       {isPlaying && (
         <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-          正在朗读第 {activePara + 1}/{paraTotal} 段
+          正在听书第 {activePara + 1}/{paraTotal} 段
           {engine === 'edge' ? '(AI 情感语音)' : engine === 'kokoro' ? '(本地语音)' : ''}
         </p>
       )}

@@ -676,9 +676,15 @@ export interface FeedItem {
 }
 
 export interface CategoryWithCount {
+  id: number;
   slug: string;
   name: string;
+  /** 公开可见书籍总数(排除 hidden) */
   count: number;
+  /** 长篇小说数(kind='long',公开可见) */
+  longCount: number;
+  /** 短篇小说数(kind='short',公开可见) */
+  shortCount: number;
 }
 
 export interface UpsertBookInput {

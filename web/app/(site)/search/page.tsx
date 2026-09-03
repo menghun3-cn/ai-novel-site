@@ -50,7 +50,7 @@ export default async function SearchPage({
               <div className="h-14 w-10 shrink-0 overflow-hidden rounded bg-neutral-100 dark:bg-neutral-900">
                 {b.coverPath ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={`/${b.coverPath}`} alt={b.title} className="h-full w-full object-cover" />
+                  <img src={`/${b.coverPath}`} alt={b.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                 ) : null}
               </div>
               <div className="min-w-0 flex-1">
