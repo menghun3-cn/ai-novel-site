@@ -1,0 +1,44 @@
+title:
+  en: "Local Kokoro Chinese TTS as a listen-back engine alongside Edge"
+  zh: "本地 Kokoro 中文 TTS,与 Edge 并列的听书引擎"
+summary:
+  en: |
+    Adds a third listen-back engine `kokoro` (本地语音) built on kokoro-js-zh 2.1.7
+    (Chinese fork of kokoro-js) with eight Chinese voices (zf_* female, zm_* male) and
+    espeak-ng zh-CN phonemization, paired with the onnx-community/Kokoro-82M-v1.0-ONNX
+    model (q8). Dockerfile gains ARG ENABLE_LOCAL_TTS for conditional install
+    (kokoro-js-zh + onnxruntime-node, --no-save) plus build-time espeak-ng.wasm copy
+    and voice .bin pre-download; runtime detection (kokoroAvailable) falls back to Edge
+    when the dependency or model is unavailable. Assets self-heal via ensureRuntimeAssets;
+    model downloads default to hf-mirror with KOKORO_HF_ENDPOINT override.
+  zh: |
+    新增第三听书引擎 `kokoro`(本地语音),基于 kokoro-js-zh 2.1.7(kokoro-js 中文 fork),
+    含 8 个中文语音(zf_* 女声、zm_* 男声)与 espeak-ng zh-CN 音素化,配
+    onnx-community/Kokoro-82M-v1.0-ONNX 模型(q8)。Dockerfile 新增
+    ARG ENABLE_LOCAL_TTS 条件安装(kokoro-js-zh + onnxruntime-node,--no-save),
+    并构建时复制 espeak-ng.wasm、预下载语音 .bin;运行时 kokoroAvailable 探测,
+    依赖或模型不可用时回退 Edge。ensureRuntimeAssets 自愈资产;模型下载默认
+    hf-mirror,KOKORO_HF_ENDPOINT 可覆盖。
+steps:
+  en:
+    - "Added web/lib/kokoro.ts (8-voice Chinese whitelist, client-safe) and web/lib/kokoro-server.ts (detection, asset self-healing, WAV synthesis)."
+    - "Extended /api/tts with engine=kokoro (audio/wav, 503 when unavailable) and a GET probe; TtsPlayer gained the 🎧 本地语音 engine option with voice selection persisted in localStorage."
+    - "Dockerfile: ARG ENABLE_LOCAL_TTS / ONNX_BINARY_MIRROR / KOKORO_HF_ENDPOINT; =1 installs kokoro-js-zh@2.1.7 + onnxruntime-node@1.29.0, copies espeak-ng.wasm, pre-downloads voice .bin via Node fetch (slim image has no curl)."
+    - "docker-compose: ./models/kokoro volume as KOKORO_MODEL_DIR; next.config serverExternalPackages lists kokoro-js-zh/@huggingface/transformers/onnxruntime-node/phonemizer/espeak-ng."
+    - "Added scripts/verify-tts-local.ts + npm run test:tts-local; README-部署 Q3.3 documents enablement."
+  zh:
+    - "新增 web/lib/kokoro.ts(8 中文语音白名单,客户端安全)与 web/lib/kokoro-server.ts(探测、资产自愈、WAV 合成)。"
+    - "/api/tts 扩展 engine=kokoro(audio/wav,不可用返回 503)与 GET 探测;TtsPlayer 新增 🎧 本地语音 引擎选项,语音选择 localStorage 持久化。"
+    - "Dockerfile:ARG ENABLE_LOCAL_TTS / ONNX_BINARY_MIRROR / KOKORO_HF_ENDPOINT;=1 安装 kokoro-js-zh@2.1.7 + onnxruntime-node@1.29.0,复制 espeak-ng.wasm,用 Node fetch 预下载语音 .bin(slim 镜像无 curl)。"
+    - "docker-compose:./models/kokoro 卷作为 KOKORO_MODEL_DIR;next.config serverExternalPackages 列出 kokoro-js-zh/@huggingface/transformers/onnxruntime-node/phonemizer/espeak-ng。"
+    - "新增 scripts/verify-tts-local.ts + npm run test:tts-local;README-部署 Q3.3 说明启用步骤。"
+follow-up:
+  en: |
+    - Full `docker compose build --build-arg ENABLE_LOCAL_TTS=1` must be verified on a Docker host (not available in this workspace).
+    - Voice whitelist and model pairing are validated for v1.0-ONNX; revisit if a newer zh model changes the voices/ layout.
+  zh: |
+    - 完整 `docker compose build --build-arg ENABLE_LOCAL_TTS=1` 需在有 Docker 的主机验证(本工作区无)。
+    - 语音白名单与模型配对已按 v1.0-ONNX 验证;若更新的 zh 模型改变 voices/ 布局需复查。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/119"
+  branch: "feat/local-kokoro-tts"

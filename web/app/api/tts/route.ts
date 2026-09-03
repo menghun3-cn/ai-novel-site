@@ -1,12 +1,24 @@
-// Edge TTS(微软在线神经语音)免费代理:浏览器 → 本路由 → bing WebSocket → MP3。
-// 神经语音带情感/韵律(晓晓/云希等),替代系统内置机械音;无需 API Key。
-// 协议(2026-08 起 bing 要求,与 edge-tts 7.2+ 一致):
-// - URL 必须携带 Sec-MS-GEC / Sec-MS-GEC-Version 参数(仅放 header 会被 403);
-// - Sec-MS-GEC = sha256(5 分钟取整的 Windows 文件时间 tick 十进制串 + TrustedClientToken) 大写;
-// - 请求为带 `Path:` 头的文本帧:先 Path:speech.config,再 Path:ssml;
-// - 音频以二进制分片返回:2 字节大端头长度 + 头 + MP3 数据。
+// TTS 合成代理,双引擎:
+// - edge(默认):Edge TTS(微软在线神经语音)免费代理:浏览器 → 本路由 → bing WebSocket → MP3。
+//   神经语音带情感/韵律(晓晓/云希等),替代系统内置机械音;无需 API Key。
+//   协议(2026-08 起 bing 要求,与 edge-tts 7.2+ 一致):
+//   - URL 必须携带 Sec-MS-GEC / Sec-MS-GEC-Version 参数(仅放 header 会被 403);
+//   - Sec-MS-GEC = sha256(5 分钟取整的 Windows 文件时间 tick 十进制串 + TrustedClientToken) 大写;
+//   - 请求为带 `Path:` 头的文本帧:先 Path:speech.config,再 Path:ssml;
+//   - 音频以二进制分片返回:2 字节大端头长度 + 头 + MP3 数据。
+// - kokoro(本地):Kokoro TTS 82M 模型,镜像以 ENABLE_LOCAL_TTS=1 构建时可用,
+//   模型走 KOKORO_MODEL_DIR 卷挂载(未挂载自动在线下载到缓存);返回 WAV。
+//   依赖/模型不可用时路由返回 503,前端据此回退 Edge。
 import crypto from 'node:crypto';
 import { buildEdgeSSML, EDGE_VOICES } from '@/lib/edge-tts';
+import { KOKORO_VOICES } from '@/lib/kokoro';
+import {
+  ensureRuntimeAssets,
+  kokoroAvailable,
+  kokoroModelDir,
+  kokoroVoicesReady,
+  synthesizeKokoro,
+} from '@/lib/kokoro-server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -169,9 +181,9 @@ async function synthesize(text: string, voice: string, rate: number): Promise<Bu
 }
 
 export async function POST(req: Request): Promise<Response> {
-  let body: { text?: unknown; voice?: unknown; rate?: unknown };
+  let body: { text?: unknown; voice?: unknown; rate?: unknown; engine?: unknown };
   try {
-    body = (await req.json()) as { text?: unknown; voice?: unknown; rate?: unknown };
+    body = (await req.json()) as { text?: unknown; voice?: unknown; rate?: unknown; engine?: unknown };
   } catch {
     return Response.json({ error: '请求体不是合法 JSON' }, { status: 400 });
   }
@@ -180,6 +192,37 @@ export async function POST(req: Request): Promise<Response> {
   if (text.length > MAX_TEXT) {
     return Response.json({ error: `单次合成文本过长(≤${MAX_TEXT} 字)` }, { status: 400 });
   }
+  const engine = body.engine === 'kokoro' ? 'kokoro' : 'edge';
+
+  // kokoro 本地引擎:依赖/模型不可用 → 503(前端据 engine 回退 edge)
+  if (engine === 'kokoro') {
+    if (!kokoroAvailable()) {
+      return Response.json(
+        {
+          error:
+            '本地语音引擎不可用:镜像未启用 ENABLE_LOCAL_TTS,或模型未挂载(KOKORO_MODEL_DIR 无 .onnx 文件)',
+        },
+        { status: 503 }
+      );
+    }
+    const voice = typeof body.voice === 'string' ? body.voice : KOKORO_VOICES[0].voiceURI;
+    if (!KOKORO_VOICES.some((v) => v.voiceURI === voice)) {
+      return Response.json({ error: `未知语音: ${voice}` }, { status: 400 });
+    }
+    try {
+      const audio = await synthesizeKokoro(text, voice);
+      return new Response(new Uint8Array(audio), {
+        headers: {
+          'Content-Type': 'audio/wav',
+          'Cache-Control': 'no-store',
+          'Content-Length': String(audio.length),
+        },
+      });
+    } catch (err) {
+      return Response.json({ error: err instanceof Error ? err.message : '本地语音合成失败' }, { status: 502 });
+    }
+  }
+
   const voice = typeof body.voice === 'string' ? body.voice : EDGE_VOICES[0].voiceURI;
   if (!EDGE_VOICES.some((v) => v.voiceURI === voice)) {
     return Response.json({ error: `未知语音: ${voice}` }, { status: 400 });
@@ -200,4 +243,26 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : '语音合成失败' }, { status: 502 });
   }
+}
+
+/** 引擎状态查询:TtsPlayer 挂载时探测本地引擎可用性,决定是否展示 kokoro 选项 */
+export async function GET(): Promise<Response> {
+  let voicesReady = kokoroVoicesReady();
+  if (kokoroAvailable() && !voicesReady) {
+    // 语音文件缺失时先尝试补齐(espeak-ng.wasm + 8 个中文语音),再上报可用性
+    try {
+      await ensureRuntimeAssets();
+      voicesReady = kokoroVoicesReady();
+    } catch {
+      /* 补齐失败视为不可用,edge 兜底 */
+    }
+  }
+  return Response.json({
+    engines: ['edge', 'native', ...(kokoroAvailable() && voicesReady ? (['kokoro'] as const) : [])],
+    kokoro: {
+      available: kokoroAvailable() && voicesReady,
+      modelDir: kokoroModelDir(),
+      voices: KOKORO_VOICES,
+    },
+  });
 }

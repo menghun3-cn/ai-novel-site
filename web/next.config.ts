@@ -2,7 +2,17 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@novel/core'],
-  serverExternalPackages: ['better-sqlite3'],
+  serverExternalPackages: [
+    'better-sqlite3',
+    // Kokoro 本地 TTS:onnxruntime-node 是原生 .node 模块,必须留给 Node 运行时加载,
+    // 不能交给 webpack 打包;transformers.js 同样在运行时动态 require 原生绑定。
+    // kokoro-js-zh 是支持中文的 fork(原版 kokoro-js 只有英文语音)。
+    'kokoro-js-zh',
+    '@huggingface/transformers',
+    'onnxruntime-node',
+    'phonemizer',
+    'espeak-ng',
+  ],
 
   // 缓存策略(分层):
   //  1. 个人/账号/会话相关页面 —— no-store,禁止 CDN/反代/浏览器缓存(依赖 cookie,误缓存会串号/留旧数据)。
