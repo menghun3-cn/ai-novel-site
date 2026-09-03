@@ -335,6 +335,27 @@ docker compose build \
 > docker compose exec web npm run import:novel -- /app/novels/长风渡
 > ```
 
+**Q3.3：如何启用听书「本地语音」（Kokoro TTS）？**
+听书默认走 Edge 在线合成（无需配置）。要启用完全离线的本地引擎，两步：
+
+1. 构建镜像时带 `ENABLE_LOCAL_TTS=1`（deps 阶段才会安装 kokoro-js-zh（中文 fork）+ onnxruntime-node，并内置 espeak-ng.wasm 与 8 个中文语音文件）：
+```bash
+docker compose build --build-arg ENABLE_LOCAL_TTS=1
+# 国内 onnxruntime-node 二进制走 GitHub 慢时,追加:
+#   --build-arg ONNX_BINARY_MIRROR=https://registry.npmmirror.com/-/binary/onnxruntime
+```
+2. 把模型权重放进 `./models/kokoro/`（compose 已挂载为 `/app/models/kokoro`，目录内存在 `.onnx` 文件即启用；空目录 = 未启用，自动回退 Edge）：
+```bash
+# 从 HuggingFace 下载 onnx-community/Kokoro-82M-v1.0-ONNX 的量化权重:
+# 模型卡: https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX
+# 常用文件: config.json / tokenizer.json / model.onnx(或 model_q8.onnx)
+```
+不挂载模型时引擎会尝试在线下载到 `/app/data/.kokoro-cache`（data 卷持久化，重启不丢）。模型远端默认走 **hf-mirror**（国内可直连）；海外服务器可加环境变量 `KOKORO_HF_ENDPOINT=https://huggingface.co` 切回官方源。容器内验证：
+```bash
+docker compose exec web npm run test:tts-local
+```
+听书页「朗读引擎」下拉会出现「🎧 本地语音」选项（服务端探测到模型才显示）。可选 8 个中文语音：小小/小北/小妮/小伊（女）、云健/云希/云夏/云扬（男）。
+
 **Q4：修改章节后没反应？**
 确认 `watch.enabled: true` 且服务在运行；新章节写入后约 3 秒内（防抖 + 稳定性检查）会自动构建。
 
