@@ -258,7 +258,8 @@ export async function GET(): Promise<Response> {
     }
   }
   return Response.json({
-    engines: ['edge', 'native', ...(kokoroAvailable() && voicesReady ? (['kokoro'] as const) : [])],
+    // kokoro 优先:本地引擎是默认推荐(移动端网络中间层不会拦截本地合成)
+    engines: [...(kokoroAvailable() && voicesReady ? (['kokoro'] as const) : []), 'edge', 'native'],
     kokoro: {
       available: kokoroAvailable() && voicesReady,
       modelDir: kokoroModelDir(),
