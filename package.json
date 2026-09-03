@@ -1,6 +1,6 @@
 {
   "name": "novel-builder",
-  "version": "8.2.0",
+  "version": "8.2.1",
   "description": "MD/TXT 小说目录 → Content Core → Web Publisher / EPUB / BookOrbit",
   "type": "module",
   "license": "MIT",
