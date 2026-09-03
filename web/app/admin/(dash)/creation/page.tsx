@@ -10,9 +10,11 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  Clock,
   Copy,
   ExternalLink,
   Factory,
+  Layers,
   Play,
   Plus,
   RefreshCw,
@@ -26,6 +28,7 @@ import {
   Badge,
   Button,
   ConfirmDialog,
+  Drawer,
   DropdownMenu,
   EmptyState,
   Field,
@@ -433,7 +436,7 @@ function buildConfig(d: LineEditorDraft): LineConfig {
   return config;
 }
 
-function LineEditorModal({ open, line, onClose, onSaved }: { open: boolean; line: LineWithMeta | null; onClose: () => void; onSaved: () => void }) {
+function LineEditorDrawer({ open, line, onClose, onSaved }: { open: boolean; line: LineWithMeta | null; onClose: () => void; onSaved: () => void }) {
   const [draft, setDraft] = useState<LineEditorDraft>(() => toDraft(line));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
@@ -476,10 +479,11 @@ function LineEditorModal({ open, line, onClose, onSaved }: { open: boolean; line
   };
 
   return (
-    <Modal
+    <Drawer
       open={open}
       title={draft.id ? '编辑产线' : '新建产线'}
       onClose={onClose}
+      headerExtra={<Badge tone={draft.enabled ? 'success' : 'info'}>{draft.enabled ? '启用' : '停用'}</Badge>}
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>取消</Button>
@@ -488,14 +492,14 @@ function LineEditorModal({ open, line, onClose, onSaved }: { open: boolean; line
       }
     >
       {err ? <div className="mb-3"><Notice tone="error">{err}</Notice></div> : null}
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <Field label="产线名称"><Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="如:短视频文案线" /></Field>
           <Field label="启用"><Select value={draft.enabled ? '1' : '0'} onChange={(e) => setDraft({ ...draft, enabled: e.target.value === '1' })}><option value="1">启用</option><option value="0">停用</option></Select></Field>
         </div>
         <Field label="描述"><Textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="产线用途说明(可选)" /></Field>
 
-        <div className="rounded-lg bg-[#f8fafc] p-3">
+        <div className="rounded-lg border border-[#e2e8f0] bg-white p-3">
           <p className="mb-2 text-sm font-semibold text-[#0f172a]">调度</p>
           <div className="grid grid-cols-3 gap-3">
             <Field label="触发模式">
@@ -510,7 +514,7 @@ function LineEditorModal({ open, line, onClose, onSaved }: { open: boolean; line
           </div>
         </div>
 
-        <div className="rounded-lg bg-[#f8fafc] p-3">
+        <div className="rounded-lg border border-[#e2e8f0] bg-white p-3">
           <p className="mb-2 text-sm font-semibold text-[#0f172a]">配额</p>
           <div className="grid grid-cols-3 gap-3">
             <Field label="单次上限"><Input type="number" value={draft.maxPerRun} onChange={(e) => setDraft({ ...draft, maxPerRun: e.target.value })} placeholder="可选" /></Field>
@@ -523,7 +527,7 @@ function LineEditorModal({ open, line, onClose, onSaved }: { open: boolean; line
           </label>
         </div>
 
-        <div className="rounded-lg bg-[#f8fafc] p-3">
+        <div className="rounded-lg border border-[#e2e8f0] bg-white p-3">
           <p className="mb-2 text-sm font-semibold text-[#0f172a]">质量闸门</p>
           <div className="grid grid-cols-3 gap-3">
             <Field label="达标分数线"><Input type="number" value={draft.minScore} onChange={(e) => setDraft({ ...draft, minScore: e.target.value })} placeholder="缺省 80" /></Field>
@@ -535,7 +539,7 @@ function LineEditorModal({ open, line, onClose, onSaved }: { open: boolean; line
           </label>
         </div>
 
-        <div className="rounded-lg bg-[#f8fafc] p-3">
+        <div className="rounded-lg border border-[#e2e8f0] bg-white p-3">
           <p className="mb-2 text-sm font-semibold text-[#0f172a]">创作基线(共享,可选)</p>
           <div className="grid grid-cols-2 gap-3">
             <Field label="主题基调"><Textarea className="min-h-[40px]" value={draft.sharedBrief.theme} onChange={(e) => setDraft({ ...draft, sharedBrief: { ...draft.sharedBrief, theme: e.target.value } })} placeholder="留空=自由发挥" /></Field>
@@ -545,14 +549,14 @@ function LineEditorModal({ open, line, onClose, onSaved }: { open: boolean; line
           </div>
         </div>
 
-        <div className="rounded-lg bg-[#f8fafc] p-3">
+        <div className="rounded-lg border border-[#e2e8f0] bg-white p-3">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-semibold text-[#0f172a]">题材 / 类型清单(支持批量生成不同题材)</p>
             <Button variant="ghost" size="xs" onClick={() => setDraft({ ...draft, kinds: [...draft.kinds, { genre: '', weight: '1', synopsis: '', seeds: '' }] })}><Plus size={13} /> 添加题材</Button>
           </div>
           <div className="space-y-3">
             {draft.kinds.map((k, i) => (
-              <div key={i} className="rounded-lg border border-[#e2e8f0] bg-white p-3">
+              <div key={i} className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3">
                 <div className="flex items-start gap-2">
                   <div className="grid flex-1 grid-cols-3 gap-2">
                     <Field label="题材"><Input value={k.genre} onChange={(e) => setKind(i, { genre: e.target.value })} placeholder="如:都市言情" /></Field>
@@ -569,7 +573,7 @@ function LineEditorModal({ open, line, onClose, onSaved }: { open: boolean; line
           </div>
         </div>
       </div>
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -593,46 +597,75 @@ function LinesTab({ lines, onChanged, onRun, onToggle, onDelete }: {
         <EmptyState icon={<Factory size={24} />} title="还没有内容产线" description="创建一条产线,即可按设定批量生成不同题材/类型的短篇小说。" />
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {lines.map((line) => (
-            <div key={line.id} className="rounded-xl border border-[#e2e8f0] bg-white p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="truncate text-base font-semibold text-[#0f172a]">{line.name}</h3>
-                    {!line.enabled ? <Badge tone="info">停用</Badge> : null}
+          {lines.map((line) => {
+            const cfg = line.config;
+            const totalWeight = cfg.kinds.reduce((s, x) => s + x.weight, 0);
+            return (
+              <div key={line.id} className="flex flex-col rounded-xl border border-[#e2e8f0] bg-white p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate text-base font-semibold text-[#0f172a]">{line.name}</h3>
+                      {!line.enabled ? <Badge tone="info">停用</Badge> : <Badge tone="success">启用</Badge>}
+                      {line.lastRunStatus ? <RunStatus status={line.lastRunStatus} /> : null}
+                    </div>
+                    <p className="mt-1 text-xs text-[#64748b]">{line.description || '未填写描述'}</p>
                   </div>
-                  <p className="mt-1 text-xs text-[#64748b]">{line.description || '未填写描述'}</p>
+                  <DropdownMenu
+                    align="right"
+                    trigger={<Button variant="ghost" size="xs" title="更多操作">•••</Button>}
+                    items={[
+                      { label: '编辑', onSelect: () => { setEditorLine(line); setEditorOpen(true); } },
+                      { label: line.enabled ? '停用' : '启用', onSelect: () => onToggle(line.id, !line.enabled) },
+                      { label: '删除', danger: true, onSelect: () => onDelete(line.id) },
+                    ]}
+                  />
                 </div>
-                <DropdownMenu
-                  align="right"
-                  trigger={<Button variant="ghost" size="xs" title="更多操作">•••</Button>}
-                  items={[
-                    { label: '编辑', onSelect: () => { setEditorLine(line); setEditorOpen(true); } },
-                    { label: line.enabled ? '停用' : '启用', onSelect: () => onToggle(line.id, !line.enabled) },
-                    { label: '删除', danger: true, onSelect: () => onDelete(line.id) },
-                  ]}
-                />
+
+                {/* 执行配置:调度/每批/配额/闸门 —— 用户最关心的信息,无需进编辑 */}
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 rounded-lg bg-[#f8fafc] px-3 py-2.5 text-xs text-[#334155]">
+                  <span className="inline-flex items-center gap-1.5 font-medium text-[#0f172a]">
+                    <Clock size={13} className="shrink-0 text-[#64748b]" />
+                    {cfg.schedule.mode === 'daily' ? `每日 ${String(cfg.schedule.hour ?? 8).padStart(2, '0')}:00` : '手动触发'}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <Layers size={13} className="shrink-0 text-[#64748b]" />
+                    每批 {cfg.schedule.count} 篇
+                  </span>
+                  {cfg.quota?.maxPerRun ? <span>单次上限 {cfg.quota.maxPerRun}</span> : null}
+                  {cfg.quota?.dailyLimit ? <span>每日上限 {cfg.quota.dailyLimit}</span> : null}
+                  {cfg.quota?.dailyBudgetUsd ? <span>预算 ${cfg.quota.dailyBudgetUsd}/日</span> : null}
+                  {cfg.qualityGate?.minScore ? <span>达标线 {cfg.qualityGate.minScore} 分</span> : null}
+                  {cfg.qualityGate?.publishOnPass ? <span className="text-[#047857]">自动发布</span> : null}
+                </div>
+
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {cfg.kinds.map((k) => (
+                    <span key={k.genre} className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-xs text-[#334155]">{k.genre}{cfg.kinds.length > 1 ? ` ${Math.round((k.weight / totalWeight) * 100)}%` : ''}</span>
+                  ))}
+                </div>
+
+                <div className="mt-4 grid grid-cols-4 gap-2 text-center">
+                  <Stat label="今日" value={line.todayCreated} />
+                  <Stat label="达标" value={line.passed} />
+                  <Stat label="发布" value={line.published} />
+                  <Stat label="通过率" value={line.passRate === null ? '—' : `${line.passRate}%`} />
+                </div>
+
+                <div className="mt-auto flex items-center justify-between border-t border-[#f1f5f9] pt-3">
+                  <span className="text-xs text-[#94a3b8]">
+                    {line.lastRunAt
+                      ? `上次 ${formatRelativeTime(line.lastRunAt)}${line.lastRunTitle ? ` · ${line.lastRunTitle}` : ''}`
+                      : '尚未运行'}
+                  </span>
+                  <Button variant="primary" size="sm" disabled={!line.enabled} onClick={() => onRun(line.id)}><Play size={13} /> 运行</Button>
+                </div>
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {line.config.kinds.map((k) => (
-                  <span key={k.genre} className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-xs text-[#334155]">{k.genre}{line.config.kinds.length > 1 ? ` ${Math.round((k.weight / line.config.kinds.reduce((s, x) => s + x.weight, 0)) * 100)}%` : ''}</span>
-                ))}
-              </div>
-              <div className="mt-4 grid grid-cols-4 gap-2 text-center">
-                <Stat label="今日" value={line.todayCreated} />
-                <Stat label="达标" value={line.passed} />
-                <Stat label="发布" value={line.published} />
-                <Stat label="通过率" value={line.passRate === null ? '—' : `${line.passRate}%`} />
-              </div>
-              <div className="mt-3 flex items-center justify-between border-t border-[#f1f5f9] pt-3">
-                <span className="text-xs text-[#94a3b8]">{line.lastRunAt ? `上次 ${formatRelativeTime(line.lastRunAt)}` : `调度:${line.config.schedule.mode === 'daily' ? `每日 ${String(line.config.schedule.hour ?? 8).padStart(2, '0')}:00` : '手动'}`}</span>
-                <Button variant="primary" size="sm" disabled={!line.enabled} onClick={() => onRun(line.id)}><Play size={13} /> 运行</Button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-      {editorOpen ? <LineEditorModal open={editorOpen} line={editorLine} onClose={() => setEditorOpen(false)} onSaved={onChanged} /> : null}
+      {editorOpen ? <LineEditorDrawer open={editorOpen} line={editorLine} onClose={() => setEditorOpen(false)} onSaved={onChanged} /> : null}
     </div>
   );
 }
