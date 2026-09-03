@@ -336,21 +336,23 @@ docker compose build \
 > ```
 
 **Q3.3：如何启用听书「本地语音」（Kokoro TTS）？**
-听书默认走 Edge 在线合成（无需配置）。要启用完全离线的本地引擎，两步：
-
-1. 构建镜像时带 `ENABLE_LOCAL_TTS=1`（deps 阶段才会安装 kokoro-js-zh（中文 fork）+ onnxruntime-node，并内置 espeak-ng.wasm 与 8 个中文语音文件）：
+听书默认走 Edge 在线合成（无需配置）。要启用完全离线的本地引擎，一条命令（构建镜像并自动下载中文模型）：
 ```bash
-docker compose build --build-arg ENABLE_LOCAL_TTS=1
-# 国内 onnxruntime-node 二进制走 GitHub 慢时,追加:
-#   --build-arg ONNX_BINARY_MIRROR=https://registry.npmmirror.com/-/binary/onnxruntime
+./rebuild.sh --tts --model
+# 等价拆分执行:
+#   docker compose build --build-arg ENABLE_LOCAL_TTS=1   # 镜像内置 kokoro-js-zh + 语音
+#   ./rebuild.sh --model                                  # 模型权重下载到 ./models/kokoro
 ```
-2. 把模型权重放进 `./models/kokoro/`（compose 已挂载为 `/app/models/kokoro`，目录内存在 `.onnx` 文件即启用；空目录 = 未启用，自动回退 Edge）：
+国内 onnxruntime-node 二进制走 GitHub 慢时，加环境变量再跑：
 ```bash
-# 从 HuggingFace 下载 onnx-community/Kokoro-82M-v1.0-ONNX 的量化权重:
-# 模型卡: https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX
-# 常用文件: config.json / tokenizer.json / model.onnx(或 model_q8.onnx)
+ONNX_BINARY_MIRROR=https://registry.npmmirror.com/-/binary/onnxruntime ./rebuild.sh --tts --model
 ```
-不挂载模型时引擎会尝试在线下载到 `/app/data/.kokoro-cache`（data 卷持久化，重启不丢）。模型远端默认走 **hf-mirror**（国内可直连）；海外服务器可加环境变量 `KOKORO_HF_ENDPOINT=https://huggingface.co` 切回官方源。容器内验证：
+说明：
+- `--tts`：deps 阶段才安装 kokoro-js-zh（中文 fork）+ onnxruntime-node，并内置 espeak-ng.wasm 与 8 个中文语音文件；不带此参数则镜像不含本地引擎、体积不变（回退 Edge）。
+- `--model`：自动下载 `onnx-community/Kokoro-82M-v1.0-ONNX` 的 `onnx/model_quantized.onnx`（q8 量化）等文件到 `./models/kokoro/`（compose 已挂载为 `/app/models/kokoro`）。**必须下载 `onnx/model_quantized.onnx`**——引擎 q8 固定找 `_quantized` 后缀 + `onnx/` 子目录，其它文件（model.onnx / model_q8.onnx）不会被加载。模型卡: https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX
+- 模型远端默认走 **hf-mirror**（国内可直连）；海外服务器设 `KOKORO_HF_ENDPOINT=https://huggingface.co` 切官方源。
+- 不挂载模型时引擎会尝试在线下载到 `/app/data/.kokoro-cache`（data 卷持久化，重启不丢）。
+- `./rebuild.sh --tts` 启动后会自动在容器内跑合成验证：
 ```bash
 docker compose exec web npm run test:tts-local
 ```

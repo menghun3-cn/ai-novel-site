@@ -234,6 +234,7 @@ npm run scheduler           # 前台运行调度器(默认 60s 一 tick)
 ```bash
 docker compose up -d          # 启动 web(:33000) + scheduler 两个服务
 ./rebuild.sh                  # 代码更新后一键重建镜像并重启
+./rebuild.sh --tts --model    # 重建并启用本地 Kokoro TTS(自动下载中文模型,见 README-部署.md Q3.3)
 ```
 
 - `web`:Next.js 生产包,暴露 `33000`,挂载 `./data`(SQLite)、封面目录与 `novels/`;
