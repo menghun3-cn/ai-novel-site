@@ -16,6 +16,7 @@
 import {
   enqueueCreationPipeline,
   fireBatchSchedule,
+  fireDueContinuousProductionRuns,
   fireDueDailyProductionRuns,
   fireScheduledStory,
   getDataDir,
@@ -122,6 +123,16 @@ async function tick(): Promise<void> {
     }
   } catch (err) {
     console.error(`[${new Date().toISOString()}] ai-serial cycle failed:`, err);
+  }
+
+  // V10.5 持续创作:背压驱动的无间隙生产(每 tick 检查一次;达到阈值自动熔断)
+  try {
+    const fired = fireDueContinuousProductionRuns();
+    if (fired.length > 0) {
+      console.log(`[${new Date().toISOString()}] continuous-production: fired=${fired.length}`);
+    }
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] continuous production cycle failed:`, err);
   }
 
   // V9 阶段二:统一处理 ai_tasks(章节评审/弧级评审/PROCESS 等待任务),后台驱动长篇评审

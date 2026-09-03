@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ id: string }> };
 
 const runSchema = z.object({
-  /** 触发方式:manual(默认)/daily */
-  trigger: z.enum(['manual', 'daily']).optional(),
+  /** 触发方式:manual(默认)/daily/continuous */
+  trigger: z.enum(['manual', 'daily', 'continuous']).optional(),
   /** 本次运行篇数(覆盖产线默认,受单次上限约束) */
   count: z.number().int().min(1).max(50).optional(),
 });

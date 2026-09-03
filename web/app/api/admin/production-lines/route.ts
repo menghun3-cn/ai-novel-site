@@ -10,6 +10,7 @@ const createSchema = z.object({
   description: z.string().max(500).nullish(),
   enabled: z.boolean().optional(),
   config: z.unknown(),
+  maxConsecutiveFailures: z.number().int().min(1).max(20).optional(),
 });
 
 /** 产线清单(带运行/产出概览),供产线页渲染 */
@@ -20,5 +21,5 @@ export const GET = withAdmin<AdminRouteContext>(async () => {
 /** 新建产线(校验题材/调度/配额等配置) */
 export const POST = withAdmin<AdminRouteContext>(async (req: NextRequest) => {
   const body = await readJson(req, createSchema);
-  return json({ line: createProductionLine({ name: body.name, description: body.description ?? null, enabled: body.enabled ?? true, config: body.config }) }, 201);
+  return json({ line: createProductionLine({ name: body.name, description: body.description ?? null, enabled: body.enabled ?? true, config: body.config, maxConsecutiveFailures: body.maxConsecutiveFailures }) }, 201);
 });
