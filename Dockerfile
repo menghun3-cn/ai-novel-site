@@ -17,11 +17,10 @@ ARG SQLITE_BINARY_MIRROR=https://registry.npmmirror.com/-/binary/better-sqlite3
 ENV npm_config_better_sqlite3_binary_host_mirror=$SQLITE_BINARY_MIRROR
 # 本地 Kokoro TTS 开关:=1 时在 deps 阶段额外安装 kokoro-js-zh(中文 fork)+ onnxruntime-node(原生 .node 模块)。
 # =0(默认)时镜像不含本地引擎,听书走 Edge 在线合成,体积不变。
-# onnxruntime-node 的预编译二进制走 GitHub releases,国内构建用
-#   --build-arg ONNX_BINARY_MIRROR=https://registry.npmmirror.com/-/binary/onnxruntime 切镜像。
+# onnxruntime-node 1.29+ 的 Linux x64 CPU 二进制已捆绑在 npm 包内;其 install 脚本
+# 默认还会按 manifest 下载未捆绑的 CUDA/GPU 二进制(NuGet,302 重定向且无 mirror 支持,
+# 国内构建必失败)。CPU 推理用不到,用 --onnxruntime-node-install=skip 跳过该下载。
 ARG ENABLE_LOCAL_TTS=0
-ARG ONNX_BINARY_MIRROR=
-ENV npm_config_onnxruntime_binary_host_mirror=$ONNX_BINARY_MIRROR
 COPY package.json package-lock.json* ./
 COPY core/package.json   ./core/
 COPY web/package.json    ./web/
@@ -39,8 +38,10 @@ RUN --mount=type=cache,target=/root/.npm npm config set registry "$NPM_REGISTRY"
 #   - espeak-ng.wasm ← 从 espeak-ng 依赖包复制(该 npm 包漏发,不复制则中文 G2P 无法启动);
 #   - 8 个中文语音 voices/*.bin ← 从 HF 下载(默认 hf-mirror;离线构建可跳过,运行时自动补)。
 ARG KOKORO_HF_ENDPOINT=https://hf-mirror.com
+# ONNXRUNTIME_NODE_INSTALL=skip:跳过 install 脚本对未捆绑 CUDA/GPU 二进制的下载
+# (NuGet 302 重定向不可用;CPU 二进制已捆绑,skip 后完全离线安装,实测合成正常)。
 RUN if [ "$ENABLE_LOCAL_TTS" = "1" ]; then \
-      npm install --no-save --package-lock=false kokoro-js-zh@2.1.7 onnxruntime-node@1.29.0 --prefer-offline \
+      ONNXRUNTIME_NODE_INSTALL=skip npm install --no-save --package-lock=false kokoro-js-zh@2.1.7 onnxruntime-node@1.29.0 --prefer-offline \
       && node scripts/fetch-kokoro-voices.mjs "$KOKORO_HF_ENDPOINT" \
       && rm -f scripts/fetch-kokoro-voices.mjs; \
     fi
