@@ -33,6 +33,10 @@ git hooks、没有 CI workflow,且 GitHub Actions 被明确推迟,于是规则�
   3. 若存在非平凡文件但同一 push 没有任何笔记文件变更,打印违规文件清单并
      exit 1——**阻止本次 push**。
   4. 否则运行 `pnpm run doc-sync`,笔记树未全绿同样阻止 push。
+- 同一脚本内的 **master 直推守卫**:local ref 为 `refs/heads/master` 且 SHA 与
+  远端不同的 push 被拒绝,并提示走 PR 流程。权威强制是 `master` 分支保护规则
+  (合并前必须 PR、`enforce_admins: true`、禁 force push);本地守卫只是为了
+  快速失败并解释原因——服务端对被保护分支的拒绝提示很简短。
 
 ## Alternatives considered
 
@@ -59,3 +63,5 @@ git hooks、没有 CI workflow,且 GitHub Actions 被明确推迟,于是规则�
 - 非平凡判定刻意粗糙(任何非文档、非 package.json 文件都算)。`package.json`
   内的依赖升级即使非平凡也不会强制笔记;对 v1 可接受,门禁偏向不阻塞常规 push。
 - push 延迟增加 `doc-sync` 的运行时间(约几秒)。
+- 直接推 `master` 会被拦两次:本地 pre-push 守卫(快速、带解释)与服务端分支
+  保护(最终裁决)。master 的一切改动必须经 develop → master 的 PR。
