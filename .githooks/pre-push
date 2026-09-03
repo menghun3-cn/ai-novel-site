@@ -1,0 +1,7 @@
+#!/bin/sh
+# pre-push Agent Note 门禁:非平凡代码改动必须携带笔记 + doc-sync 全绿。
+# 逻辑在 scripts/hooks/verify-push-notes.mjs,此处只是 sh 壳(让 hook 可执行、可跨平台)。
+# 逃生门:git push --no-verify(本地钩子无法阻止,靠团队约定)。
+
+ROOT="$(git rev-parse --show-toplevel)"
+exec node "$ROOT/scripts/hooks/verify-push-notes.mjs"
