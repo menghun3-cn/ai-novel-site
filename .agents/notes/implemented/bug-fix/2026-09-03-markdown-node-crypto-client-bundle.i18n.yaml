@@ -1,0 +1,40 @@
+title:
+  en: "Markdown cache key must not depend on node:crypto — client bundling fails"
+  zh: "markdown 缓存键不能依赖 node:crypto——客户端打包失败"
+summary:
+  en: |
+    `web/lib/markdown.ts` used `createHash` from `node:crypto` for its content-addressed HTML
+    cache key. The module is shared by server pages and the client component
+    `app/admin/(dash)/works/[id]/page.tsx` (browser-side "渲染预览"), so webpack pulled it into
+    the client bundle and `next build` failed with `UnhandledSchemeError: node:crypto`. Replaced
+    the hash with a deterministic pure-JS two-pass FNV-1a (64-bit) key, removed the `node:crypto`
+    import, and verified a full production build succeeds. Other `node:` imports in the repo are
+    server-only and were left unchanged.
+  zh: |
+    `web/lib/markdown.ts` 用 `node:crypto` 的 `createHash` 生成内容寻址的 HTML 缓存键。该模块被
+    服务端页面与客户端组件 `app/admin/(dash)/works/[id]/page.tsx`(浏览器端「渲染预览」)共用,
+    webpack 将其打进客户端 bundle 后 `next build` 报 `UnhandledSchemeError: node:crypto`。
+    改为确定性纯 JS 双通道 FNV-1a(64 位)缓存键,移除 `node:crypto` 导入,并验证完整生产构建
+    通过。仓库其余 `node:` 导入均为服务端专用,保持原样。
+
+steps:
+  en:
+    - "Removed `import { createHash } from 'node:crypto'` from `web/lib/markdown.ts`."
+    - "Implemented `hash32()` (32-bit FNV-1a) and `cacheKey()` combining two passes with seeds 0x811c9dc5 and 0x9e3779b9 into a 64-bit hex key."
+    - "Verified with `npm run build -w web` (full Next.js production build, exit code 0)."
+  zh:
+    - "从 `web/lib/markdown.ts` 移除 `import { createHash } from 'node:crypto'`。"
+    - "实现 `hash32()`(32 位 FNV-1a)与 `cacheKey()`——种子 0x811c9dc5 与 0x9e3779b9 两路拼接为 64 位 hex 键。"
+    - "用 `npm run build -w web` 验证(完整 Next.js 生产构建,退出码 0)。"
+
+follow-up:
+  en: |
+    - None. The remaining `node:` imports (`admin-api.ts`, `admin-media.ts`, `api/tts/route.ts`)
+      are reachable only from server-side route handlers and stay as-is.
+  zh: |
+    - 无。其余 `node:` 导入(`admin-api.ts`、`admin-media.ts`、`api/tts/route.ts`)只被服务端
+      route handler 可达,保持原样。
+
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/new/chore/release-v8.2.2"
+  branch: "chore/release-v8.2.2"
