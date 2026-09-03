@@ -54,12 +54,15 @@ Key mechanisms:
 - **White-list gating.** Only the eight Chinese voices are exposed
   (`web/lib/kokoro.ts`); English voices are deliberately excluded per the
   product requirement 不要英文语音.
-- **One-command server enablement.** `rebuild.sh` gained `--tts` (builds with
-  `ENABLE_LOCAL_TTS=1`, forwards `ONNX_BINARY_MIRROR` as a build-arg when set,
-  and runs `npm run test:tts-local` inside the container after startup) and
-  `--model` (downloads the q8 weights into `./models/kokoro/` — the engine only
-  loads `onnx/model_quantized.onnx`: transformers.js defaults
-  `subfolder='onnx'` and maps dtype `q8` to the `_quantized` suffix).
+- **One-command server enablement.** `rebuild.sh` **enables local TTS by
+  default**: it builds with `ENABLE_LOCAL_TTS=1`, forwards `ONNX_BINARY_MIRROR`
+  as a build-arg when set, downloads the q8 weights into `./models/kokoro/`
+  (skipped entirely when `onnx/model_quantized.onnx` already exists — zero
+  network requests), and runs `npm run test:tts-local` inside the container
+  after startup. `--no-tts` / `--no-model` are the escape hatches (Edge-only
+  image, or skip the model download). The engine only loads
+  `onnx/model_quantized.onnx`: transformers.js defaults `subfolder='onnx'` and
+  maps dtype `q8` to the `_quantized` suffix.
 
 ## Alternatives considered
 

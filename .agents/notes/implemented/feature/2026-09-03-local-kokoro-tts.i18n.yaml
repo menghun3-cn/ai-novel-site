@@ -26,7 +26,7 @@ steps:
     - "Dockerfile: ARG ENABLE_LOCAL_TTS / ONNX_BINARY_MIRROR / KOKORO_HF_ENDPOINT; =1 installs kokoro-js-zh@2.1.7 + onnxruntime-node@1.29.0, then runs scripts/fetch-kokoro-voices.mjs (copies espeak-ng.wasm from the espeak-ng dep, pre-downloads the 8 voice .bin via Node fetch — slim image has no curl)."
     - "docker-compose: ./models/kokoro volume as KOKORO_MODEL_DIR; next.config serverExternalPackages lists kokoro-js-zh/@huggingface/transformers/onnxruntime-node/phonemizer/espeak-ng."
     - "Added scripts/verify-tts-local.ts + npm run test:tts-local; README-部署 Q3.3 documents enablement."
-    - "rebuild.sh gained --tts (builds with ENABLE_LOCAL_TTS=1, forwards ONNX_BINARY_MIRROR, runs test:tts-local in-container) and --model (downloads onnx/model_quantized.onnx into ./models/kokoro)."
+    - "rebuild.sh enables local TTS by default (ENABLE_LOCAL_TTS=1 + model download skipped when onnx/model_quantized.onnx exists); --no-tts/--no-model are escape hatches. Runs test:tts-local in-container after startup."
     - "Fix: the deps-stage asset prep is a standalone script, not an inline node -e — Dockerfile `\\` line continuation cannot carry a multi-line single-quoted script ('unknown instruction: const' parse error on the server)."
   zh:
     - "新增 web/lib/kokoro.ts(8 中文语音白名单,客户端安全)与 web/lib/kokoro-server.ts(探测、资产自愈、WAV 合成)。"
@@ -34,7 +34,7 @@ steps:
     - "Dockerfile:ARG ENABLE_LOCAL_TTS / ONNX_BINARY_MIRROR / KOKORO_HF_ENDPOINT;=1 安装 kokoro-js-zh@2.1.7 + onnxruntime-node@1.29.0,再执行 scripts/fetch-kokoro-voices.mjs(从 espeak-ng 依赖复制 espeak-ng.wasm,用 Node fetch 预下载 8 个语音 .bin,slim 镜像无 curl)。"
     - "docker-compose:./models/kokoro 卷作为 KOKORO_MODEL_DIR;next.config serverExternalPackages 列出 kokoro-js-zh/@huggingface/transformers/onnxruntime-node/phonemizer/espeak-ng。"
     - "新增 scripts/verify-tts-local.ts + npm run test:tts-local;README-部署 Q3.3 说明启用步骤。"
-    - "rebuild.sh 新增 --tts(带 ENABLE_LOCAL_TTS=1 构建,透传 ONNX_BINARY_MIRROR,容器内跑 test:tts-local)与 --model(下载 onnx/model_quantized.onnx 到 ./models/kokoro)。"
+    - "rebuild.sh 默认启用本地 TTS(ENABLE_LOCAL_TTS=1 + 模型下载,onnx/model_quantized.onnx 已存在时跳过);--no-tts/--no-model 为逃生门。启动后在容器内跑 test:tts-local。"
     - "修复:deps 阶段资产补齐改为独立脚本而非内联 node -e —— Dockerfile 行尾 `\\` 续行无法承载多行单引号脚本(服务器构建报 'unknown instruction: const' parse error)。"
 follow-up:
   en: |
