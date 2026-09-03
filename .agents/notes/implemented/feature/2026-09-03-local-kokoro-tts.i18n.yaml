@@ -26,12 +26,14 @@ steps:
     - "Dockerfile: ARG ENABLE_LOCAL_TTS / ONNX_BINARY_MIRROR / KOKORO_HF_ENDPOINT; =1 installs kokoro-js-zh@2.1.7 + onnxruntime-node@1.29.0, copies espeak-ng.wasm, pre-downloads voice .bin via Node fetch (slim image has no curl)."
     - "docker-compose: ./models/kokoro volume as KOKORO_MODEL_DIR; next.config serverExternalPackages lists kokoro-js-zh/@huggingface/transformers/onnxruntime-node/phonemizer/espeak-ng."
     - "Added scripts/verify-tts-local.ts + npm run test:tts-local; README-部署 Q3.3 documents enablement."
+    - "rebuild.sh gained --tts (builds with ENABLE_LOCAL_TTS=1, forwards ONNX_BINARY_MIRROR, runs test:tts-local in-container) and --model (downloads onnx/model_quantized.onnx into ./models/kokoro)."
   zh:
     - "新增 web/lib/kokoro.ts(8 中文语音白名单,客户端安全)与 web/lib/kokoro-server.ts(探测、资产自愈、WAV 合成)。"
     - "/api/tts 扩展 engine=kokoro(audio/wav,不可用返回 503)与 GET 探测;TtsPlayer 新增 🎧 本地语音 引擎选项,语音选择 localStorage 持久化。"
     - "Dockerfile:ARG ENABLE_LOCAL_TTS / ONNX_BINARY_MIRROR / KOKORO_HF_ENDPOINT;=1 安装 kokoro-js-zh@2.1.7 + onnxruntime-node@1.29.0,复制 espeak-ng.wasm,用 Node fetch 预下载语音 .bin(slim 镜像无 curl)。"
     - "docker-compose:./models/kokoro 卷作为 KOKORO_MODEL_DIR;next.config serverExternalPackages 列出 kokoro-js-zh/@huggingface/transformers/onnxruntime-node/phonemizer/espeak-ng。"
     - "新增 scripts/verify-tts-local.ts + npm run test:tts-local;README-部署 Q3.3 说明启用步骤。"
+    - "rebuild.sh 新增 --tts(带 ENABLE_LOCAL_TTS=1 构建,透传 ONNX_BINARY_MIRROR,容器内跑 test:tts-local)与 --model(下载 onnx/model_quantized.onnx 到 ./models/kokoro)。"
 follow-up:
   en: |
     - Full `docker compose build --build-arg ENABLE_LOCAL_TTS=1` must be verified on a Docker host (not available in this workspace).
