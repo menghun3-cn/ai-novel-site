@@ -1,0 +1,38 @@
+title:
+  en: "Pre-push Agent Note gate (local enforcement without CI)"
+  zh: "pre-push Agent Note 门禁(无 CI 的本地强制)"
+summary:
+  en: |
+    The Agent Note "same PR" rule had no mechanical enforcement: doc-sync only validates
+    existing notes, and the repo had no hooks or CI (GitHub Actions deferred). Added a shared
+    local pre-push hook (.githooks/pre-push + scripts/hooks/verify-push-notes.mjs) that blocks
+    a push when it contains non-trivial changes without any .agents/notes change, and otherwise
+    requires doc-sync to pass. Activated per-clone via core.hooksPath, set automatically by the
+    root package.json prepare script.
+  zh: |
+    Agent Note 的 "same PR" 规则没有任何机械强制:doc-sync 只校验已存在的笔记,仓库既无
+    hooks 也无 CI(GitHub Actions 被推迟)。新增共享本地 pre-push hook
+    (.githooks/pre-push + scripts/hooks/verify-push-notes.mjs):push 含非平凡改动但没有
+    任何 .agents/notes 变更时阻止推送,否则要求 doc-sync 全绿。通过 core.hooksPath 按克隆
+    激活,由根 package.json 的 prepare 脚本自动设置。
+steps:
+  en:
+    - "Added .githooks/pre-push (sh wrapper) and .githooks/README.md documenting activation and limits."
+    - "Added scripts/hooks/verify-push-notes.mjs: reads pre-push stdin refs, computes changed files via git diff --name-only, classifies trivial vs non-trivial, requires a notes change when non-trivial files exist, then runs pnpm run doc-sync."
+    - "Added root package.json prepare script: git config core.hooksPath .githooks."
+  zh:
+    - "新增 .githooks/pre-push(sh 壳)与 .githooks/README.md,说明激活方式与限制。"
+    - "新增 scripts/hooks/verify-push-notes.mjs:读取 pre-push stdin refs,用 git diff --name-only 计算变更文件,判定平凡/非平凡,存在非平凡文件时必须携带笔记变更,随后运行 pnpm run doc-sync。"
+    - "根 package.json 新增 prepare 脚本:git config core.hooksPath .githooks。"
+follow-up:
+  en: |
+    - The gate is local and bypassable (git push --no-verify, un-hooked clones); a GitHub
+      Actions status check remains the long-term server-side answer when CI is enabled.
+    - Non-trivial classification is coarse: package.json dependency bumps do not force a note.
+  zh: |
+    - 门禁是本地且可绕过的(git push --no-verify、未激活 hooks 的克隆);启用 CI 后,
+      GitHub Actions status check 仍是长期的服务端答案。
+    - 非平凡判定较粗:package.json 依赖升级不会强制笔记。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/new/chore/agent-notes-pre-push-gate"
+  branch: "chore/agent-notes-pre-push-gate"
