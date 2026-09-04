@@ -5,6 +5,21 @@
 
 ## [Unreleased]
 
+### V10.7.3 低配主机内存调优:kokoro 合成耗时 176s→预期 <30s(v8.3.5)
+
+- **线上 kokoro 合成极慢的根因是内存压力而非算力**:2 核/1.8G 主机上 next-server
+  V8 堆未限(Node 默认堆≈物理内存一半,GC 惰性)RSS 膨胀到 ~1GB,加 sub2api-postgres
+  ~0.65GB,可用内存仅 31~83MB、swap 已用 1.86GB → kokoro 推理(模型 92MB + 中间
+  张量)持续换页,100 字要 176~338s(60s 超时被 CPU 阻塞吞掉)。
+- **服务器立即生效**:停 `ai-novel-reader`(PM2,7MB)、释放 page cache、
+  `vm.vfs_cache_pressure=200` 持久化(`vm.swappiness=0` 既有)。
+- **compose 仓库化(发版后生效)**:
+  - web:`NODE_OPTIONS=--max-old-space-size=768` 限制 V8 老生代堆(本轮最大内存释放点,
+    预计 RSS 降至 ~700-800MB)+ `mem_limit: 1500m`;
+  - scheduler:`mem_limit: 256m`;
+- **前端切片无需改**:TtsPlayer 已按 ≤200 字/片合成。
+- **验收**:部署后重跑性能测试,目标 100 字 <30s、20 字 <5s。
+
 ### V10.7.2 部署修复:webpack 打包 createRequire 成 stub 导致线上 kokoro 恒 false(v8.3.4)
 
 - **V10.7.1 修复后线上仍无「本地语音」**:compose 参数修复后容器内依赖/语音/模型

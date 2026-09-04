@@ -20,6 +20,9 @@ services:
     restart: unless-stopped
     ports:
       - "33000:33000"
+    # 内存调优(低配 1.8G 主机):限制容器上限,防止单容器吃满触发系统级 swap 换页风暴。
+    # next-server 正常 RSS ~1GB(其中 V8 堆约一半),给 kokoro 模型推理留余量。
+    mem_limit: 1500m
     environment:
       NODE_ENV: production
       NOVEL_DATA_DIR: /app/data
@@ -28,6 +31,10 @@ services:
       TZ: Asia/Shanghai                        # 容器日志/本地时间按北京时间
       EDGE_TTS_PROXY: ""                       # AI 朗读出口代理(可选):服务器无法直连 bing 时填 http://user:pass@host:port
       KOKORO_MODEL_DIR: /app/models/kokoro     # 本地语音模型目录(卷挂载,存在 .onnx 才启用)
+      # 内存调优:限制 V8 老生代堆上限。Node 默认堆 ≈ 物理内存一半,GC 惰性,
+      # next-server RSS 会膨胀到 ~1GB 挤爆 1.8G 主机 → 全系统 swap 换页风暴
+      # (kokoro CPU 推理 100 字 176s 的元凶)。限 768MB 强制 GC 更积极。
+      NODE_OPTIONS: "--max-old-space-size=768"
     volumes:
       - ./data:/app/data                                          # SQLite 数据库
       - ./web/public/covers:/app/web/public/covers               # 封面
@@ -44,6 +51,8 @@ services:
     # 调度循环 tick 间隔可达 60s,优雅停机(释放锁)需要足够窗口,
     # 否则超出宽限期被 SIGKILL 后锁残留
     stop_grace_period: 90s
+    # 调度器常驻循环,内存需求小,设上限防止异常膨胀
+    mem_limit: 256m
     # 不暴露端口,仅访问共享 data
     environment:
       NODE_ENV: production
