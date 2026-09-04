@@ -30,6 +30,10 @@ const SEC_MS_GEC_VERSION = '1-143.0.3650.75';
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0';
 const MAX_TEXT = 2000;
+// kokoro 本地 CPU 合成:文本越长推理越慢(实测 200 字在低配 2 核机上可达分钟级),
+// 超过 CF 免费版回源超时(~100s)即 502/524。前端 TtsPlayer 切片约 52 字/次,
+// 300 字上限远高于实际请求,仅拦截手误/恶意长文本。
+const KOKORO_MAX_TEXT = 300;
 const TIMEOUT_MS = 15_000;
 const WIN_EPOCH = 11644473600; // Unix(1970) 与 Windows(1601) 纪元的秒差
 // TTS 出口代理(可选):服务器网络无法直连 bing 时(常见于国内网络)通过环境变量配置,如 http://user:pass@host:port
@@ -196,6 +200,9 @@ export async function POST(req: Request): Promise<Response> {
 
   // kokoro 本地引擎:依赖/模型不可用 → 503(前端据 engine 回退 edge)
   if (engine === 'kokoro') {
+    if (text.length > KOKORO_MAX_TEXT) {
+      return Response.json({ error: `本地合成文本过长(≤${KOKORO_MAX_TEXT} 字)` }, { status: 400 });
+    }
     if (!kokoroAvailable()) {
       return Response.json(
         {
