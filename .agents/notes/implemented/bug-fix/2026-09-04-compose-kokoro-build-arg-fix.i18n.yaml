@@ -1,0 +1,49 @@
+title:
+  en: "docker-compose hard-coded ENABLE_LOCAL_TTS=0 hid the 本地语音 engine in production"
+  zh: "docker-compose 写死 ENABLE_LOCAL_TTS=0 导致线上无「本地语音」选项"
+summary:
+  en: |
+    After deploying v8.3.2 (V10.7), the live reader player showed no Kokoro
+    本地语音 engine: GET /api/tts returned engines ["edge","native"] with
+    kokoro.available false while modelDir "/app/models/kokoro" was non-null
+    (model mounted with .onnx), and POST engine=kokoro returned 503. The
+    contradiction points to a missing dependency, not a missing model. Root
+    cause: docker-compose.yml pinned `build.args.ENABLE_LOCAL_TTS: "0"`; in
+    docker compose the file's args take precedence over the CLI --build-arg,
+    so ./rebuild.sh's `--build-arg ENABLE_LOCAL_TTS=1` was silently overridden
+    and the image was always built without kokoro-js-zh/onnxruntime-node,
+    making kokoroInstalled() false. Fix: delete the hard-coded args entry so
+    the caller controls the flag (rebuild.sh defaults to 1; bare compose build
+    falls back to the Dockerfile default 0, unchanged), with a ⚠ comment
+    warning not to re-add it.
+  zh: |
+    部署 v8.3.2(V10.7)后,线上听书播放器没有「Kokoro 本地语音」选项:
+    GET /api/tts 返回 engines ["edge","native"]、kokoro.available false,但
+    modelDir "/app/models/kokoro" 非空(模型已挂载且含 .onnx),POST
+    engine=kokoro 返回 503。矛盾指向依赖未安装而非模型缺失。根因:
+    docker-compose.yml 写死 `build.args.ENABLE_LOCAL_TTS: "0"`;docker
+    compose 构建时文件 args 优先于命令行 --build-arg,./rebuild.sh 的
+    `--build-arg ENABLE_LOCAL_TTS=1` 被静默覆盖,镜像始终按 0 构建——
+    deps 阶段不装 kokoro-js-zh/onnxruntime-node,kokoroInstalled() 为
+    false。修复:删除写死的 args 项,由调用方显式控制(rebuild.sh 默认 1;
+    裸 compose build 回落到 Dockerfile 默认 0,行为不变),并加 ⚠ 注释
+    警告勿再写死。
+steps:
+  en:
+    - "Probe live GET /api/tts: engines [edge,native], kokoro.available false, modelDir /app/models/kokoro non-null; POST engine=kokoro → 503."
+    - "docker-compose.yml: delete `args: ENABLE_LOCAL_TTS: \"0\"` from web build; keep context; add ⚠ comment that compose args override CLI --build-arg."
+    - "Rebuild: ./rebuild.sh (or docker compose build --build-arg ENABLE_LOCAL_TTS=1 && docker compose up -d) restores the 本地语音 option; model volume already ready."
+  zh:
+    - "探测线上 GET /api/tts:engines [edge,native]、kokoro.available false、modelDir /app/models/kokoro 非空;POST engine=kokoro → 503。"
+    - "docker-compose.yml:从 web build 删除 `args: ENABLE_LOCAL_TTS: \"0\"`;保留 context;加 ⚠ 注释:compose args 优先于命令行 --build-arg。"
+    - "重建:./rebuild.sh(或 docker compose build --build-arg ENABLE_LOCAL_TTS=1 && docker compose up -d)即恢复「本地语音」选项;模型卷已就绪。"
+follow-up:
+  en: |
+    - The deployed site must be rebuilt once (./rebuild.sh) for the fix to take effect; existing images/containers are unaffected.
+    - Cross-linked with the local-kokoro-tts feature note (its 一键启用 bullet assumes the flag reaches the build; the compose hard-code broke that path).
+  zh: |
+    - 线上站点需重建一次(./rebuild.sh)修复才生效;现有镜像/容器不受影响。
+    - 与 local-kokoro-tts 功能笔记交叉链接(其「一键启用」假设构建参数可达;compose 写死破坏了该路径)。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/137"
+  branch: "fix/compose-kokoro-build-arg"
