@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### V10.7.1 部署修复:compose 写死 ENABLE_LOCAL_TTS=0 导致线上无「本地语音」(v8.3.3)
+
+- **线上听书无「本地语音」选项修复**:`docker-compose.yml` 在 `build.args` 写死
+  `ENABLE_LOCAL_TTS: "0"`,docker compose 构建时**文件 args 优先于命令行
+  `--build-arg`**,导致 `./rebuild.sh` 默认传入的 `--build-arg ENABLE_LOCAL_TTS=1`
+  被静默覆盖,镜像始终按 0 构建、不安装 kokoro-js-zh/onnxruntime-node,
+  `kokoroAvailable()` 为 false,前端探测不到 kokoro 引擎(仅剩 edge/native)。
+- **修复**:删除 compose 里写死的 args 项,构建参数由调用方显式控制——
+  `./rebuild.sh`(默认启用)或 `docker compose build --build-arg
+  ENABLE_LOCAL_TTS=1`;裸 `docker compose build` 回落 Dockerfile 默认 0,行为不变。
+- **部署生效**:服务器执行 `./rebuild.sh` 重建镜像即可(模型卷已就绪,无需重新下载权重)。
+
 ### V10.7 移动端听书默认本地引擎(v8.3.2)
 
 - **听书默认引擎改为 Kokoro 本地语音**:edge 在线合成是长时 POST(浏览器 → /api/tts → 服务器 → bing WebSocket,单次数秒~15s),移动网络路径上的中间层(运营商透明代理/CDN 边缘节点)等待超时后会替服务器返回 502 错误页(非 JSON,前端因此显示笼统的「语音合成失败(502)」而非服务端具体错误)——PC 走宽带直连无此拦截,故同一本小说 PC 正常、手机端 502。kokoro 在服务器本地 CPU 合成、不走外网、响应 <1s,天然规避中间层拦截与出口受限,移动端更稳。
