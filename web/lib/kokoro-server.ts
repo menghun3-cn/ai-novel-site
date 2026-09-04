@@ -19,13 +19,15 @@
  *
  * ⚠ 本文件含 node:fs 等 Node API,只允许服务端(API 路由)引用;
  *   客户端组件请从 kokoro.ts 只导入 KOKORO_VOICES / KOKORO_DEFAULT_VOICE。
+ *
+ * ⚠ 包路径探测禁止用 createRequire/require.resolve:Next.js 生产构建(webpack)
+ *   会把 `createRequire(import.meta.url)` 编译成永远抛 MODULE_NOT_FOUND 的 stub
+ *   (见 .next/server 产物中模块 17331),导致 kokoroInstalled() 恒为 false——
+ *   本地 tsx 直跑正常、线上 Next 打包必挂。必须用 fs 从 cwd 向上探测 node_modules。
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import { KOKORO_VOICES } from './kokoro';
-
-const require = createRequire(import.meta.url);
 
 /** HuggingFace 上的 ONNX 量化模型(在线兜底时下载,语音 embedding 在其 voices/ 目录) */
 const HF_MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
@@ -44,27 +46,37 @@ const KOKORO_PKG = 'kokoro-js-zh';
 /**
  * 包名引用必须用「变量 + webpackIgnore」而非字面量:
  * ENABLE_LOCAL_TTS=0 时这些包不在 node_modules,若 webpack 在构建期解析字面量
- * import/require.resolve 会直接 ModuleNotFoundError,连默认镜像都构建失败。
- * webpackIgnore 注释让 webpack 原样保留为运行时 require,由 createRequire/动态 import 解析。
+ * import 会直接 ModuleNotFoundError,连默认镜像都构建失败。
+ * webpackIgnore 注释让 webpack 原样保留为运行时动态 import(编译产物中确为
+ * `await import(F)` 形式,可正常工作)。
  */
 const TRANSFORMERS_PKG = '@huggingface/transformers';
-const ESPEAK_PKG_JSON = 'espeak-ng/package.json';
 
 /** 中文语音文件名列表(与 kokoro.ts 白名单一致,需落到 kokoro-js-zh/voices/) */
 const ZH_VOICE_FILES = KOKORO_VOICES.map((v) => `${v.voiceURI}.bin`);
+
+/**
+ * 从 cwd 向上逐级探测 node_modules/<pkg> 目录(返回含 package.json 的包根)。
+ * 不用 require.resolve:webpack 生产构建会把 createRequire 编译成永远抛
+ * MODULE_NOT_FOUND 的 stub(见文件头 ⚠),线上探测会恒失败。
+ */
+function findNodeModulesDir(pkgName: string): string | null {
+  let dir = process.cwd();
+  for (;;) {
+    const candidate = path.join(dir, 'node_modules', pkgName);
+    if (fs.existsSync(path.join(candidate, 'package.json'))) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
 
 /**
  * 定位 kokoro-js-zh 包根目录(可能 hoist 到根 node_modules 或 web/node_modules)。
  * 该包 exports 未暴露 ./package.json,故从入口文件路径推导(dist/ 的上级)。
  */
 function kokoroPkgDir(): string | null {
-  try {
-    const entry = require.resolve(KOKORO_PKG);
-    // 入口在 <pkg>/dist/kokoro.cjs(或 .js)
-    return path.dirname(path.dirname(entry));
-  } catch {
-    return null;
-  }
+  return findNodeModulesDir(KOKORO_PKG);
 }
 
 /** 语音文件是否就绪(Node 端 kokoro-js-zh 只读包内 voices/ 目录) */
@@ -94,9 +106,9 @@ export async function ensureRuntimeAssets(): Promise<void> {
   const wasmDest = path.join(pkgDir, 'dist', 'espeak-ng.wasm');
   if (!fs.existsSync(wasmDest)) {
     try {
-      const espeakPkg = require.resolve(ESPEAK_PKG_JSON);
-      const wasmSrc = path.join(path.dirname(espeakPkg), 'dist', 'espeak-ng.wasm');
-      if (fs.existsSync(wasmSrc)) {
+      const espeakDir = findNodeModulesDir('espeak-ng');
+      const wasmSrc = espeakDir ? path.join(espeakDir, 'dist', 'espeak-ng.wasm') : '';
+      if (espeakDir && wasmSrc && fs.existsSync(wasmSrc)) {
         fs.mkdirSync(path.dirname(wasmDest), { recursive: true });
         fs.copyFileSync(wasmSrc, wasmDest);
       }
@@ -144,12 +156,7 @@ export function kokoroModelDir(): string | null {
 
 /** 依赖是否已安装(镜像以 ENABLE_LOCAL_TTS=1 构建时才有) */
 export function kokoroInstalled(): boolean {
-  try {
-    require.resolve(KOKORO_PKG);
-    return true;
-  } catch {
-    return false;
-  }
+  return kokoroPkgDir() !== null;
 }
 
 /**
