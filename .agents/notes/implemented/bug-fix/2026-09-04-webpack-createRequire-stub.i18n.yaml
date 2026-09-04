@@ -1,0 +1,49 @@
+title:
+  en: "webpack compiled createRequire into a throwing stub — kokoro stayed unavailable in production"
+  zh: "webpack 打包 createRequire 成 stub 导致线上 kokoro 恒 false"
+summary:
+  en: |
+    After the V10.7.1 compose fix (v8.3.3), the container had every kokoro asset
+    ready (dependency resolved manually, 8 voices/*.bin, espeak-ng.wasm, mounted
+    model), yet the live GET /api/tts still returned engines ["edge","native"]
+    and POST engine=kokoro still 503'd. Root cause: Next.js production build
+    (webpack) compiles `createRequire(import.meta.url)` into a stub module that
+    always throws MODULE_NOT_FOUND (compiled route.js module 17331), so every
+    `require.resolve(...)` in kokoro-server.ts (kokoroPkgDir/kokoroInstalled/
+    espeak-ng.wasm source) throws at Next runtime → kokoroAvailable() false.
+    Local tsx-based tests pass because they skip webpack. Fix: replace
+    createRequire/require.resolve package probing with fs-based upward scan
+    (findNodeModulesDir from process.cwd()); dynamic imports in getTTS() are
+    preserved by webpackIgnore and need no change.
+  zh: |
+    V10.7.1(v8.3.3)compose 修复后,容器内 kokoro 资产全部就绪(依赖手动解析成功、
+    8 个 voices/*.bin、espeak-ng.wasm、模型已挂载),但线上 GET /api/tts 仍返回
+    engines ["edge","native"],POST engine=kokoro 仍 503。根因:Next.js 生产构建
+    (webpack)把 `createRequire(import.meta.url)` 编译成永远抛 MODULE_NOT_FOUND
+    的 stub(编译产物 route.js 模块 17331),kokoro-server.ts 里所有
+    require.resolve(kokoroPkgDir/kokoroInstalled/espeak-ng.wasm 定位)在 Next
+    运行时一律抛错 → kokoroAvailable() false。本地 tsx 测试不经 webpack 所以
+    通过。修复:包探测弃用 createRequire/require.resolve,改为从 process.cwd()
+    向上 fs 扫描(findNodeModulesDir);getTTS() 的动态 import 已被 webpackIgnore
+    原样保留,无需改动。
+steps:
+  en:
+    - "On the server: confirmed deps/voices/wasm/model all present in the container; GET /api/tts still kokoro.available false."
+    - "Inspected compiled web/.next/server/app/api/tts/route.js: module 17331 is a createRequire stub that always throws MODULE_NOT_FOUND."
+    - "Rewrote kokoro-server.ts package probing to fs-based findNodeModulesDir(); removed createRequire import and ESPEAK_PKG_JSON."
+    - "Verified: web typecheck, build:web, test:tts-reader all pass; compiled route.js no longer contains the stub."
+  zh:
+    - "服务器上确认容器内依赖/语音/wasm/模型全部就绪;GET /api/tts 仍 kokoro.available false。"
+    - "检查编译产物 web/.next/server/app/api/tts/route.js:模块 17331 是永远抛 MODULE_NOT_FOUND 的 createRequire stub。"
+    - "重写 kokoro-server.ts 包探测为 fs 版 findNodeModulesDir();删除 createRequire import 与 ESPEAK_PKG_JSON。"
+    - "验证:web typecheck、build:web、test:tts-reader 全绿;编译产物 route.js 不再含 stub。"
+follow-up:
+  en: |
+    - Deploy by re-running ./rebuild.sh (image rebuild + container restart); the model volume needs no change.
+    - Cross-linked with the compose-kokoro-build-arg-fix note: same symptom, two stacked root causes.
+  zh: |
+    - 重新 ./rebuild.sh(镜像重建 + 容器重启)部署;模型卷无需改动。
+    - 与 compose-kokoro-build-arg-fix 笔记交叉链接:同一症状,两个叠加根因。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/140"
+  branch: "fix/webpack-createRequire-stub"
