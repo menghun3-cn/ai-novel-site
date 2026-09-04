@@ -33,7 +33,7 @@ export default function CategoryBrowser({ cat, books }: { cat: CategoryWithCount
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
-      <h1 className="text-2xl font-bold">{cat.name}小说</h1>
+      <h1 className="text-2xl font-bold">{cat.name.endsWith('小说') ? cat.name : `${cat.name}小说`}</h1>
       <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{count} 本</p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">

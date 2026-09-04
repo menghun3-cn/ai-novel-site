@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug: rawSlug } = await params;
   const slug = decodeURIComponent(rawSlug);
   const cat = listCategories().find((c) => c.slug === slug);
-  return { title: cat ? `${cat.name}小说` : '分类不存在' };
+  return { title: cat ? (cat.name.endsWith('小说') ? cat.name : `${cat.name}小说`) : '分类不存在' };
 }
 
 /** ISR 静态页:kind 筛选由客户端组件完成,切换零服务端往返(避免 Next 15 searchParams 退化 dynamic) */
