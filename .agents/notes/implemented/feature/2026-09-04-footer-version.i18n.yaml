@@ -1,0 +1,36 @@
+title:
+  en: "Reader footer shows the app version"
+  zh: "用户端页脚显示应用版本号"
+summary:
+  en: |
+    The reader footer rendered only the copyright line with no version info,
+    while the admin shell already showed v<package.json version>. The footer
+    now appends the app version read at build time via
+    `import appPackage from '../package.json'` (server component; same pattern
+    as AdminShell.tsx), rendered muted after the copyright text with a
+    `版本 <version>` tooltip, matching the admin shell's vX.Y.Z format.
+    Release bumps flow to the footer automatically after rebuild.
+  zh: |
+    用户端页脚原本只渲染版权行、不含版本信息,而管理端外壳已显示
+    v<package.json 版本>。页脚现在追加构建期读取的应用版本号(通过
+    `import appPackage from '../package.json'`,服务端组件,与
+    AdminShell.tsx 同一模式),以弱化样式显示在版权文字后,带「版本
+    <版本号>」tooltip,与管理端外壳的 vX.Y.Z 格式一致。发布升级重建后
+    自动流入页脚。
+steps:
+  en:
+    - "web/components/Footer.tsx: import appPackage from '../package.json'; append `<span title=\"版本 {version}\">v{version}</span>` after the copyright text (muted text-xs)."
+    - "Verified: web typecheck green; production build passes; served HTML contains '© 2026 云燕阅读 · AI小说创作平台 v8.3.1' with title '版本 8.3.1'."
+  zh:
+    - "web/components/Footer.tsx:import appPackage from '../package.json';在版权文字后追加 `<span title=\"版本 {version}\">v{version}</span>`(弱化 text-xs)。"
+    - "已验证:web typecheck 全绿;生产构建通过;响应 HTML 含「© 2026 云燕阅读 · AI小说创作平台 v8.3.1」,title 为「版本 8.3.1」。"
+follow-up:
+  en: |
+    - Version follows package.json automatically on rebuild; ISR 60s cache
+      window may delay the footer update on already-cached reader pages.
+  zh: |
+    - 版本号随 package.json 自动更新(需重建);已缓存读者页面的 ISR 60s
+      缓存窗口可能延迟页脚更新。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/134"
+  branch: "feat/footer-version"
