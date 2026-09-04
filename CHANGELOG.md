@@ -5,6 +5,22 @@
 
 ## [Unreleased]
 
+### V10.7.2 部署修复:webpack 打包 createRequire 成 stub 导致线上 kokoro 恒 false(v8.3.4)
+
+- **V10.7.1 修复后线上仍无「本地语音」**:compose 参数修复后容器内依赖/语音/模型
+  全部就绪(`require.resolve('kokoro-js-zh')` 手动成功、8 个 voices/*.bin、
+  espeak-ng.wasm、模型挂载),但 `GET /api/tts` 仍 `kokoro.available: false`、
+  `POST engine=kokoro` 仍 503。
+- **根因**:Next.js 生产构建(webpack)把 `createRequire(import.meta.url)` 编译成
+  永远抛 `MODULE_NOT_FOUND` 的 stub(编译产物 route.js 模块 17331),导致
+  kokoro-server.ts 里所有 `require.resolve(...)`(`kokoroPkgDir`/
+  `kokoroInstalled`/espeak-ng 定位)在 **Next 运行时一律抛错** → 引擎判定不可用。
+  本地 tsx 直跑测试不经 webpack,所以「本地绿、线上挂」。
+- **修复**:包路径探测弃用 createRequire/require.resolve,改为从 `process.cwd()`
+  向上 fs 探测 node_modules(`findNodeModulesDir`);动态 import(getTTS)已由
+  webpackIgnore 原样保留,无需改动。
+- **部署生效**:重新 `./rebuild.sh`(镜像重建 + 容器重启)即恢复「本地语音」选项。
+
 ### V10.7.1 部署修复:compose 写死 ENABLE_LOCAL_TTS=0 导致线上无「本地语音」(v8.3.3)
 
 - **线上听书无「本地语音」选项修复**:`docker-compose.yml` 在 `build.args` 写死
