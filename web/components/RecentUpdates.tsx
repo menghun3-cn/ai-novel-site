@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { DiscoveryItem } from '@novel/core';
+import { coverIconSrc } from '@/lib/cover-svg';
 import { formatRelativeTime } from '@/lib/format';
 
 // 最新更新 = 更新流列表形态。用户任务是「追更」:
@@ -15,15 +16,9 @@ export default function RecentUpdates({ items }: { items: DiscoveryItem[] }) {
             href={`/books/${item.slug}`}
             className="group flex items-center gap-3 px-4 py-3 transition first:rounded-t-xl last:rounded-b-xl hover:bg-neutral-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-500 dark:hover:bg-neutral-800/60"
           >
-            <div className="h-[60px] w-[45px] shrink-0 overflow-hidden rounded-md bg-neutral-200 dark:bg-neutral-800">
-              {item.coverPath ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={`/${item.coverPath}`} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full items-center justify-center text-lg font-bold text-neutral-400 dark:text-neutral-600">
-                  {item.title.slice(0, 1)}
-                </div>
-              )}
+            <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md bg-neutral-200 dark:bg-neutral-800">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={coverIconSrc(item)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-2">

@@ -336,6 +336,7 @@ Next.js 15 App Router 单应用，三块结构：
 | `/api/auth/*` | 读者 Cookie 会话 | 注册 / 登录 / 登出 / 当前用户 |
 | `/api/admin/*` | 双轨管理鉴权 | 内容管理、审核、AI 生成与任务、分析、设置、媒体上传 |
 | `/api/books/*` | 公开（匿名可报） | PV / 完读信号上报、阅读进度（登录态）、收藏 / 订阅 |
+| `/api/covers/[slug]` | 无（对外服务） | 动态封面：有上传封面 307 到原图，无封面按 分类/题材 渲染书本形 SVG |
 | `/api/discovery` | 公开 | 发现位推荐数据 |
 | `/api/me/*` | 读者 Cookie 会话 | 书架、阅读历史 |
 | `/media/**` | 无（CSP 沙箱化对外服务） | 媒体文件读取 |
@@ -354,6 +355,7 @@ Next.js 15 App Router 单应用，三块结构：
 - `admin-api.ts`：鉴权、JSON 响应、`CoreError`→HTTP 映射、`withAdmin` 路由包装（鉴权 → 业务 → 错误翻译）、`readJson` zod 请求体解析。
 - `reader-handlers.ts` / `discovery-handlers.ts` / `analytics-handlers.ts`：对应 API 族的处理函数复用层。
 - `admin-media.ts`：媒体白名单扩展名（png/jpg/jpeg/webp/gif/svg）、路径穿越防护；对外经 `/media/**` 路由以 CSP 沙箱响应头提供服务。
+- `cover-svg.ts`：动态封面生成器（纯字符串、无依赖）。统一「书」骨架（书脊/封面/页边/书签绳），按 分类/题材 关键词选主题（治愈/科幻/仙侠/悬疑/言情/都市/校园/历史/冒险/默认），决定配色、母题、字体与标题排布；`coverSrc` 统一读者站封面 URL（有原图用原图，否则 `/api/covers/[slug]`），`coverIconSrc`/`renderCoverIconSvg` 提供 48×48 小图标变体（`?s=icon`，用于列表行缩略图）。
 - `serial-worker.ts`：见 §5 执行位置。
 - Markdown 渲染走 `unified` + `remark-gfm` + `rehype-stringify`。
 

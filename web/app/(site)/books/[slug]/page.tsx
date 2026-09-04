@@ -4,6 +4,7 @@ import { getBookBySlug, listBooks, listPublishedChapters, getBookStats } from '@
 import ContinueReading from '@/components/ContinueReading';
 import ChapterList from '@/components/ChapterList';
 import BookActions from '@/components/BookActions';
+import { coverSrc } from '@/lib/cover-svg';
 import { chapterLabel } from '@/lib/format';
 
 // ISR:书籍详情(元信息+章节列表)较稳定,配合发布时 revalidatePath 及时刷新最新章节/热度。
@@ -50,14 +51,8 @@ export default async function BookDetailPage({ params }: { params: Promise<{ slu
         {/* 封面 */}
         <div className="w-36 shrink-0 self-center sm:w-44 md:self-auto">
           <div className="aspect-[3/4] overflow-hidden rounded-xl border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900">
-            {book.coverPath ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={`/${book.coverPath}`} alt={book.title} className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full items-center justify-center text-5xl font-bold text-neutral-300 dark:text-neutral-700 sm:text-6xl">
-                {book.title.slice(0, 1)}
-              </div>
-            )}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={coverSrc(book)} alt={book.title} className="h-full w-full object-cover" />
           </div>
         </div>
 

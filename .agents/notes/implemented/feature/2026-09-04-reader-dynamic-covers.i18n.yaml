@@ -1,0 +1,49 @@
+title:
+  en: "Reader-facing dynamic book covers by genre"
+  zh: "用户端按题材动态生成书本封面"
+summary:
+  en: |
+    Books without an uploaded cover (every AI short story, plus long books the
+    operator never gave art) fell back to a first-character placeholder across
+    the reader site — a wall of gray squares with zero genre signal. Added a
+    dependency-free server-side SVG generator (web/lib/cover-svg.ts) that keeps
+    the reference book skeleton (spine/cover/page edges/bookmark/shadow) and
+    varies palette, motif, font, and title layout per genre keyword (heal/
+    scifi/xianxia/mystery/romance/urban/campus/history/adventure/default),
+    vertical CJK titles vs horizontal word-aware latin wrapping, XML-escaped
+    text. A 48×48 icon variant (renderCoverIconSvg, ?s=icon) serves list rows
+    (最新更新, HotRanking rank rows) instead of shrinking the full cover.
+    web/app/api/covers/[slug]/route.ts returns image/svg+xml with media-route
+    CSP and public max-age=3600 cache; real covers 307-redirect, hidden/missing
+    books 404. coverSrc/coverIconSrc wire BookCard, DiscoveryCard, HotRanking,
+    RecentUpdates, home hero, book detail, and search. scripts/verify-cover.ts
+    (test:cover) asserts theme selection, SVG structure, escaping, URL
+    fallbacks, and route behavior. Short stories publish under the fixed
+    category 短篇小说 → default theme; following brief.genre is deferred.
+  zh: |
+    没有上传封面(所有 AI 短篇,以及运营没配图的长篇)的书在读者站只显示
+    首字占位——满屏灰块,没有任何题材信号。新增零依赖服务端 SVG 生成器
+    (web/lib/cover-svg.ts):保留参考「书」骨架(书脊/封面/页边/书签绳/投影),
+    按题材关键词改变配色、母题、字体与标题排布(治愈/科幻/仙侠/悬疑/言情/
+    都市/校园/历史/冒险/默认),中文书名竖排、含拉丁/数字的横排并按词换行,
+    文本全量 XML 转义。48×48 小图标变体(renderCoverIconSvg,?s=icon)供列表行
+    (最新更新、热门榜排名行)使用,不再把大封面缩成看不清的缩略图。
+    web/app/api/covers/[slug]/route.ts 以 image/svg+xml 返回,带媒体路由同款
+    CSP 与 public max-age=3600 缓存;有真实封面 307 重定向,隐藏/不存在 404。
+    coverSrc/coverIconSrc 接入 BookCard、DiscoveryCard、HotRanking、
+    RecentUpdates、首页主推、书籍详情与搜索。scripts/verify-cover.ts
+    (test:cover)断言题材选择、SVG 结构、转义、URL 兜底与路由行为。短篇以
+    固定分类「短篇小说」发布 → 默认主题;跟随 brief.genre 延后。
+steps:
+  en:
+    - "web/lib/cover-svg.ts: renderCoverSvg (300×400 book skeleton, 10 genre themes keyed by category keywords, vertical CJK / horizontal latin title, XML escaping) + renderCoverIconSvg (48×48 list-row icon) + coverSrc/coverIconSrc URL helpers."
+    - "web/app/api/covers/[slug]/route.ts: image/svg+xml + media-route CSP + public max-age=3600; 307 to real coverPath when present; 404 for hidden/missing; ?s=icon selects the 48×48 variant."
+    - "web/components: BookCard/DiscoveryCard/HomeHero/books/[slug]/search use coverSrc; HotRanking rank rows + RecentUpdates use coverIconSrc (square h-12 w-12), #1 featured card keeps the full cover."
+    - "scripts/verify-cover.ts + package.json test:cover: theme selection per category, SVG structure, XML escaping, coverSrc/coverIconSrc fallbacks, route 200/?s=icon/307/404."
+    - "docs/architecture.md: /api/covers/[slug] row and cover-svg.ts lib entry."
+  zh:
+    - "web/lib/cover-svg.ts:renderCoverSvg(300×400 书本骨架,10 套题材主题按分类关键词匹配,中文竖排/拉丁横排,XML 转义)+ renderCoverIconSvg(48×48 列表行图标)+ coverSrc/coverIconSrc URL 兜底。"
+    - "web/app/api/covers/[slug]/route.ts:image/svg+xml + 媒体路由同款 CSP + public max-age=3600;有真实封面 307 重定向;隐藏/不存在 404;?s=icon 选 48×48 变体。"
+    - "web/components:BookCard/DiscoveryCard/首页主推/books/[slug]/搜索用 coverSrc;HotRanking 排名行与 RecentUpdates 用 coverIconSrc(正方形 h-12 w-12),第 1 名主视觉保留完整封面。"
+    - "scripts/verify-cover.ts + package.json test:cover:各分类题材选择、SVG 结构、XML 转义、coverSrc/coverIconSrc 兜底、路由 200/?s=icon/307/404。"
+    - "docs/architecture.md:/api/covers/[slug] 一行与 cover-svg.ts 库条目。"
