@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### V10.7 移动端听书默认本地引擎(v8.3.1)
+
+- **听书默认引擎改为 Kokoro 本地语音**:edge 在线合成是长时 POST(浏览器 → /api/tts → 服务器 → bing WebSocket,单次数秒~15s),移动网络路径上的中间层(运营商透明代理/CDN 边缘节点)等待超时后会替服务器返回 502 错误页(非 JSON,前端因此显示笼统的「语音合成失败(502)」而非服务端具体错误)——PC 走宽带直连无此拦截,故同一本小说 PC 正常、手机端 502。kokoro 在服务器本地 CPU 合成、不走外网、响应 <1s,天然规避中间层拦截与出口受限,移动端更稳。
+- **自动切换逻辑**:本地引擎可用(镜像 `ENABLE_LOCAL_TTS=1` 且模型已挂载)且用户从未手动选过引擎时,默认自动使用 Kokoro;本地引擎不可用或用户显式选了 edge/系统语音时尊重原选择;kokoro 失效时自动回退 edge 保证能出声。
+- **文案同步**:引擎下拉 Kokoro 置顶并标注「推荐」,错误提示优先建议「Kokoro 本地语音」;`/api/tts` GET 探测的 `engines` 数组改为 kokoro 优先。
+- **验收**:`npm run test:tts-reader`(纯函数回归)、`npm run test:tts-local`(依赖已装环境验证本地合成);`typecheck` + `build:web` 通过。
+
 ### V10.6 僵尸任务自动恢复(v8.3.1)
 
 - **修复创作中心「执行中」永久卡死**:容器重建/崩溃导致执行进程消失时,被认领为 `RUNNING` 的 AI 任务因无超时机制永远不再被重新认领(调度器只领取 `PENDING`)。调度器每个 tick 新增 `recoverStaleRunningTasks()`——`started_at` 超过 `AI_TASK_STALE_GRACE_MS`(默认 10 分钟)仍为 `RUNNING` 的任务重置回 `PENDING` 自动重跑,执行痕迹清空、attempt 历史保留。

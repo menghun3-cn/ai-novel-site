@@ -1,0 +1,69 @@
+title:
+  en: "User-facing category tiering, consistent counts, and faster list pages"
+  zh: "用户端分类分层、数量一致与列表提速"
+summary:
+  en: |
+    Reader-facing categories were a flat pile with no 长篇小说/短篇小说 tiering,
+    category counts disagreed with the 全部小说 page (listCategories counted hidden
+    books, listBooks did not), and ~100-book list pages felt laggy (six correlated
+    subqueries per book; every request re-rendered server-side). Categories stay flat;
+    tiering derives from book.kind at read time, ~75 mainstream genres seed
+    idempotently, listCategories counts only public books and returns
+    id/count/longCount/shortCount, countPublicBooks shares listBooks' filtering.
+    BOOK_LIST_SQL/FEED_SELECT became grouped aggregates + ROW_NUMBER window, reader
+    list pages are ISR (revalidate=60) with client-side filtering (BooksBrowser/
+    CategoryBrowser; pages avoid reading searchParams because Next 15 degrades those
+    to dynamic), images lazy-load, 朗读→听书, and the default listen-back engine
+    became Kokoro (mobile edge 502 root cause: long online POST intercepted by
+    carrier/CDN middle-layers) with edge fallback.
+  zh: |
+    用户端分类原为平铺一堆,没有「长篇小说/短篇小说」分层;分类计数与「全部
+    小说」页不一致(listCategories 统计了 hidden 书,listBooks 没有);约百本书
+    时列表页卡顿(每本书 6 个关联子查询;每次请求都服务端重渲染)。categories
+    保持扁平,分层在读时由 book.kind 推导;约 75 个主流题材幂等播种;
+    listCategories 只统计公开书并返回 id/count/longCount/shortCount,
+    countPublicBooks 与 listBooks 同口径。BOOK_LIST_SQL/FEED_SELECT 改为分组
+    聚合 + ROW_NUMBER 窗口,读者列表页改 ISR(revalidate=60) + 客户端筛选
+    (BooksBrowser/CategoryBrowser;页面不读 searchParams,因 Next 15 会退化为
+    dynamic),图片懒加载,朗读→听书,默认听书引擎改为 Kokoro(移动端 edge 502
+    根因:长时在线 POST 被运营商/CDN 中间层拦截),edge 兜底。
+steps:
+  en:
+    - "core/src/db.ts: DEFAULT_CATEGORIES (~75 mainstream topics) seeded idempotently (INSERT OR IGNORE, inline slug) after migrations; excludes 短篇小说/长篇小说."
+    - "core/src/domain.ts: CategoryWithCount gains id/longCount/shortCount (camelCase)."
+    - "core/src/service.ts: BOOK_LIST_SQL rewritten to grouped aggregates + ROW_NUMBER window for latest published chapter; listCategories only counts public books and returns id/count/longCount/shortCount; countPublicBooks matches listBooks' filtering; listBooks gains kind filter."
+    - "core/src/discovery.ts: FEED_SELECT rewritten to grouped joins; adds b.kind (was missing at runtime)."
+    - "web: /books and /categories/[slug] are ISR pages (revalidate=60) rendering BooksBrowser/CategoryBrowser client components; initial ?category=/?kind= read via useEffect + window.location.search (not useSearchParams, which would client-side render the boundary)."
+    - "web: category page groups 长篇小说/短篇小说 via longCount/shortCount; links carry ?kind=long|short."
+    - "web: 朗读→听书 copy in TtsPlayer (button/options/errors) and tts API error."
+    - "web: img lazy loading (BookCard/DiscoveryCard/HotRanking/RecentUpdates/search)."
+    - "TtsPlayer: default engine auto-switches to kokoro when available and no explicit preference; falls back to edge otherwise; dropdown orders kokoro first; /api/tts GET engines array kokoro-first."
+    - "scripts/verify-admin-core.ts: createCategory('奇幻')→'奇幻衍生' (seeded name now raises CATEGORY_NAME_TAKEN)."
+  zh:
+    - "core/src/db.ts:新增 DEFAULT_CATEGORIES(约 75 个主流题材),迁移后 INSERT OR IGNORE 幂等播种(slug 内联);不含 短篇小说/长篇小说。"
+    - "core/src/domain.ts:CategoryWithCount 增加 id/longCount/shortCount(camelCase)。"
+    - "core/src/service.ts:BOOK_LIST_SQL 重写为分组聚合 + ROW_NUMBER 窗口取最新章节;listCategories 只统计公开书并返回 id/count/longCount/shortCount;countPublicBooks 与 listBooks 同口径;listBooks 支持 kind 过滤。"
+    - "core/src/discovery.ts:FEED_SELECT 重写为分组连接;补 b.kind(此前运行时缺失)。"
+    - "web:/books 与 /categories/[slug] 改为 ISR 页(revalidate=60),渲染 BooksBrowser/CategoryBrowser 客户端组件;初始 ?category=/?kind= 用 useEffect + window.location.search 读取(不用 useSearchParams,避免边界纯客户端渲染)。"
+    - "web:分类页按 longCount/shortCount 分组长篇小说/短篇小说;链接带 ?kind=long|short。"
+    - "web:TtsPlayer(按钮/选项/错误提示)与 tts API 错误文案 朗读→听书。"
+    - "web:图片懒加载(BookCard/DiscoveryCard/HotRanking/RecentUpdates/搜索页)。"
+    - "TtsPlayer:kokoro 可用且无显式偏好时默认自动切到本地引擎,否则回退 edge;下拉 Kokoro 置顶;/api/tts GET engines 数组 kokoro 优先。"
+    - "scripts/verify-admin-core.ts:createCategory('奇幻')→'奇幻衍生'(种子名现抛 CATEGORY_NAME_TAKEN)。"
+follow-up:
+  en: |
+    - ISR freshness window (60s) on /books and category pages: acceptable for
+      publication latency; revisit if near-real-time listing is ever required.
+    - Client-side filtering is JS-dependent; the no-JS fallback renders the full
+      static list (limit 500) without tabs.
+    - Mobile edge 502: fully avoided only when the image enables local TTS; edge
+      remains a fallback for ENABLE_LOCAL_TTS=0 images.
+  zh: |
+    - /books 与分类页的 ISR 新鲜度窗口(60s):对发布延迟可接受;若将来要求
+      准实时列表需重新评估。
+    - 客户端筛选依赖 JS;无 JS 兜底渲染完整静态列表(limit 500,无 Tab)。
+    - 移动端 edge 502:仅当镜像启用本地 TTS 时完全规避;ENABLE_LOCAL_TTS=0
+      镜像仍以 edge 兜底。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/131"
+  branch: "feat/user-categories-and-perf"

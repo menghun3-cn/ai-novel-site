@@ -686,6 +686,37 @@ function migrateProductionLineColumns(db: Database.Database): void {
   }
 }
 
+// ---------- 基础分类种子 ----------
+
+/**
+ * 市面上已知的主流分类(长篇小说题材为主,兼收短篇常见题材)。
+ * 保持分类表扁平:kind 由书籍自身(kind 列)决定,分类只表示题材。
+ * 幂等:INSERT OR IGNORE 按 name 唯一键插入,重复运行不产生脏数据。
+ */
+const DEFAULT_CATEGORIES = [
+  // 主流网文题材(长篇小说)
+  '科幻', '玄幻', '都市', '穿越', '历史', '悬疑', '奇幻', '仙侠', '武侠', '军事', '网游', '体育',
+  '言情', '都市言情', '古代言情', '宫斗', '权谋', '末世', '系统', '游戏', '二次元', '轻小说', '现实',
+  '推理', '冒险', '灵异', '惊悚', '校园', '职场', '美食', '直播', '神医', '学霸', '娱乐', '明星',
+  '萌宝', '宠物', '星际', '末日', '克苏鲁', '洪荒', '种田', '基建', '赛博朋克', '无敌流', '快穿',
+  '无限流', '重生', '洪荒流', '签到流', '领主流', '召唤流', '国术', '竞技', '谍战', '抗战', '商战',
+  // 短篇常见题材
+  '爱情', '幽默', '寓言', '恐怖', '治愈', '脑洞', '反转', '青春', '家庭', '亲情', '友情', '励志',
+  '暖心', '虐心', '古风', '伦理', '社会', '轻悬疑', '甜宠',
+].filter((v, i, arr) => arr.indexOf(v) === i);
+
+/** 幂等播种基础分类(仅插入缺失项,不触碰已有分类) */
+function seedDefaultCategories(db: Database.Database): void {
+  const insert = db.prepare('INSERT OR IGNORE INTO categories (slug, name) VALUES (?, ?)');
+  const tx = db.transaction(() => {
+    for (const name of DEFAULT_CATEGORIES) {
+      const slug = name.trim().replace(/\s+/g, '-').toLowerCase();
+      insert.run(slug, name);
+    }
+  });
+  tx();
+}
+
 export function getDb(): Database.Database {
   if (!sqlite) {
     ensureDataDir();
@@ -704,6 +735,7 @@ export function getDb(): Database.Database {
     migrateReviewRecordsRefColumns(sqlite);
     migrateBatchScheduleColumns(sqlite);
     migrateProductionLineColumns(sqlite);
+    seedDefaultCategories(sqlite);
   }
   return sqlite;
 }

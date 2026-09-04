@@ -35,6 +35,14 @@ TTS 合成)两种引擎:Edge 依赖微软在线服务,离线不可用。本地�
   须含 `.onnx`)存在或缓存目录可写(在线下载)时为真。`/api/tts` 在
   `engine=kokoro` 不可用时返回 `503`,前端回退 `edge`;`GET /api/tts` 探测可用性,
   `TtsPlayer` 只在真正可用时展示 🎧 本地语音 选项。
+- **kokoro 是默认引擎(V10.7 起)。** 探测到引擎可用且用户从未手动选过引擎时,
+  `TtsPlayer` 自动切到本地语音;不可用时回退 `edge`(用户保存的引擎是
+  `kokoro` 但探测失败同样回退)。引擎下拉 Kokoro 置顶,`GET /api/tts` 的
+  `engines` 数组 kokoro 优先。原因:edge 是长时在线 POST(浏览器 → `/api/tts`
+  → 服务器 → bing WebSocket,数秒~15s),移动网络路径上的中间层(运营商透明
+  代理/CDN 边缘节点)等待超时后替服务器返回 502 错误页(非 JSON)——PC 宽带
+  直连无此拦截。完整背景见
+  [user-categories-and-list-performance](../../implemented/feature/2026-09-04-user-categories-and-list-performance.md)。
 - **资产自愈。** `ensureRuntimeAssets()` 首次加载前补齐 `espeak-ng.wasm` 与
   8 个 `voices/*.bin` —— 二者是 kokoro-js-zh Node 端写死的路径,无法配置。
 - **hf-mirror 默认。** transformers.js 3.x 不读 `HF_ENDPOINT` 环境变量,代码内
@@ -73,7 +81,8 @@ TTS 合成)两种引擎:Edge 依赖微软在线服务,离线不可用。本地�
 
 ## Consequences
 
-- 听书获得完全离线的中文引擎;依赖未装(`ENABLE_LOCAL_TTS=0`)、模型未挂载或
+- 听书获得完全离线的中文引擎,且现在是**默认引擎**(可用且用户未显式选择
+  其他引擎时自动选用);依赖未装(`ENABLE_LOCAL_TTS=0`)、模型未挂载或
   资产取不到时,Edge 保持兜底。
 - 默认镜像(`ENABLE_LOCAL_TTS=0`)体积与构建时间不变;Next.js 构建在
   有包/无包两种场景下均通过(包名只用变量 + `webpackIgnore` 引用,默认构建

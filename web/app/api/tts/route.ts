@@ -188,7 +188,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: '请求体不是合法 JSON' }, { status: 400 });
   }
   const text = typeof body.text === 'string' ? body.text.trim() : '';
-  if (!text) return Response.json({ error: '缺少朗读文本 text' }, { status: 400 });
+  if (!text) return Response.json({ error: '缺少听书文本 text' }, { status: 400 });
   if (text.length > MAX_TEXT) {
     return Response.json({ error: `单次合成文本过长(≤${MAX_TEXT} 字)` }, { status: 400 });
   }
@@ -258,7 +258,8 @@ export async function GET(): Promise<Response> {
     }
   }
   return Response.json({
-    engines: ['edge', 'native', ...(kokoroAvailable() && voicesReady ? (['kokoro'] as const) : [])],
+    // kokoro 优先:本地引擎是默认推荐(移动端网络中间层不会拦截本地合成)
+    engines: [...(kokoroAvailable() && voicesReady ? (['kokoro'] as const) : []), 'edge', 'native'],
     kokoro: {
       available: kokoroAvailable() && voicesReady,
       modelDir: kokoroModelDir(),
