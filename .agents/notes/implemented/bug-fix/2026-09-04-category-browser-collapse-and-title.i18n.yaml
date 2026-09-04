@@ -44,5 +44,5 @@ follow-up:
     折叠阈值(8)为常量;若种子题材列表继续增长或需要不同的「主要分类」定义,
     可再评估。
 links:
-  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/PLACEHOLDER"
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/146"
   branch: "fix/category-collapse-and-title"
