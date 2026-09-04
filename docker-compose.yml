@@ -10,10 +10,12 @@ services:
   web:
     build:
       context: .
-      # 本地 Kokoro TTS 开关:=1 时镜像内置 kokoro-js-zh(中文)+ onnxruntime-node(听书「本地语音」引擎)。
+      # 本地 Kokoro TTS 开关:由 rebuild.sh(默认 --build-arg ENABLE_LOCAL_TTS=1)或
+      # `docker compose build --build-arg ENABLE_LOCAL_TTS=1` 控制;=1 时镜像内置
+      # kokoro-js-zh(中文)+ onnxruntime-node(听书「本地语音」引擎)。
+      # ⚠ 不要在这里写死 ENABLE_LOCAL_TTS:compose 文件的 args 优先于命令行
+      # --build-arg,写死 "0" 会让 rebuild.sh 的启用参数被覆盖,线上无「本地语音」选项。
       # 模型权重不进镜像,由下方 ./models/kokoro 卷挂载;未挂载模型时自动回退 Edge 在线合成。
-      args:
-        ENABLE_LOCAL_TTS: "0"
     container_name: novel-web
     restart: unless-stopped
     ports:
