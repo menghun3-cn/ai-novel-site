@@ -44,6 +44,18 @@ Key mechanisms:
   `/api/tts` returns `503` for `engine=kokoro` when unavailable; the frontend
   then falls back to `edge`. `GET /api/tts` probes availability so `TtsPlayer`
   shows the 🎧 本地语音 option only when it actually works.
+- **Kokoro is the default engine (since V10.7).** When the probe reports the
+  engine available and the user never explicitly picked an engine, `TtsPlayer`
+  auto-selects 本地语音; it falls back to `edge` when unavailable (and when the
+  user's saved engine is `kokoro` but the probe fails). The engine dropdown
+  lists Kokoro first and the `GET /api/tts` `engines` array is kokoro-first.
+  Rationale: edge synthesis is a long online POST (browser → `/api/tts` →
+  server → bing WebSocket, seconds to 15s) that mobile network middle-layers
+  (carrier transparent proxies / CDN edge nodes) time out, answering 502 with a
+  non-JSON error page — PC on broadband direct connections is unaffected. See
+  the
+  [user-categories-and-list-performance](../../implemented/feature/2026-09-04-user-categories-and-list-performance.md)
+  note for the full picture.
 - **Asset self-healing.** `ensureRuntimeAssets()` copies `espeak-ng.wasm` and
   downloads the eight `voices/*.bin` files at first load if missing — both are
   hard-coded Node-side paths in kokoro-js-zh that cannot be configured.
@@ -94,9 +106,10 @@ failures on restricted networks.
 
 ## Consequences
 
-- Listen-back gains a fully offline Chinese engine; Edge remains the fallback
-  when the dependency is not installed (`ENABLE_LOCAL_TTS=0`), no model is
-  mounted, or assets cannot be fetched.
+- Listen-back gains a fully offline Chinese engine; it is now the **default
+  engine** when available (auto-selected unless the user explicitly picked
+  another), with Edge as the fallback when the dependency is not installed
+  (`ENABLE_LOCAL_TTS=0`), no model is mounted, or assets cannot be fetched.
 - Default images (`ENABLE_LOCAL_TTS=0`) are unchanged in size and build time;
   Next.js builds pass both with and without the packages installed
   (package names referenced only via variables + `webpackIgnore` so the
