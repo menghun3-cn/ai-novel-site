@@ -1,0 +1,48 @@
+title:
+  en: "Collapse the user-facing category chips and dedupe the '小说' title suffix"
+  zh: "用户端分类浏览折叠与「小说」标题去重"
+summary:
+  en: |
+    Two reader-facing category defects. (1) The 全部小说 page rendered every
+    category from listCategories() (~78 seeded genres plus short-story
+    auto-upserted ones) as one flat chip row — dozens of buttons, no focus on
+    the populated "main" categories, and no expand/collapse interaction.
+    (2) CategoryBrowser's <h1> and /categories/[slug] generateMetadata both
+    hard-concatenated `{cat.name}小说`, so a category whose name already ends
+    with 小说 (e.g. the 短篇小说 category auto-created by the short-story
+    publication pipeline) rendered "短篇小说小说" in the page title and browser
+    tab. Fix: BooksBrowser now shows only the top MAIN_CATEGORY_LIMIT=8
+    categories sorted by book count with a dashed 「展开全部/收起」 toggle
+    (ChevronDown/ChevronUp), keeping the URL-selected category visible even
+    when outside the top 8 and leaving filtering untouched; the category title
+    appends 小说 only when the name does not already end with it.
+  zh: |
+    用户端分类浏览两个缺陷。(1)「全部小说」页把 listCategories() 返回的全部分类
+    (约 78 个种子题材 + 短篇发布自动 upsert 的分类)一次性渲染成整排 chips——
+    几十个按钮、没有聚焦有书的「主要」分类,也没有展开/收起交互。
+    (2) CategoryBrowser 的 <h1> 与 /categories/[slug] 的 generateMetadata 都
+    硬拼接 `{cat.name}小说`,分类名以「小说」结尾时(典型如短篇发布管线自动
+    创建的「短篇小说」分类)页面标题与浏览器标签页出现「短篇小说小说」。
+    修复:BooksBrowser 默认只展示按书量降序的前 MAIN_CATEGORY_LIMIT=8 个分类,
+    带虚线「展开全部/收起」切换按钮(ChevronDown/ChevronUp),URL 选中的分类
+    即使不在前 8 也保持可见,筛选行为零变化;分类标题仅在名称不以「小说」
+    结尾时追加「小说」。
+steps:
+  en:
+    - "web/components/BooksBrowser.tsx: add catsExpanded state; sort cats by chipCount desc; visibleCats = top 8 (plus URL-selected category) or all when expanded; dashed toggle button with ChevronDown/ChevronUp."
+    - "web/components/CategoryBrowser.tsx: h1 renders cat.name when it ends with 小说, otherwise `${cat.name}小说`."
+    - "web/app/(site)/categories/[slug]/page.tsx: generateMetadata title uses the same conditional suffix."
+  zh:
+    - "web/components/BooksBrowser.tsx:新增 catsExpanded 状态;分类按 chipCount 降序;visibleCats = 前 8(含 URL 选中分类)或展开后全部;虚线切换按钮 ChevronDown/ChevronUp。"
+    - "web/components/CategoryBrowser.tsx:h1 在分类名以「小说」结尾时直接用原名,否则拼接「小说」。"
+    - "web/app/(site)/categories/[slug]/page.tsx:generateMetadata title 用同样的条件拼接。"
+follow-up:
+  en: |
+    Collapse threshold (8) is a constant; revisit if the seeded genre list grows
+    or a different "main categories" definition is wanted.
+  zh: |
+    折叠阈值(8)为常量;若种子题材列表继续增长或需要不同的「主要分类」定义,
+    可再评估。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/PLACEHOLDER"
+  branch: "fix/category-collapse-and-title"

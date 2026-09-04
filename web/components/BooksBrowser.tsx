@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { BookWithMeta, CategoryWithCount } from '@novel/core';
 import BookCard from '@/components/BookCard';
 
@@ -26,6 +27,7 @@ function chip(active: boolean): string {
 export default function BooksBrowser({ books, cats }: { books: BookWithMeta[]; cats: CategoryWithCount[] }) {
   const [category, setCategory] = useState<string | undefined>(undefined);
   const [kind, setKind] = useState<string | undefined>(undefined);
+  const [catsExpanded, setCatsExpanded] = useState(false);
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
@@ -53,6 +55,25 @@ export default function BooksBrowser({ books, cats }: { books: BookWithMeta[]; c
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cats, kind, category]);
 
+  /** 分类过多时默认只展示主要分类,点击「展开全部」再展示其余 */
+  const MAIN_CATEGORY_LIMIT = 8;
+  const sortedCats = useMemo(
+    () => [...cats].sort((a, b) => chipCount(b) - chipCount(a)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cats, kind]
+  );
+  const visibleCats = useMemo(() => {
+    if (catsExpanded) return sortedCats;
+    const top = sortedCats.slice(0, MAIN_CATEGORY_LIMIT);
+    // 当前选中分类即使不在前 N 个也要保持可见
+    if (category) {
+      const active = sortedCats.find((c) => c.slug === category);
+      if (active && !top.includes(active)) top.push(active);
+    }
+    return top;
+  }, [sortedCats, catsExpanded, category]);
+  const hasMore = cats.length > MAIN_CATEGORY_LIMIT;
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <h1 className="text-2xl font-bold">全部小说</h1>
@@ -75,7 +96,7 @@ export default function BooksBrowser({ books, cats }: { books: BookWithMeta[]; c
           全部
           <span className="ml-1 text-xs opacity-70">{total}</span>
         </button>
-        {cats.map((c) => (
+        {visibleCats.map((c) => (
           <button
             key={c.slug}
             type="button"
@@ -86,6 +107,23 @@ export default function BooksBrowser({ books, cats }: { books: BookWithMeta[]; c
             <span className="ml-1 text-xs opacity-70">{chipCount(c)}</span>
           </button>
         ))}
+        {hasMore && (
+          <button
+            type="button"
+            onClick={() => setCatsExpanded((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-neutral-300 px-3.5 py-1.5 text-sm text-neutral-500 transition hover:border-sky-500 hover:text-sky-600 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-sky-400 dark:hover:text-sky-400"
+          >
+            {catsExpanded ? (
+              <>
+                <ChevronUp size={14} /> 收起
+              </>
+            ) : (
+              <>
+                <ChevronDown size={14} /> 展开全部
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-400">共 {total} 本</p>
