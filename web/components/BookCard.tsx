@@ -13,6 +13,8 @@ export default function BookCard({ book }: { book: BookWithMeta }) {
           <img
             src={`/${book.coverPath}`}
             alt={book.title}
+            loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
           />
         ) : (

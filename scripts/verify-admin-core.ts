@@ -167,7 +167,7 @@ assertOk(deleteAuthor(authorB.id) === true && getAuthor(authorB.id) === null, '�
 assertOk(deleteCategory(inUseCategoryId) === true && getCategory(inUseCategoryId) === null, '书删后分类可删且不可见');
 expectCoreError('CATEGORY_NOT_FOUND', () => deleteCategory(inUseCategoryId), '重复删除分类抛 CATEGORY_NOT_FOUND');
 
-const cat = createCategory('奇幻');
+const cat = createCategory('奇幻衍生');
 assertOk(cat.slug.trim().length > 0, 'createCategory 派生 slug');
 expectCoreError('CATEGORY_NAME_TAKEN', () => createCategory('科幻'), '重复分类抛 CATEGORY_NAME_TAKEN');
 const catRenamed = updateCategory(cat.id, { name: '东方奇幻' });

@@ -15,6 +15,8 @@ export default function DiscoveryCard({ item }: { item: DiscoveryItem }) {
           <img
             src={`/${item.coverPath}`}
             alt={item.title}
+            loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
           />
         ) : (

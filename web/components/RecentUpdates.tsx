@@ -18,7 +18,7 @@ export default function RecentUpdates({ items }: { items: DiscoveryItem[] }) {
             <div className="h-[60px] w-[45px] shrink-0 overflow-hidden rounded-md bg-neutral-200 dark:bg-neutral-800">
               {item.coverPath ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={`/${item.coverPath}`} alt="" className="h-full w-full object-cover" />
+                <img src={`/${item.coverPath}`} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full items-center justify-center text-lg font-bold text-neutral-400 dark:text-neutral-600">
                   {item.title.slice(0, 1)}
