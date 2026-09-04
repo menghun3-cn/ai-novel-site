@@ -5,6 +5,7 @@ import DiscoveryCard from '@/components/DiscoveryCard';
 import SectionHeader from '@/components/SectionHeader';
 import HotRanking from '@/components/HotRanking';
 import RecentUpdates from '@/components/RecentUpdates';
+import { coverSrc } from '@/lib/cover-svg';
 import { READER_COOKIE } from '@/lib/reader-auth';
 
 export const dynamic = 'force-dynamic';
@@ -62,14 +63,8 @@ function TodayHero({ item }: { item: DiscoveryItem }) {
           className="block w-36 shrink-0 self-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 sm:w-44 md:self-auto"
         >
           <div className="aspect-[3/4] overflow-hidden rounded-lg bg-neutral-200 dark:bg-neutral-800">
-            {item.coverPath ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={`/${item.coverPath}`} alt={item.title} className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full items-center justify-center text-5xl font-bold text-neutral-400 dark:text-neutral-600">
-                {item.title.slice(0, 1)}
-              </div>
-            )}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={coverSrc(item)} alt={item.title} className="h-full w-full object-cover" />
           </div>
         </Link>
         <div className="flex-1 text-center md:text-left">

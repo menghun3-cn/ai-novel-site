@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { BookWithMeta } from '@novel/core';
+import { coverSrc } from '@/lib/cover-svg';
 
 export default function BookCard({ book }: { book: BookWithMeta }) {
   return (
@@ -8,20 +9,14 @@ export default function BookCard({ book }: { book: BookWithMeta }) {
       className="group block overflow-hidden rounded-xl border border-neutral-200 bg-white transition hover:-translate-y-0.5 hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900 dark:hover:shadow-black/40"
     >
       <div className="relative aspect-[3/4] w-full overflow-hidden bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-800 dark:to-neutral-900">
-        {book.coverPath ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={`/${book.coverPath}`}
-            alt={book.title}
-            loading="lazy"
-            decoding="async"
-            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-4xl font-bold text-neutral-400 dark:text-neutral-600">
-            {book.title.slice(0, 1)}
-          </div>
-        )}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={coverSrc(book)}
+          alt={book.title}
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+        />
         <span
           className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-xs text-white ${
             book.kind === 'short' ? 'bg-emerald-600/90' : book.status === 'serializing' ? 'bg-sky-600/90' : 'bg-neutral-600/90'

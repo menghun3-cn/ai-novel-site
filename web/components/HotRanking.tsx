@@ -1,22 +1,23 @@
 import Link from 'next/link';
 import { Eye, Flame, Star } from 'lucide-react';
 import type { DiscoveryItem } from '@novel/core';
+import { coverSrc, coverIconSrc } from '@/lib/cover-svg';
 import { formatCount } from '@/lib/format';
 
 // 热门小说 = 排行榜形态:第 1 名做主视觉位,2-6 名做紧凑排名行。
 // 排名数字承载「热」的语义,人气值(PV)提供可信度依据。
 
-function CoverThumb({ item, className }: { item: DiscoveryItem; className: string }) {
+function CoverThumb({ item, className, icon = false }: { item: DiscoveryItem; className: string; icon?: boolean }) {
   return (
     <div className={`shrink-0 overflow-hidden rounded-md bg-neutral-200 dark:bg-neutral-800 ${className}`}>
-      {item.coverPath ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={`/${item.coverPath}`} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-      ) : (
-        <div className="flex h-full items-center justify-center text-lg font-bold text-neutral-400 dark:text-neutral-600">
-          {item.title.slice(0, 1)}
-        </div>
-      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={icon ? coverIconSrc(item) : coverSrc(item)}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className="h-full w-full object-cover"
+      />
     </div>
   );
 }
@@ -78,7 +79,7 @@ function RankRow({ item, rank }: { item: DiscoveryItem; rank: number }) {
         <span aria-label={`第${rank}名`} className={`w-7 shrink-0 text-center text-lg font-bold tabular-nums ${rankClass(rank)}`}>
           {rank}
         </span>
-        <CoverThumb item={item} className="h-[60px] w-[45px]" />
+        <CoverThumb item={item} icon className="h-12 w-12" />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium group-hover:text-sky-600 dark:group-hover:text-sky-400">
             {item.title}

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { searchBooks } from '@novel/core';
+import { coverSrc } from '@/lib/cover-svg';
 import { chapterLabel } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -48,10 +49,8 @@ export default async function SearchPage({
           {results.map((b) => (
             <li key={b.id} className="flex items-center gap-4 px-4 py-3">
               <div className="h-14 w-10 shrink-0 overflow-hidden rounded bg-neutral-100 dark:bg-neutral-900">
-                {b.coverPath ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={`/${b.coverPath}`} alt={b.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                ) : null}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={coverSrc(b)} alt={b.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
               </div>
               <div className="min-w-0 flex-1">
                 <Link href={`/books/${b.slug}`} className="font-medium hover:text-sky-600 dark:hover:text-sky-400">
