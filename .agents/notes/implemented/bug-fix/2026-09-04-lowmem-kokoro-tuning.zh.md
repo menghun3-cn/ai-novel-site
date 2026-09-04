@@ -62,3 +62,6 @@ TtsPlayer 已按 ≤200 字/片(`splitIntoChunks` + `maxChunkLength`)切片,
 
 与 [2026-09-03-local-kokoro-tts](../feature/2026-09-03-local-kokoro-tts.md) 关联:
 同属 kokoro 引擎的线上可用性链路(可用性 = 依赖/模型就绪 + 有内存推理)。
+与 [2026-09-04-kokoro-synthesis-serialization](../bug-fix/2026-09-04-kokoro-synthesis-serialization.md) 关联:
+本笔记解决「next-server 堆膨胀吃满内存导致换页风暴」,后者解决「并发合成叠加
+内存峰值 + 长文本撞 CF 回源超时墙(502/524)」——同一主机约束下的两轮递进修复。

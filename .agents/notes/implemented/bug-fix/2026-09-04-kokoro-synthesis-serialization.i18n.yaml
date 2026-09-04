@@ -1,0 +1,49 @@
+title:
+  en: "Serialized kokoro synthesis + text cap to eliminate 502/524 on a low-spec host"
+  zh: "kokoro 合成串行化 + 文本上限,消除低配主机 502/524"
+summary:
+  en: |
+    Listen-to-book via kokoro reported 502 (CF passthrough of nginx 502) and 524
+    (CF origin timeout). Evidence: origin GET 200/0.09s, POST 20 chars 200/4.6s,
+    POST 200 chars hung 180s+, public CF POST 20 chars 524/136.9s, host had only
+    15-23MB available with next-server RSS 1.32GB. Root cause: 1.8G host memory
+    exhausted → kokoro synthesis memory paged to swap → 200 chars took 180s+ →
+    CF 100s origin timeout hit first → 502/524. Concurrent synthesis stacked
+    memory peaks. nginx 300s read timeout was NOT the bottleneck (CF ~100s caps
+    first; enterprise plan required to raise it). Fix: (1) serialize kokoro
+    synthesis via a promise-chain mutex so only one onnxruntime inference runs
+    at a time; (2) cap kokoro text at 300 chars (frontend actually sends ~52
+    chars/chunk); (3) keep next-server heap at 768MB (V8 heap is only ~157MB of
+    the 1.05GB RSS; the rest is onnxruntime native + Next runtime; lowering
+    risks OOM without meaningful gain).
+  zh: |
+    听书走 kokoro 时报 502(CF 透传 nginx 502)与 524(CF 回源超时)。实测证据:
+    源站 GET 200/0.09s、POST 20 字 200/4.6s、POST 200 字挂死 180s+、公网经 CF
+    POST 20 字 524/136.9s、主机可用内存仅 15~23MB、next-server RSS 1.32GB。
+    根因:1.8G 主机内存被吃满 → kokoro 合成内存换页到 swap → 200 字要 180s+
+    → CF 100s 回源超时先掐断 → 502/524。并发合成叠加内存峰值。nginx 300s
+    读超时不是瓶颈(CF ~100s 先掐,需企业版才能调)。修复:(1) 用 promise 链
+    互斥把 kokoro 合成串行化,同一时刻只跑一个 onnxruntime 推理;
+    (2) kokoro 文本上限 300 字(前端实际 52 字/片);(3) next-server 堆保持
+    768MB(V8 堆只占 1.05GB RSS 中的 ~157MB,其余是 onnxruntime 原生 +
+    Next 运行时,再压有 OOM 风险且收益小)。
+steps:
+  en:
+    - "kokoro-server.ts: wrap synthesizeKokoro with a promise-chain mutex (synthesisQueue); move body to doSynthesize; queue survives failures."
+    - "route.ts: add KOKORO_MAX_TEXT=300 for the kokoro branch (400 on exceed)."
+    - "Keep NODE_OPTIONS=--max-old-space-size=768; do not lower further."
+    - "Verify locally (typecheck/build/tts-reader/tts-local), release, deploy via ./update.sh, then re-test: serialized synthesis, text cap, and memory/time comparison."
+  zh:
+    - "kokoro-server.ts:把 synthesizeKokoro 改为 promise 链互斥(synthesisQueue),主体移到 doSynthesize;队列不因失败而断。"
+    - "route.ts:kokoro 分支加 KOKORO_MAX_TEXT=300(超限 400 拒绝)。"
+    - "NODE_OPTIONS=--max-old-space-size=768 保持,不再下调。"
+    - "本地验证(typecheck/build/tts-reader/tts-local)→ 发版 → ./update.sh 部署 → 复测:串行生效、文本限长、内存/耗时对比。"
+follow-up:
+  en: |
+    If still insufficient: move/limit postgres, add RAM, or upgrade CF to an
+    enterprise plan to raise the origin timeout.
+  zh: |
+    仍不足的话:迁出或限制 postgres、加内存,或上 CF 企业版调回源超时。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/144"
+  branch: "fix/kokoro-synthesis-serialization"

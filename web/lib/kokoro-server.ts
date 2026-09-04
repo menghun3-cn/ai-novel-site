@@ -188,6 +188,36 @@ export function kokoroCacheDir(): string {
 /** 合成超时(本地 CPU 合成 200 字内一般 3~10s;上限 60s 兜底) */
 const KOKORO_TIMEOUT_MS = 60_000;
 
+/**
+ * 合成互斥队列:onnxruntime CPU 推理是内存大户(82M 模型 + 中间张量),
+ * 多个合成并发会把内存峰值叠加——低配 1.8G 主机直接触发 OOM/换页风暴,
+ * 单请求合成被拖到几分钟(CF 回源超时 → 502/524)。
+ * 用 promise 链把合成串行化:同一时刻只跑一个推理,后续请求排队。
+ * 队列不因单次失败而断(错误只在调用方可见)。
+ */
+let synthesisQueue: Promise<unknown> = Promise.resolve();
+
+/** 合成整段文本,返回 WAV Buffer(Content-Type: audio/wav) */
+export function synthesizeKokoro(text: string, voice: string): Promise<Buffer> {
+  const run = synthesisQueue.then(() => doSynthesize(text, voice));
+  synthesisQueue = run.catch(() => undefined);
+  return run;
+}
+
+async function doSynthesize(text: string, voice: string): Promise<Buffer> {
+  const tts = await getTTS();
+  const audio = (await Promise.race([
+    tts.generate(text, { voice }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('本地语音合成超时,请稍后重试')), KOKORO_TIMEOUT_MS)
+    ),
+  ])) as { audio: Float32Array; sampling_rate: number };
+  if (!audio || !(audio.audio instanceof Float32Array) || audio.audio.length === 0) {
+    throw new Error('本地语音合成未返回音频数据');
+  }
+  return float32ToWav(audio.audio, audio.sampling_rate || 24000);
+}
+
 interface KokoroTTS {
   generate: (text: string, opts: { voice: string }) => Promise<unknown>;
 }
@@ -248,21 +278,6 @@ function float32ToWav(samples: Float32Array, sampleRate: number): Buffer {
     buf.writeInt16LE(s < 0 ? s * 0x8000 : s * 0x7fff, 44 + i * 2);
   }
   return buf;
-}
-
-/** 合成整段文本,返回 WAV Buffer(Content-Type: audio/wav) */
-export async function synthesizeKokoro(text: string, voice: string): Promise<Buffer> {
-  const tts = await getTTS();
-  const audio = (await Promise.race([
-    tts.generate(text, { voice }),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('本地语音合成超时,请稍后重试')), KOKORO_TIMEOUT_MS)
-    ),
-  ])) as { audio: Float32Array; sampling_rate: number };
-  if (!audio || !(audio.audio instanceof Float32Array) || audio.audio.length === 0) {
-    throw new Error('本地语音合成未返回音频数据');
-  }
-  return float32ToWav(audio.audio, audio.sampling_rate || 24000);
 }
 
 /** 仅用于校验语音是否在白名单(路由层导入,保持单一数据源) */
