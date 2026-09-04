@@ -1,0 +1,45 @@
+title:
+  en: "Memory tuning for kokoro TTS and next-server on a 1.8G host"
+  zh: "低配 1.8G 主机 kokoro/next-server 内存调优"
+summary:
+  en: |
+    The production host (hcss-ecs-8245) has only 2 cores / 1.8 GiB RAM and
+    cannot be upgraded. Measured kokoro synthesis was terrible: 20 chars 7s,
+    50 chars 18-27s, 100 chars 176-338s (the 60s timeout was swallowed by CPU
+    blocking). Root cause is memory pressure, not compute: the unbounded V8
+    heap let next-server balloon to ~1.0-1.19 GB, sub2api-postgres used ~0.65 GB,
+    leaving only ~31-83 MB available with 1.86 GB swapped — so kokoro inference
+    thrashed on swap. Fix: (1) immediate on-host tuning (pm2 stop ai-novel-reader,
+    drop_caches, vm.vfs_cache_pressure=200 persisted), (2) repo-side compose
+    changes (web NODE_OPTIONS=--max-old-space-size=768 + mem_limit 1500m,
+    scheduler mem_limit 256m). Frontend chunking (<=200 chars) already optimal.
+  zh: |
+    生产主机(hcss-ecs-8245)只有 2 核/1.8 GiB 内存且无法扩容。实测 kokoro 合成
+    极差:20 字 7s、50 字 18~27s、100 字 176~338s(60s 超时被 CPU 阻塞吞掉)。
+    根因是内存压力而非算力:V8 堆未限使 next-server 膨胀到 ~1.0-1.19 GB,
+    sub2api-postgres 占 ~0.65 GB,可用仅 31~83 MB、swap 已用 1.86 GB——
+    kokoro 推理在 swap 上换页风暴。修复:(1) 服务器现场立即调优(pm2 stop
+    ai-novel-reader、drop_caches、vm.vfs_cache_pressure=200 持久化);
+    (2) 仓库 compose 改动(web NODE_OPTIONS=--max-old-space-size=768 +
+    mem_limit 1500m,scheduler mem_limit 256m)。前端切片(≤200 字)已最优。
+steps:
+  en:
+    - "pm2 stop ai-novel-reader && pm2 save (stop the 7MB PM2 reader app)."
+    - "sync; echo 3 > /proc/sys/vm/drop_caches; sysctl -w vm.vfs_cache_pressure=200 and persist to /etc/sysctl.conf."
+    - "docker-compose.yml: web NODE_OPTIONS=--max-old-space-size=768 + mem_limit 1500m; scheduler mem_limit 256m."
+    - "Deploy via ./update.sh, then re-run the kokoro perf test and compare (target 100 chars < 30s)."
+  zh:
+    - "pm2 stop ai-novel-reader && pm2 save(停掉 7MB 的 PM2 阅读器进程)。"
+    - "sync; echo 3 > /proc/sys/vm/drop_caches; sysctl -w vm.vfs_cache_pressure=200 并持久化到 /etc/sysctl.conf。"
+    - "docker-compose.yml:web 加 NODE_OPTIONS=--max-old-space-size=768 + mem_limit 1500m;scheduler 加 mem_limit 256m。"
+    - "经 ./update.sh 部署后重跑 kokoro 性能测试对比(目标 100 字 <30s)。"
+follow-up:
+  en: |
+    - Expected: next-server RSS drops to ~700-800MB, freeing ~300MB for kokoro inference.
+    - If still slow: consider postgres mem_limit (needs sub2api owner OK) or limiting kokoro threads to 1-2.
+  zh: |
+    - 预期 next-server RSS 降到 ~700-800MB,腾出 ~300MB 给 kokoro 推理。
+    - 仍慢的话:考虑 postgres 容器 mem_limit(需 sub2api 方确认)或把 kokoro 推理线程限到 1~2。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/142"
+  branch: "perf/lowmem-kokoro-tuning"
