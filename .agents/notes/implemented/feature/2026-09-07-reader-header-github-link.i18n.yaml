@@ -32,4 +32,5 @@ follow-up:
     - 仓库地址硬编码于 Header.tsx;若仓库改名或迁移,需同步更新 href
       (以及 README.md)。
 links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/151"
   branch: "feat/reader-github-link"
