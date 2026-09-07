@@ -16,22 +16,24 @@ branching and merge discipline before the first V2 change landed.
 
 ## Decision
 
-`master` is the release line: it only ever receives `--no-ff` merge commits
-from `develop` at milestone boundaries, and every release merge is tagged
-`vN.M.0` (annotated). `v1.0.0` marks the completed V1 content baseline
-(MD/TXT import, Content Core, Web Publisher, RSS, SEO). `develop` is the
-standing integration branch for the current milestone.
+The development flow is a three-hop pipeline:
 
-Every development item — feature, fix, or chore — is built on its own branch
-(`feat|fix|chore/<topic>`) cut from `develop`, and lands only through a merge
-commit whose message names the change as a numbered PR (`PR #N: <topic>`).
-Direct work commits on `master` or `develop` are forbidden. Branches are
-pushed to `origin`; since the `gh` CLI (v2.98.0) became available,
-authenticated through a `GH_PAT` environment variable mapped onto
-`GH_TOKEN`, PRs are opened for real (`gh pr create --base develop`) and
-landed with `gh pr merge --merge`, so GitHub records the reviewable PR and
-the merge commit. PRs #1–#2 predate gh availability and were merged locally
-with `--no-ff` — topologically identical to GitHub merge commits.
+1. **Branch from `develop`.** Every development item — feature, fix, or chore —
+   is built on its own branch (`feat|fix|chore/<topic>`) cut from `develop`;
+   direct work commits on `master` or `develop` are forbidden.
+2. **PR to `develop`.** Each branch lands only through a numbered PR opened
+   against `develop` (`gh pr create --base develop`) and merged with
+   `gh pr merge --merge`, so GitHub records the reviewable PR and the merge
+   commit. Branches are pushed to `origin`; since the `gh` CLI (v2.98.0)
+   became available, authenticated through a `GH_PAT` environment variable
+   mapped onto `GH_TOKEN`. PRs #1–#2 predate gh availability and were merged
+   locally with `--no-ff` — topologically identical to GitHub merge commits.
+3. **PR from `develop` to `master`.** `develop` is the standing integration
+   branch for the current milestone; it is promoted to the release line
+   `master` through a dedicated PR (`gh pr create --base master --head
+   develop`) merged with `--merge`, and every release merge is tagged `vN.M.0`
+   (annotated). `v1.0.0` marks the completed V1 content baseline (MD/TXT
+   import, Content Core, Web Publisher, RSS, SEO).
 
 ## Alternatives considered
 
