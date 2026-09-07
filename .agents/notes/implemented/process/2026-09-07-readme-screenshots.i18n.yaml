@@ -1,0 +1,41 @@
+title:
+  en: "README screenshots section and screenshot.md index"
+  zh: "README 截图章节与 screenshot.md 索引"
+summary:
+  en: |
+    README.md gains a `## 截图` section right after the intro table embedding
+    only screenshot/1.png and screenshot/5.png side by side (width 49%,
+    centered), with a one-line link to the new screenshot.md — the canonical
+    index listing all 12 screenshots (screenshot/1.png … screenshot/12.png) in
+    a two-column `序号 | 截图` table. Assets stay in the repo-root
+    screenshot/ directory, referenced by relative path. Rule going forward:
+    the README section shows only the curated pair; new captures are added to
+    screenshot/ and listed in screenshot.md.
+  zh: |
+    README.md 在简介表格后新增 `## 截图` 章节,只并排嵌入
+    screenshot/1.png 与 screenshot/5.png(width 49%、居中),下方一行链接到
+    新建的 screenshot.md——以两列 `序号 | 截图` 表格罗列全部 12 张截图
+    (screenshot/1.png … screenshot/12.png)的权威索引。资源留在仓库根目录
+    screenshot/ 下,以相对路径引用。后续规则:README 章节只展示精选两张;
+    新增截图放入 screenshot/ 并在 screenshot.md 登记。
+steps:
+  en:
+    - "README.md: add `## 截图` section (centered 49%-width images of screenshot/1.png and screenshot/5.png) plus a link to screenshot.md."
+    - "screenshot.md (new): two-column `序号 | 截图` table listing screenshot/1.png … screenshot/12.png."
+    - "screenshot/1.png … screenshot/12.png: commit the 12 PNG assets."
+    - "Verified: pnpm run doc-sync green (Agent Note triplet conforms)."
+  zh:
+    - "README.md:新增 `## 截图` 章节(居中 49% 宽度嵌入 screenshot/1.png 与 screenshot/5.png),并链接 screenshot.md。"
+    - "screenshot.md(新建):两列 `序号 | 截图` 表格罗列 screenshot/1.png … screenshot/12.png。"
+    - "screenshot/1.png … screenshot/12.png:提交 12 张 PNG 资源。"
+    - "已验证:pnpm run doc-sync 全绿(Agent Note 三件套合规)。"
+follow-up:
+  en: |
+    - New screenshots go into screenshot/ and get one table row in
+      screenshot.md; promote into the README section only when deliberately
+      chosen. Static snapshots can drift from the current UI until re-captured.
+  zh: |
+    - 新增截图放入 screenshot/ 并在 screenshot.md 表格加一行;只有刻意挑选
+      时才提升进 README 章节。静态快照在重新截图前可能落后于当前界面。
+links:
+  branch: "docs/add-screenshots"
