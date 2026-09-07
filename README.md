@@ -10,6 +10,17 @@ AI 生成小说的**内容管理 + Web 阅读**一体化平台：从小说源文
 
 ---
 
+## 截图
+
+<p align="center">
+  <img src="screenshot/1.png" alt="截图 1" width="49%" />
+  <img src="screenshot/5.png" alt="截图 5" width="49%" />
+</p>
+
+更多截图请查看 [screenshot.md](screenshot.md)（含全部界面截图）。
+
+---
+
 ## 架构
 
 ```text
