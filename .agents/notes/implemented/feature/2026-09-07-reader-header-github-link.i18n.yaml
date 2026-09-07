@@ -1,0 +1,36 @@
+title:
+  en: "Reader header GitHub source link"
+  zh: "用户端页头 GitHub 源码链接"
+summary:
+  en: |
+    The reader header (web/components/Header.tsx) gains a GitHub icon button to
+    the right of the theme toggle: a plain `<a>` to
+    https://github.com/menghun3-cn/ai-novel-site with target="_blank" and
+    rel="noopener noreferrer". It matches ThemeToggle's 9×9 rounded-full
+    bordered style, renders the standard octocat mark at 18px (currentColor
+    fill), and carries aria-label/title 源码仓库(GitHub). Pure server-rendered
+    markup — no client state — so it appears identically on every reader page.
+  zh: |
+    读者站页头(web/components/Header.tsx)在主题切换按钮右侧新增 GitHub
+    图标按钮:指向 https://github.com/menghun3-cn/ai-novel-site 的普通
+    `<a>`,带 target="_blank" 与 rel="noopener noreferrer"。样式与
+    ThemeToggle 一致(9×9 圆角全圆描边),渲染标准章鱼猫标识(18px,
+    currentColor 填充),带 aria-label/title「源码仓库(GitHub)」。纯服务端
+    渲染标记、无客户端状态,在每个读者页面上表现一致。
+steps:
+  en:
+    - "web/components/Header.tsx: after `<ThemeToggle />`, add the `<a href=\"https://github.com/menghun3-cn/ai-novel-site\" target=\"_blank\" rel=\"noopener noreferrer\">` GitHub octocat icon button (h-9 w-9 rounded-full bordered, 18px currentColor svg, aria-label/title 源码仓库(GitHub))."
+    - "Verified: reader header renders the GitHub icon; click opens the repo in a new tab; typecheck green via pre-push hook."
+  zh:
+    - "web/components/Header.tsx:在 `<ThemeToggle />` 之后新增 `<a href=\"https://github.com/menghun3-cn/ai-novel-site\" target=\"_blank\" rel=\"noopener noreferrer\">` GitHub 章鱼猫图标按钮(h-9 w-9 圆角全圆描边,18px currentColor svg,aria-label/title「源码仓库(GitHub)」)。"
+    - "已验证:读者页头渲染 GitHub 图标;点击新标签页打开仓库;pre-push 钩子 typecheck 全绿。"
+follow-up:
+  en: |
+    - Repo URL is hardcoded in Header.tsx; update the href (and README.md)
+      if the repository is renamed or mirrored.
+  zh: |
+    - 仓库地址硬编码于 Header.tsx;若仓库改名或迁移,需同步更新 href
+      (以及 README.md)。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/151"
+  branch: "feat/reader-github-link"
