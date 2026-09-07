@@ -38,4 +38,5 @@ follow-up:
     - 新增截图放入 screenshot/ 并在 screenshot.md 表格加一行;只有刻意挑选
       时才提升进 README 章节。静态快照在重新截图前可能落后于当前界面。
 links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/150"
   branch: "docs/add-screenshots"
