@@ -14,19 +14,22 @@ V1 已完成并打标，但路线图（`docs/AI原创内容创作平台.md`）�
 
 ## Decision
 
-`master` 是发布线：只在里程碑边界接收来自 `develop` 的 `--no-ff` 合并提交，
-且每次发布合并都打注解标签 `vN.M.0`。`v1.0.0` 标记已完成的 V1 内容基线
-（MD/TXT 导入、Content Core、Web Publisher、RSS、SEO）。`develop` 是当前
-里程碑的常设集成分支。
+开发流程是一条三步流水线:
 
-每一个开发项——特性、修复或杂务——都在从 `develop` 切出的独立分支
-（`feat|fix|chore/<topic>`）上进行，并且只能通过合并提交落地，提交信息
-以编号 PR 的形式指名该变更（`PR #N: <topic>`）。禁止向 `master` 或
-`develop` 直接提交工作提交。分支推送到 `origin`；自 `gh` CLI（v2.98.0）
-可用后——通过 `GH_PAT` 环境变量映射为 `GH_TOKEN` 完成认证——PR 走真实
-流程：`gh pr create --base develop` 开启、`gh pr merge --merge` 落地，
-由 GitHub 记录可评审的 PR 与合并提交。PR #1–#2 早于 gh 可用，当时以本地
-`--no-ff` 合并落地——拓扑上与 GitHub 合并提交等价。
+1. **从 `develop` 切分支。** 每一个开发项——特性、修复或杂务——都在从
+   `develop` 切出的独立分支(`feat|fix|chore/<topic>`)上进行;禁止向
+   `master` 或 `develop` 直接提交工作提交。
+2. **向 `develop` 提 PR。** 每个分支只能通过针对 `develop` 的编号 PR
+   (`gh pr create --base develop`)落地,并以 `gh pr merge --merge` 合并,
+   由 GitHub 记录可评审的 PR 与合并提交。分支推送到 `origin`;自 `gh` CLI
+   (v2.98.0)可用后——通过 `GH_PAT` 环境变量映射为 `GH_TOKEN` 完成认证。
+   PR #1–#2 早于 gh 可用,当时以本地 `--no-ff` 合并落地——拓扑上与
+   GitHub 合并提交等价。
+3. **从 `develop` 向 `master` 提 PR。** `develop` 是当前里程碑的常设集成
+   分支;通过专门的 PR(`gh pr create --base master --head develop`)以
+   `--merge` 合并提升到发布线 `master`,每次发布合并都打注解标签
+   `vN.M.0`。`v1.0.0` 标记已完成的 V1 内容基线(MD/TXT 导入、Content
+   Core、Web Publisher、RSS、SEO)。
 
 ## Alternatives considered
 
