@@ -1,0 +1,65 @@
+title:
+  en: "Edge TTS switched to an OpenAI-compatible cloud wrapper"
+  zh: "Edge TTS 切换为 OpenAI 兼容云端封装"
+summary:
+  en: |
+    The listen-back `edge` engine stops dialing Microsoft Bing's speech
+    WebSocket from the server (Sec-MS-GEC minting, WSS_URL, UA, parseAudioChunk,
+    buildEdgeSSML all deleted) and instead does a single HTTP POST to the
+    ai-edge-tts2api OpenAI-compatible endpoint: `POST $EDGE_TTS_API_URL` with
+    `Authorization: Bearer $EDGE_TTS_API_KEY` and body
+    `{ model: 'tts-1', input, voice, speed, response_format: 'mp3' }` under a
+    30 s timeout, proxying raw audio/mpeg to the browser. Env vars fall back to
+    the ai-edge-tts2api README endpoint + shared key; EDGE_TTS_PROXY is
+    replaced by EDGE_TTS_API_URL. Error mapping: 401 auth hint, AbortError
+    timeout, TypeError network/firewall hint (frontend suggests 本地 Kokoro),
+    non-2xx upstream error.message passthrough. GET /api/tts probe and the
+    kokoro engine are unchanged; kokoro stays the default listen-back engine.
+    Version bumped 8.3.8 → 8.3.9 (V10.7.7); verified by typecheck, next build,
+    tts-reader 13/13, and a local mock of the upstream contract (exact request
+    mapping + Bearer header, 500 → 502). Live *.workers.dev connectivity was
+    untestable from this workspace.
+  zh: |
+    听书 `edge` 引擎不再由服务器直连微软 Bing 语音 WebSocket(删除
+    Sec-MS-GEC 计算、WSS_URL、UA、parseAudioChunk、buildEdgeSSML),改为对
+    ai-edge-tts2api 的 OpenAI 兼容端点做一次 HTTP POST:`POST $EDGE_TTS_API_URL`,
+    带 `Authorization: Bearer $EDGE_TTS_API_KEY`,请求体
+    `{ model: 'tts-1', input, voice, speed, response_format: 'mp3' }`,30 秒
+    超时,裸 audio/mpeg 原样代理给浏览器。环境变量缺省采用 ai-edge-tts2api
+    README 的端点与共享密钥;EDGE_TTS_PROXY 替换为 EDGE_TTS_API_URL。错误映射:
+    401 鉴权提示、AbortError 超时、TypeError 无法连接(前端提示改用本地
+    Kokoro)、非 2xx 透传上游 error.message。GET /api/tts 探测与 kokoro 引擎
+    不变;kokoro 可用时仍是默认听书引擎。版本 8.3.8 → 8.3.9(V10.7.7);
+    验证:typecheck、next build、tts-reader 13/13、本地 mock 上游契约 e2e
+    (请求映射 + Bearer 头,500 → 502)。*.workers.dev 活线连通性在本工作区
+    无法测试。
+steps:
+  en:
+    - "web/app/api/tts/route.ts: synthesizeEdge() now does one fetch(EDGE_TTS_API_URL) with Authorization: Bearer header and {model:'tts-1', input, voice, speed, response_format:'mp3'}, 30s AbortController timeout; bing WebSocket code (Sec-MS-GEC, WSS_URL, UA, parseAudioChunk) removed; error mapping 401/AbortError/TypeError/non-2xx."
+    - "web/lib/edge-tts.ts: kept EdgeVoice + EDGE_VOICES (17 Chinese voices) + EDGE_DEFAULT_VOICE; removed escapeXml/edgeRatePercent/buildEdgeSSML."
+    - "web/components/TtsPlayer.tsx: error-hint block extended to cover 无法连接语音合成服务 / 鉴权失败 with the 可改用 Kokoro 本地语音 hint."
+    - "docker-compose.yml + README.md: EDGE_TTS_PROXY replaced by EDGE_TTS_API_URL / EDGE_TTS_API_KEY env rows (README documents the defaults)."
+    - "Version 8.3.8 → 8.3.9 in all four package.json; CHANGELOG [Unreleased] V10.7.7 entry."
+    - "Verified: npm run typecheck green, build:web green, test:tts-reader 13/13, mock-upstream e2e (normal 200 proxy with exact request mapping + Bearer test-key-secret; upstream 500 → route 502 with upstream error.message)."
+  zh:
+    - "web/app/api/tts/route.ts:synthesizeEdge() 改为单次 fetch(EDGE_TTS_API_URL),带 Authorization: Bearer 头与 {model:'tts-1', input, voice, speed, response_format:'mp3'},30 秒 AbortController 超时;删除 bing WebSocket 代码(Sec-MS-GEC、WSS_URL、UA、parseAudioChunk);错误映射 401/AbortError/TypeError/非 2xx。"
+    - "web/lib/edge-tts.ts:保留 EdgeVoice + EDGE_VOICES(17 个中文语音)+ EDGE_DEFAULT_VOICE;删除 escapeXml/edgeRatePercent/buildEdgeSSML。"
+    - "web/components/TtsPlayer.tsx:错误提示扩展覆盖「无法连接语音合成服务」/「鉴权失败」,附「可改用 Kokoro 本地语音」提示。"
+    - "docker-compose.yml 与 README.md:EDGE_TTS_PROXY 替换为 EDGE_TTS_API_URL / EDGE_TTS_API_KEY 环境变量行(README 注明默认值)。"
+    - "四个 package.json 版本 8.3.8 → 8.3.9;CHANGELOG [Unreleased] 新增 V10.7.7 条目。"
+    - "验证:npm run typecheck 全绿、build:web 全绿、test:tts-reader 13/13、mock 上游 e2e(正常 200 代理,请求映射精确 + Bearer test-key-secret;上游 500 → 路由 502 透传上游 error.message)。"
+follow-up:
+  en: |
+    - Live `*.workers.dev` connectivity could not be verified from this
+      workspace (sandboxed network); after deploy, production smoke-test the
+      edge engine (POST /api/tts with engine=edge) and watch for
+      connectivity/auth errors.
+    - The shared API key is a documented live credential; deployments that need
+      isolation can override it with EDGE_TTS_API_KEY or rotate it.
+  zh: |
+    - *.workers.dev 活线连通性在本工作区无法验证(沙箱网络);部署后请在生产
+      冒烟测试 edge 引擎(POST /api/tts,engine=edge),留意连接/鉴权错误。
+    - 共享 API 密钥是文档化的活凭据;需要隔离的部署可用 EDGE_TTS_API_KEY
+      覆盖或轮换。
+links:
+  branch: "feat/edge-tts-openai-compatible-api"

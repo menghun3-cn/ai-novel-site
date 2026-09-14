@@ -50,12 +50,14 @@ Key mechanisms:
   user's saved engine is `kokoro` but the probe fails). The engine dropdown
   lists Kokoro first and the `GET /api/tts` `engines` array is kokoro-first.
   Rationale: edge synthesis is a long online POST (browser → `/api/tts` →
-  server → bing WebSocket, seconds to 15s) that mobile network middle-layers
-  (carrier transparent proxies / CDN edge nodes) time out, answering 502 with a
-  non-JSON error page — PC on broadband direct connections is unaffected. See
-  the
+  server → the ai-edge-tts2api OpenAI-compatible wrapper, seconds to 15s) that
+  mobile network middle-layers (carrier transparent proxies / CDN edge nodes)
+  time out, answering 502 with a non-JSON error page — PC on broadband direct
+  connections is unaffected. See the
   [user-categories-and-list-performance](../../implemented/feature/2026-09-04-user-categories-and-list-performance.md)
-  note for the full picture.
+  note for the full picture and the
+  [edge-tts-openai-compatible-api](../../implemented/feature/2026-09-15-edge-tts-openai-compatible-api.md)
+  note for the transport details.
 - **Asset self-healing.** `ensureRuntimeAssets()` copies `espeak-ng.wasm` and
   downloads the eight `voices/*.bin` files at first load if missing — both are
   hard-coded Node-side paths in kokoro-js-zh that cannot be configured.

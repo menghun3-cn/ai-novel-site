@@ -142,7 +142,7 @@
 - **长篇自动评审配置**：`books.chapter_review_enabled`(默认开)、`chapter_review_max_rounds`(默认 1 轮)、`arc_review_enabled`(默认开)
 - **统一 AI 任务扩展**：`AI_REVIEW_CHAPTER` / `AI_REVIEW_ARC` / `PUBLISH_SHORT_STORY` 三类新任务;调度器第三块 `processAiTasks({limit:5})` 拉起章节/弧评任务
 - **调度器互斥**:ai_tasks 的 PENDING→RUNNING 转换是抢抢式,多实例会重复处理——V9.5 补丁起以 `<数据目录>/scheduler.lock` 文件锁(pid 存活检测、崩溃残留自动接管)强制单实例,`NOVEL_SCHEDULER_LOCK=0` 可跳过;生产环境仅启一个调度器实例
-- **语音朗读(听书)**:`/short/[id]` 与长篇章节阅读页挂载 `TtsPlayer` 客户端组件;**三引擎**:本地 Kokoro(服务器 CPU 合成,移动端默认,规避长时在线合成被中间层 502)、Edge 在线神经语音(经 `/api/tts` 代理)、Web Speech 系统语音;段落切片顺序朗读(play/pause/stop + 语速 0.5-2.0× + 语音/引擎下拉);偏好持久化(语速/语音/引擎);朗读段自动滚动至视区;移动端适配:手势内预热解锁、iOS 取消式暂停、按句二次切片防安卓超长截断、语音列表多重试且下拉常显
+- **语音朗读(听书)**:`/short/[id]` 与长篇章节阅读页挂载 `TtsPlayer` 客户端组件;**三引擎**:本地 Kokoro(服务器 CPU 合成,移动端默认,规避长时在线合成被中间层 502)、Edge 在线神经语音(经 `/api/tts` 代理 ai-edge-tts2api 的 OpenAI 兼容云端封装,免自连 bing)、Web Speech 系统语音;段落切片顺序朗读(play/pause/stop + 语速 0.5-2.0× + 语音/引擎下拉);偏好持久化(语速/语音/引擎);朗读段自动滚动至视区;移动端适配:手势内预热解锁、iOS 取消式暂停、按句二次切片防安卓超长截断、语音列表多重试且下拉常显
 - **新表**:`short_story_publications`、`arc_review_records`;`review_records` 加 `chapter_id` + `ref_type` 列;`books` 加 5 列长篇评审配置、`chapters` 加 `optimize_round` 列
 - **新公开端点**:`/api/short-stories`(列表)、`/api/short-stories/[id]`(详情)
 - **V9.5 阶段二补丁(M13–M18)**:长篇单章自动优化闭环(评审不合格自动入队 `AI_OPTIMIZE_CHAPTER`,按问题清单改写后重评,受 `chapter_review_max_rounds` 约束);章节发布自动入队评审(importChapter / approveChapter 双路径去重,失败不阻塞发布);调度器单实例文件锁(`scheduler.lock`);TTS 朗读段高亮(当前段左侧琥珀竖条 + 渐变底色);评审中心统计补全(近 7 日章节/弧级评审量双柱趋势、章节维度均分、弧评汇总);章节评审批量入队(多选已发布章节,逐章校验返回跳过明细);弧评区间模板(全书 / 上次弧评后 / 最近 5 章一键预填);章节评审差异对比(分数轨迹、维度首评→最新对比、遗留问题清单)
@@ -316,7 +316,8 @@ PUBLISH_TICK_SECONDS=60 NOVEL_DATA_DIR=/var/lib/novel npm run scheduler &
 | `AI_TASK_STALE_GRACE_MS` | 僵尸 RUNNING 任务恢复阈值(毫秒,≥60000) | `600000`(10 分钟) |
 | `ENABLE_LOCAL_TTS` | Docker 构建参数:镜像是否内置 kokoro-js-zh 本地语音(`rebuild.sh` 默认 `1`) | `0`(裸 compose build) |
 | `KOKORO_MODEL_DIR` | 本地语音模型目录(compose 内 `/app/models/kokoro`;存在 `onnx/model_quantized.onnx` 才启用) | `/app/models/kokoro` |
-| `EDGE_TTS_PROXY` | Edge 在线合成出口代理(服务器无法直连 bing 时填 `http://user:pass@host:port`) | 空 |
+| `EDGE_TTS_API_URL` | AI 情感听书上游(ai-edge-tts2api)地址:`POST /v1/audio/speech`(OpenAI 兼容) | `https://edgetts2api.edgetts.workers.dev/v1/audio/speech` |
+| `EDGE_TTS_API_KEY` | 上游 API Key(仅服务端持有,请求头 `Authorization: Bearer`;上游部署方可用 `wrangler secret put API_KEY` 更换) | 线上部署密钥 |
 
 > 每日连载/自动发布的「时刻」均按**北京时间**(UTC+8)解释,与宿主机时区无关;compose 已为容器设置 `TZ=Asia/Shanghai`。
 
