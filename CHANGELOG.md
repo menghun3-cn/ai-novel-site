@@ -5,6 +5,30 @@
 
 ## [Unreleased]
 
+### V10.7.7 听书 Edge 引擎切换为云端 OpenAI 兼容封装(v8.3.9)
+
+- **不再自连 bing WebSocket**:Edge(「✨ AI 情感听书」)在线合成从「服务器直连
+  `speech.platform.bing.com`(自维护 Sec-MS-GEC 防盗链令牌 + `Path:` 文本帧 SSML
+  协议)」改为经 **ai-edge-tts2api** 代理——Cloudflare Workers 上把微软 Edge TTS
+  免费神经语音封装成 OpenAI 兼容格式的服务:
+  - 上游单入口 `POST https://edgetts2api.edgetts.workers.dev/v1/audio/speech`,
+    请求头 `Authorization: Bearer <API_KEY>`,请求体
+    `{"model":"tts-1","input":"…","voice":"zh-CN-XiaoxiaoNeural","speed":1.0,"response_format":"mp3"}`,
+    直接返回 `audio/mpeg` 字节;
+  - 长文自动分块并发合成、文本自动清理(去 Markdown/Emoji/URL/行内空白/引用编号)
+    由上游负责;前端切片(约 52 字/次)与 `/api/tts` 请求契约 `{text,voice,rate,engine}`
+    不变,`rate` 原样映射上游 `speed`(上游支持 0.25~2.0,覆盖前端钳制范围);
+  - 端点/密钥可用环境变量 `EDGE_TTS_API_URL` / `EDGE_TTS_API_KEY` 覆盖,
+    默认线上部署地址与密钥(README 已记录;上游部署方可随时
+    `wrangler secret put API_KEY` 更换密钥);**密钥只存在服务端** `/api/tts` 路由,
+    不下发到浏览器。
+- **代码收敛**:`web/lib/edge-tts.ts` 删除 SSML 构建(`escapeXml` / `edgeRatePercent` /
+  `buildEdgeSSML`)与 WebSocket 协议常量,仅保留语音白名单;`web/app/api/tts/route.ts`
+  的 edge 引擎改为单次 `fetch`(30s 超时 + 401/网络错误可读提示);`EDGE_TTS_PROXY`
+  环境变量移除(docker-compose 与 README 环境变量表同步更新)。
+- **验收**:`npm run typecheck` 与 `build:web` 通过,`npm run test:tts-reader` 通过;
+  上游 `*.workers.dev` 在本环境网络不可达(README 已知提示),线上联通性以实际部署验证为准。
+
 ### V10.7.6 新增:用户端按分类/题材动态生成书本封面与列表小图标(v8.3.8)
 
 - **无封面书籍不再显示首字占位**:读者站所有封面位(首页主推、全部小说卡片、

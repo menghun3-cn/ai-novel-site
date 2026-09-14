@@ -39,10 +39,12 @@ TTS 合成)两种引擎:Edge 依赖微软在线服务,离线不可用。本地�
   `TtsPlayer` 自动切到本地语音;不可用时回退 `edge`(用户保存的引擎是
   `kokoro` 但探测失败同样回退)。引擎下拉 Kokoro 置顶,`GET /api/tts` 的
   `engines` 数组 kokoro 优先。原因:edge 是长时在线 POST(浏览器 → `/api/tts`
-  → 服务器 → bing WebSocket,数秒~15s),移动网络路径上的中间层(运营商透明
-  代理/CDN 边缘节点)等待超时后替服务器返回 502 错误页(非 JSON)——PC 宽带
-  直连无此拦截。完整背景见
-  [user-categories-and-list-performance](../../implemented/feature/2026-09-04-user-categories-and-list-performance.md)。
+  → 服务器 → ai-edge-tts2api OpenAI 兼容封装,数秒~15s),移动网络路径上的
+  中间层(运营商透明代理/CDN 边缘节点)等待超时后替服务器返回 502 错误页
+  (非 JSON)——PC 宽带直连无此拦截。完整背景见
+  [user-categories-and-list-performance](../../implemented/feature/2026-09-04-user-categories-and-list-performance.md),
+  传输细节见
+  [edge-tts-openai-compatible-api](../../implemented/feature/2026-09-15-edge-tts-openai-compatible-api.zh.md)。
 - **资产自愈。** `ensureRuntimeAssets()` 首次加载前补齐 `espeak-ng.wasm` 与
   8 个 `voices/*.bin` —— 二者是 kokoro-js-zh Node 端写死的路径,无法配置。
 - **hf-mirror 默认。** transformers.js 3.x 不读 `HF_ENDPOINT` 环境变量,代码内

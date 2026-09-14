@@ -60,10 +60,13 @@ Next 15.5 读取 `searchParams` 的页面无视 `revalidate` 一律退化为 dyn
 每次切换都会重跑 SQL、重渲染——正是要消除的卡顿本身。
 
 **听书默认引擎保持 `edge`。** 否决:edge 是长时在线 POST(浏览器 → /api/tts
-→ 服务器 → bing WebSocket,数秒~15s),移动网络路径上的中间层(运营商透明
-代理/CDN 边缘节点)等待超时后替服务器返回 502 错误页(非 JSON,前端因此显示
-笼统的「语音合成失败(502)」)——PC 宽带直连无此拦截,所以同一本小说 PC 正常、
-手机端 502。Kokoro 本地合成 <1s、无外网一跳,天然规避中间层拦截。
+→ 服务器 → ai-edge-tts2api OpenAI 兼容封装,数秒~15s),移动网络路径上的
+中间层(运营商透明代理/CDN 边缘节点)等待超时后替服务器返回 502 错误页
+(非 JSON,前端因此显示笼统的「语音合成失败(502)」)——PC 宽带直连无此拦截,
+所以同一本小说 PC 正常、手机端 502。Kokoro 本地合成 <1s、无外网一跳,天然
+规避中间层拦截。(edge 传输方式见
+[edge-tts-openai-compatible-api](../../implemented/feature/2026-09-15-edge-tts-openai-compatible-api.zh.md)
+笔记。)
 
 ## Consequences
 
