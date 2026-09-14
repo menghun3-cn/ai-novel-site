@@ -373,8 +373,9 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
             : lastErr instanceof Error
               ? lastErr.message
               : 'AI 语音合成失败';
-      // 服务器无法连通 Edge TTS(未配置 EDGE_TTS_PROXY 或出口受限)时的可操作提示
-      if (msg.includes('Edge TTS 服务')) msg = `${msg};可改用「Kokoro 本地语音」,或稍后重试`;
+      // 服务器无法连通上游语音服务(出口受限/服务端鉴权配置问题)时的可操作提示
+      if (msg.includes('无法连接语音合成服务') || msg.includes('鉴权失败'))
+        msg = `${msg};可改用「Kokoro 本地语音」,或稍后重试`;
       throw new Error(msg);
     },
     [edgeVoice, kokoroVoice, rate, engine]

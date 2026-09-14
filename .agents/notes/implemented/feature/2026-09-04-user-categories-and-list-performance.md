@@ -73,12 +73,15 @@ Rejected after production measurement: Next 15.5 degrades any page that reads
 re-run SQL and re-render on the server — exactly the latency being fixed.
 
 **Keep `edge` as the default listen-back engine.** Rejected: edge synthesis is
-a long online POST (browser → /api/tts → server → bing WebSocket, seconds to
-15s) that mobile network middle-layers (carrier transparent proxies / CDN edge
-nodes) time out, answering 502 with a non-JSON error page — PC on broadband
-direct connections is unaffected, which is why the same novel read fine on PC
-but failed on mobile. Kokoro synthesizes locally in <1s with no external hop,
-so it sidesteps the interception entirely.
+a long online POST (browser → /api/tts → server → the ai-edge-tts2api
+OpenAI-compatible wrapper, seconds to 15s) that mobile network middle-layers
+(carrier transparent proxies / CDN edge nodes) time out, answering 502 with a
+non-JSON error page — PC on broadband direct connections is unaffected, which
+is why the same novel read fine on PC but failed on mobile. Kokoro synthesizes
+locally in <1s with no external hop, so it sidesteps the interception entirely.
+(The edge transport is documented in the
+[edge-tts-openai-compatible-api](../../implemented/feature/2026-09-15-edge-tts-openai-compatible-api.md)
+note.)
 
 ## Consequences
 

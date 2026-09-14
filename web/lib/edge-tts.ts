@@ -1,7 +1,15 @@
 /**
- * Edge TTS(微软在线神经语音)免费接入:无需 API Key,走公共 WebSocket 端点合成 MP3。
- * 神经语音自带情感/韵律(非系统内置的机械音),路由封装在 /api/tts。
- * 本文件:语音白名单 + SSML 构建等纯函数(TtsPlayer 与 API 路由共用)。
+ * Edge TTS（AI 情感听书）接入定义：语音白名单 + 上游服务常量（TtsPlayer 与 API 路由共用）。
+ *
+ * 合成走 OpenAI 兼容的 HTTP API（ai-edge-tts2api 部署在 Cloudflare Workers 上，
+ * 把微软 Edge TTS 免费神经语音封装成 /v1/audio/speech）：
+ *   POST https://edgetts2api.edgetts.workers.dev/v1/audio/speech
+ *   Authorization: Bearer <API_KEY>
+ *   请求体 {"model":"tts-1","input":"…","voice":"zh-CN-XiaoxiaoNeural","speed":1.0,"response_format":"mp3"}
+ *   返回 audio/mpeg 音频字节。
+ * 路由封装在 /api/tts（服务端持有 API Key，绝不下发到浏览器）。
+ *
+ * 本文件只放前端/路由共用的纯常量；合成逻辑在 web/app/api/tts/route.ts。
  */
 
 export interface EdgeVoice {
@@ -12,7 +20,7 @@ export interface EdgeVoice {
   desc: string;
 }
 
-/** 免费可用的中文神经语音白名单(路由侧校验只认这些) */
+/** 中文神经语音白名单（上游也接受任意微软 Edge TTS 音色名，直接放 voice 字段即可） */
 export const EDGE_VOICES: EdgeVoice[] = [
   { voiceURI: 'zh-CN-XiaoxiaoNeural', name: '晓晓(女·温柔)', desc: '自然温柔,情感细腻' },
   { voiceURI: 'zh-CN-XiaoyiNeural', name: '晓伊(女·活泼)', desc: '活泼亲切' },
@@ -34,30 +42,3 @@ export const EDGE_VOICES: EdgeVoice[] = [
 ];
 
 export const EDGE_DEFAULT_VOICE = 'zh-CN-XiaoxiaoNeural';
-
-/** XML 转义(SSML 文本注入) */
-export function escapeXml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
-/** 语速 0.5..2 → SSML 百分比("+0%"/"+20%"/"-30%") */
-export function edgeRatePercent(rate: number): string {
-  const pct = Math.round((Math.max(0.5, Math.min(2, rate)) - 1) * 100);
-  return `${pct >= 0 ? '+' : ''}${pct}%`;
-}
-
-/** 构建 Edge TTS SSML(神经语音 + 语速) */
-export function buildEdgeSSML(text: string, voiceURI: string, rate: number): string {
-  return (
-    `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>` +
-    `<voice name='${escapeXml(voiceURI)}'>` +
-    `<prosody pitch='+0Hz' rate='${edgeRatePercent(rate)}' volume='+0%'>` +
-    `${escapeXml(text)}` +
-    `</prosody></voice></speak>`
-  );
-}
