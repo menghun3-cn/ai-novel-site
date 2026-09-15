@@ -45,9 +45,11 @@ English | [中文](2026-09-04-user-categories-and-list-performance.zh.md)
   `loading="lazy" decoding="async"`。
 - **文案。** TtsPlayer(按钮、引擎选项、错误提示)与 tts API 错误消息中用户
   可见的「朗读」全部改为「听书」。
-- **默认听书引擎改为 Kokoro。** 本地 Kokoro 引擎可用且用户无显式偏好时,
-  默认引擎自动切为 Kokoro,否则回退 `edge`;移动端 502 根因与切换逻辑见
-  更新后的 [local-kokoro-tts](../../implemented/feature/2026-09-03-local-kokoro-tts.md)。
+- **默认听书引擎(V10.7 → V10.8)。** V10.7 起本地 Kokoro 引擎可用且用户无
+  显式偏好时,默认引擎自动切为 Kokoro,否则回退 `edge`;移动端 502 根因记录
+  在下方 Alternatives。V10.8 已整条移除 kokoro 引擎——听书引擎恢复为恰好
+  `edge`(默认)+ `native`;见
+  [edge-tts-custom-domain-kokoro-removal](../../implemented/simplification/2026-09-15-edge-tts-custom-domain-kokoro-removal.zh.md)。
 
 ## Alternatives considered
 
@@ -59,12 +61,16 @@ English | [中文](2026-09-04-user-categories-and-list-performance.zh.md)
 Next 15.5 读取 `searchParams` 的页面无视 `revalidate` 一律退化为 dynamic,
 每次切换都会重跑 SQL、重渲染——正是要消除的卡顿本身。
 
-**听书默认引擎保持 `edge`。** 否决:edge 是长时在线 POST(浏览器 → /api/tts
-→ 服务器 → ai-edge-tts2api OpenAI 兼容封装,数秒~15s),移动网络路径上的
-中间层(运营商透明代理/CDN 边缘节点)等待超时后替服务器返回 502 错误页
-(非 JSON,前端因此显示笼统的「语音合成失败(502)」)——PC 宽带直连无此拦截,
-所以同一本小说 PC 正常、手机端 502。Kokoro 本地合成 <1s、无外网一跳,天然
-规避中间层拦截。(edge 传输方式见
+**听书默认引擎保持 `edge`。** V10.7 否决:edge 是长时在线 POST(浏览器 →
+/api/tts → 服务器 → ai-edge-tts2api OpenAI 兼容封装,数秒~15s),移动网络
+路径上的中间层(运营商透明代理/CDN 边缘节点)等待超时后替服务器返回 502
+错误页(非 JSON,前端因此显示笼统的「语音合成失败(502)」)——PC 宽带直连
+无此拦截,所以同一本小说 PC 正常、手机端 502。Kokoro 本地合成 <1s、无外网
+一跳,天然规避中间层拦截。**V10.8 重新评估:** kokoro 引擎已移除,`edge`
+恢复为默认引擎(见
+[edge-tts-custom-domain-kokoro-removal](../../implemented/simplification/2026-09-15-edge-tts-custom-domain-kokoro-removal.zh.md));
+移动端 502 失败模式仍是 edge 必须保持快速可达(自定义域名端点 + 前端切片请求)的原因。
+(edge 传输方式见
 [edge-tts-openai-compatible-api](../../implemented/feature/2026-09-15-edge-tts-openai-compatible-api.zh.md)
 笔记。)
 
@@ -79,5 +85,6 @@ Next 15.5 读取 `searchParams` 的页面无视 `revalidate` 一律退化为 dyn
 - 客户端筛选依赖 JS;无 JS 时 /books 与分类页仍渲染完整静态列表(limit 500)。
 - `listCategories()` 现在返回 `id`,顺带修复了管理端分类页 rename/delete
   曾调用 `/api/admin/categories/undefined` 的 bug。
-- 默认听书引擎在镜像以 `ENABLE_LOCAL_TTS=1` 构建且模型已挂载时为 Kokoro;
-  未启用本地引擎的镜像静默沿用 edge——两种情况都不破坏用户体验。
+- V10.8 起听书引擎恰好为 `edge` + `native`(默认 `edge`);kokoro 引擎、
+  `ENABLE_LOCAL_TTS` 构建参数与 `./models/kokoro` 卷已移除(见
+  [edge-tts-custom-domain-kokoro-removal](../../implemented/simplification/2026-09-15-edge-tts-custom-domain-kokoro-removal.zh.md))。

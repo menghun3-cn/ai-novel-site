@@ -3,18 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { detectIOS, maxChunkLength, splitIntoChunks } from '@/lib/tts';
 import { EDGE_DEFAULT_VOICE, EDGE_VOICES } from '@/lib/edge-tts';
-import { KOKORO_DEFAULT_VOICE, KOKORO_VOICES } from '@/lib/kokoro';
 
 const KEY_RATE = 'novel:tts:rate';
 const KEY_VOICE = 'novel:tts:voiceURI';
 const KEY_ENGINE = 'novel:tts:engine';
 const KEY_EDGE_VOICE = 'novel:tts:edgeVoice';
-const KEY_KOKORO_VOICE = 'novel:tts:kokoroVoice';
 const DEFAULT_RATE = 1;
 /** AI 朗读预取片数:播放到第 i 片时提前合成好 i+1、i+2,避免播完一片再等合成 */
 const PREFETCH_COUNT = 2;
 
-type Engine = 'native' | 'edge' | 'kokoro';
+type Engine = 'native' | 'edge';
 
 interface SpeechVoiceLite {
   voiceURI: string;
@@ -60,12 +58,9 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
   const [paused, setPaused] = useState(false);
   const [activePara, setActivePara] = useState<number>(-1);
   const [paraTotal, setParaTotal] = useState<number>(0);
-  // 引擎 + AI 语音选择(默认本地 Kokoro,规避移动端中间层对长时在线合成 POST 的 502 拦截)
+  // 引擎 + AI 语音选择
   const [engine, setEngine] = useState<Engine>('edge');
   const [edgeVoice, setEdgeVoice] = useState<string>(EDGE_DEFAULT_VOICE);
-  const [kokoroVoice, setKokoroVoice] = useState<string>(KOKORO_DEFAULT_VOICE);
-  // 本地 Kokoro 引擎可用性(由 /api/tts 探测,挂载模型后自动出现)
-  const [kokoroOk, setKokoroOk] = useState(false);
   // 错误/加载提示(native 语音列表为空 / edge 合成失败均可见)
   const [ttsError, setTtsError] = useState<string | null>(null);
   const [edgeBusy, setEdgeBusy] = useState(false);
@@ -92,7 +87,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
   // 移动端 getVoices() 首次常为空且 voiceschanged 可能不触发:轮询 + 回前台兜底 + 手动重试。
   useEffect(() => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      setTtsError('当前浏览器不支持系统语音听书;可改用「Kokoro 本地语音」或「AI 情感听书」');
+      setTtsError('当前浏览器不支持系统语音听书;可改用「AI 情感听书」');
       return;
     }
     setSupported(true);
@@ -131,45 +126,12 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
       if (r >= 0.5 && r <= 2) setRate(r);
       savedVoiceRef.current = localStorage.getItem(KEY_VOICE) ?? '';
       const e = localStorage.getItem(KEY_ENGINE);
-      if (e === 'native' || e === 'edge' || e === 'kokoro') setEngine(e);
+      if (e === 'native' || e === 'edge') setEngine(e);
       const ev = localStorage.getItem(KEY_EDGE_VOICE);
       if (ev && EDGE_VOICES.some((v) => v.voiceURI === ev)) setEdgeVoice(ev);
-      const kv = localStorage.getItem(KEY_KOKORO_VOICE);
-      if (kv && KOKORO_VOICES.some((v) => v.voiceURI === kv)) setKokoroVoice(kv);
     } catch {
       /* ignore */
     }
-  }, []);
-
-  // 探测本地 Kokoro 引擎可用性:镜像启用 ENABLE_LOCAL_TTS 且模型已挂载才出现该选项。
-  // kokoro 可用且用户从未手动选过引擎 → 默认切到本地引擎(移动端中间层不会 502);
-  // kokoro 不可用(依赖/模型缺失)且当前正用 kokoro → 自动回退 edge,保证能出声。
-  useEffect(() => {
-    let alive = true;
-    fetch('/api/tts', { method: 'GET' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { kokoro?: { available?: boolean } } | null) => {
-        if (!alive) return;
-        const avail = Boolean(data?.kokoro?.available);
-        setKokoroOk(avail);
-        setEngine((prev) => {
-          if (avail) {
-            try {
-              if (localStorage.getItem(KEY_ENGINE)) return prev;
-            } catch {
-              /* ignore */
-            }
-            return 'kokoro';
-          }
-          return prev === 'kokoro' ? 'edge' : prev;
-        });
-      })
-      .catch(() => {
-        /* 探测失败视为不可用,edge 兜底 */
-      });
-    return () => {
-      alive = false;
-    };
   }, []);
 
   // 语音列表就绪后解析生效语音:已选且存在 → 保留;否则用保存的偏好;再否则自动选第一个中文语音
@@ -252,7 +214,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
         // canceled/interrupted 是主动 cancel() 的正常伴生事件;其余错误才中断播放
         if (!playingRef.current || ev.error === 'canceled' || ev.error === 'interrupted') return;
         console.warn('[TTS] 朗读出错:', ev.error);
-        setTtsError('系统语音听书出错,可切换「Kokoro 本地语音」或「AI 情感听书」');
+        setTtsError('系统语音听书出错,可切换「AI 情感听书」');
         stop();
       };
       window.speechSynthesis.speak(u);
@@ -321,15 +283,14 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
     return units;
   }, [contentSelector, rate]);
 
-  /** 合成单个朗读单元为 MP3/WAV(objectURL + audio 元素);瞬时失败(5xx/网络中断)自动重试 2 次 */
+  /** 合成单个朗读单元为 MP3(objectURL + audio 元素);瞬时失败(5xx/网络中断)自动重试 2 次 */
   const fetchEdgeAudio = useCallback(
     async (unit: SpeakUnit): Promise<{ url: string; audio: HTMLAudioElement }> => {
-      const isKokoro = engine === 'kokoro';
       const body = JSON.stringify({
         text: unit.text,
-        voice: isKokoro ? kokoroVoice : edgeVoice,
+        voice: edgeVoice,
         rate,
-        engine: isKokoro ? 'kokoro' : 'edge',
+        engine: 'edge',
       });
       let lastErr: unknown;
       for (let attempt = 0; attempt <= 2; attempt++) {
@@ -352,7 +313,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
           if (!res.ok) {
             const data = (await res.json().catch(() => null)) as { error?: string } | null;
             lastErr = new Error(data?.error ?? `语音合成失败(${res.status})`);
-            // 4xx 为请求本身有问题,重试无意义;503 为本地引擎未就绪(edge 不受影响)
+            // 4xx 为请求本身有问题,重试无意义;5xx 才重试
             if (res.status < 500) throw lastErr;
             continue; // 5xx:服务端合成波动,重试
           }
@@ -375,10 +336,10 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
               : 'AI 语音合成失败';
       // 服务器无法连通上游语音服务(出口受限/服务端鉴权配置问题)时的可操作提示
       if (msg.includes('无法连接语音合成服务') || msg.includes('鉴权失败'))
-        msg = `${msg};可改用「Kokoro 本地语音」,或稍后重试`;
+        msg = `${msg};可稍后重试或改用「系统语音」`;
       throw new Error(msg);
     },
-    [edgeVoice, kokoroVoice, rate, engine]
+    [edgeVoice, rate]
   );
 
   /**
@@ -458,7 +419,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
         URL.revokeObjectURL(buf!.url);
         edgeBuffersRef.current.delete(i);
         if (edgeActiveRef.current) {
-          setTtsError('音频播放失败,请重试或切换「Kokoro 本地语音」');
+          setTtsError('音频播放失败,请重试或切换「系统语音」');
           stop();
         }
       };
@@ -590,15 +551,6 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
     }
   }, []);
 
-  const onChangeKokoroVoice = useCallback((uri: string) => {
-    setKokoroVoice(uri);
-    try {
-      localStorage.setItem(KEY_KOKORO_VOICE, uri);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
   const onChangeEngine = useCallback((next: Engine) => {
     if (next === engine) return;
     stop();
@@ -666,9 +618,8 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
           onChange={(e) => onChangeEngine(e.target.value as Engine)}
           className="h-9 max-w-[190px] rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
           aria-label="选择听书引擎"
-          title="默认使用 Kokoro 本地语音(离线合成,移动端网络中间层不会拦截,推荐);AI 情感听书走免费 Edge 神经语音(情感自然,需外网在线合成);系统语音用浏览器内置语音"
+          title="✨ AI 情感听书走免费 Edge 神经语音(情感自然,需外网在线合成);系统语音用浏览器内置语音"
         >
-          {kokoroOk ? <option value="kokoro">🎧 Kokoro 本地语音</option> : null}
           <option value="edge">✨ AI 情感听书</option>
           <option value="native">系统语音</option>
         </select>
@@ -681,19 +632,6 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
             aria-label="选择 AI 语音"
           >
             {EDGE_VOICES.map((v) => (
-              <option key={v.voiceURI} value={v.voiceURI}>
-                {v.name} · {v.desc}
-              </option>
-            ))}
-          </select>
-        ) : engine === 'kokoro' ? (
-          <select
-            value={kokoroVoice}
-            onChange={(e) => onChangeKokoroVoice(e.target.value)}
-            className="h-9 max-w-[190px] rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-            aria-label="选择本地语音"
-          >
-            {KOKORO_VOICES.map((v) => (
               <option key={v.voiceURI} value={v.voiceURI}>
                 {v.name} · {v.desc}
               </option>
@@ -751,7 +689,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
       {engine === 'native' && voices.length === 0 && supported ? (
         <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
           未获取到系统语音列表:部分移动浏览器需先点一次「听书」才会返回;如一直为空,可能是浏览器权限/WebView 限制,
-          建议改用「🎧 Kokoro 本地语音」(离线合成,不需要系统语音)。
+          可改用「✨ AI 情感听书」(在线合成,不依赖系统语音)。
           <button
             type="button"
             onClick={() => setVoiceRetry((n) => n + 1)}
@@ -769,7 +707,7 @@ export default function TtsPlayer({ contentSelector }: { contentSelector: string
       {isPlaying && (
         <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
           正在听书第 {activePara + 1}/{paraTotal} 段
-          {engine === 'kokoro' ? '(Kokoro 本地语音)' : engine === 'edge' ? '(AI 情感语音)' : ''}
+          {engine === 'edge' ? '(AI 情感语音)' : ''}
         </p>
       )}
     </div>

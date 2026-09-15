@@ -335,26 +335,18 @@ docker compose build \
 > docker compose exec web npm run import:novel -- /app/novels/长风渡
 > ```
 
-**Q3.3：如何启用听书「本地语音」（Kokoro TTS）？**
-`rebuild.sh` **默认已启用**本地语音引擎并自动下载中文模型，直接执行即可：
+**Q3.3：如何配置听书（Edge 在线语音）？**
+听书只有两个引擎：浏览器「系统语音」+「AI 情感听书」（Edge 在线神经语音，唯一的服务器合成引擎，经 `/api/tts` 代理 ai-edge-tts2api 的 OpenAI 兼容封装）。默认端点为本项目自定义域名 `edgetts2api.menghun3.cc`（大陆可直连），**无需任何配置**，直接执行即可：
 ```bash
 ./rebuild.sh
-# 等价拆分执行:
-#   docker compose build --build-arg ENABLE_LOCAL_TTS=1   # 镜像内置 kokoro-js-zh + 语音
-#   ./rebuild.sh --model                                  # 模型权重下载到 ./models/kokoro
+# 需要覆盖端点/密钥时,在 docker-compose.yml 的 web.environment 设置后重启:
+#   EDGE_TTS_API_URL: "https://你的域名/v1/audio/speech"
+#   EDGE_TTS_API_KEY: "你的密钥"
 ```
 说明：
-- **默认行为**：`--tts`（镜像内置 kokoro-js-zh 中文 fork + onnxruntime-node + espeak-ng.wasm + 8 个中文语音）与 `--model`（下载 `onnx/model_quantized.onnx` 到 `./models/kokoro`）都默认开启；**模型已存在时自动跳过下载、零网络请求**。
-- **onnxruntime-node 离线安装**：CPU 二进制已捆绑在 npm 包内，构建时用 `ONNXRUNTIME_NODE_INSTALL=skip` + `ONNXRUNTIME_NODE_INSTALL_CUDA=skip` 跳过 install 脚本对未捆绑 CUDA/GPU 二进制的下载（NuGet/GitHub 302 重定向、国内网络必失败；CPU 推理用不到）。两个变量都要设：`@huggingface/transformers@3.8.1` 硬编码依赖 `onnxruntime-node@1.21.0` 会嵌套安装一份，其旧版安装脚本只认后者（新变量仅 1.29+ 读取）。无需任何二进制镜像配置。
-- **逃生门**：不需要本地引擎时 `./rebuild.sh --no-tts`（镜像不含本地引擎、体积不变，听书回退 Edge 在线合成）；模型已手动放置时 `./rebuild.sh --no-model`。
-- `--model` 下载的是 `onnx-community/Kokoro-82M-v1.0-ONNX` 的 `onnx/model_quantized.onnx`（q8 量化）等文件（compose 已挂载为 `/app/models/kokoro`）。**必须下载 `onnx/model_quantized.onnx`**——引擎 q8 固定找 `_quantized` 后缀 + `onnx/` 子目录，其它文件（model.onnx / model_q8.onnx）不会被加载。模型卡: https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX
-- 模型远端默认走 **hf-mirror**（国内可直连）；海外服务器设 `KOKORO_HF_ENDPOINT=https://huggingface.co` 切官方源。
-- 不挂载模型时引擎会尝试在线下载到 `/app/data/.kokoro-cache`（data 卷持久化，重启不丢）。
-- 构建启动后会自动在容器内跑合成验证：
-```bash
-docker compose exec web npm run test:tts-local
-```
-听书页「朗读引擎」下拉会出现「🎧 本地语音」选项（服务端探测到模型才显示）。可选 8 个中文语音：小小/小北/小妮/小伊（女）、云健/云希/云夏/云扬（男）。
+- **V10.8 变更**：V10.7 引入的本地 Kokoro 引擎已移除——镜像不再内置 kokoro-js-zh/onnxruntime-node，`./models/kokoro` 卷与 `--tts / --model / --no-tts / --no-model` 参数一并删除；`rebuild.sh` 仅保留 `--clean`。听书引擎下拉只显示「AI 情感听书」「系统语音」。
+- **网络注意**：ai-edge-tts2api 上游的 `*.workers.dev` 域名在部分受限网络（如大陆服务器/办公网）不可达（上游 README 注明，非服务故障）；本项目默认端点已切到自定义域名。自托管 ai-edge-tts2api 服务时请另配 CNAME，并设置 `EDGE_TTS_API_URL` 指向自己的地址。
+- **鉴权**：请求头 `Authorization: Bearer <EDGE_TTS_API_KEY>`；密钥只存服务端（不进浏览器），上游部署方可用 `wrangler secret put API_KEY` 更换。
 
 **Q4：修改章节后没反应？**
 确认 `watch.enabled: true` 且服务在运行；新章节写入后约 3 秒内（防抖 + 稳定性检查）会自动构建。

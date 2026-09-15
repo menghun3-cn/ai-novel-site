@@ -1,8 +1,9 @@
 # Agent Note: kokoro 合成串行化 + 文本上限,消除低配主机 502/524
 
 Status: implemented
+Archived: 2026-09-15
 
-English | [中文](2026-09-04-kokoro-synthesis-serialization.zh.md)
+[English](2026-09-04-kokoro-synthesis-serialization.md) | 中文
 
 ## Problem
 

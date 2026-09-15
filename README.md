@@ -4,8 +4,8 @@
 
 | | |
 |---|---|
-| 当前版本 | v8.3.8（V1–V10.7 里程碑全量落地，详见[功能规划](#功能规划与完成情况)） |
-| 技术栈 | Node.js ≥ 20 · Next.js 15 (App Router) · TypeScript · better-sqlite3 (SQLite WAL) · Tailwind CSS · Zod · Kokoro 本地听书 |
+| 当前版本 | v8.4.0（V1–V10.8 里程碑全量落地，详见[功能规划](#功能规划与完成情况)） |
+| 技术栈 | Node.js ≥ 20 · Next.js 15 (App Router) · TypeScript · better-sqlite3 (SQLite WAL) · Tailwind CSS · Zod |
 | 协议 | [MIT](#协议mit) |
 
 ---
@@ -41,7 +41,7 @@
         │  ├─ 读者站 /(site)        │                     │  · AI 自动连载（生成→质检→发布，V5）             │
         │  ├─ 管理后台 /admin       │                     │  · 短篇定时创作 / 批量排期（V9.6–V9.8）          │
         │  └─ API Routes /api/**   │                      │  · AI 任务消化：章节/弧评审等（V9.5）            │
-        │  （听书：Kokoro / Edge /  │                     │  · 每日产线 / 持续产线触发（V10 / V10.5）        │
+        │  （听书：Edge / 系统语音  │                     │  · 每日产线 / 持续产线触发（V10 / V10.5）        │
         │   系统语音）              │                     │  · 僵尸任务自动恢复（V10.6）                     │
         └────────────────────────────┘                    └──────────────────────────────────────────────────┘
 ```
@@ -142,11 +142,11 @@
 - **长篇自动评审配置**：`books.chapter_review_enabled`(默认开)、`chapter_review_max_rounds`(默认 1 轮)、`arc_review_enabled`(默认开)
 - **统一 AI 任务扩展**：`AI_REVIEW_CHAPTER` / `AI_REVIEW_ARC` / `PUBLISH_SHORT_STORY` 三类新任务;调度器第三块 `processAiTasks({limit:5})` 拉起章节/弧评任务
 - **调度器互斥**:ai_tasks 的 PENDING→RUNNING 转换是抢抢式,多实例会重复处理——V9.5 补丁起以 `<数据目录>/scheduler.lock` 文件锁(pid 存活检测、崩溃残留自动接管)强制单实例,`NOVEL_SCHEDULER_LOCK=0` 可跳过;生产环境仅启一个调度器实例
-- **语音朗读(听书)**:`/short/[id]` 与长篇章节阅读页挂载 `TtsPlayer` 客户端组件;**三引擎**:本地 Kokoro(服务器 CPU 合成,移动端默认,规避长时在线合成被中间层 502)、Edge 在线神经语音(经 `/api/tts` 代理 ai-edge-tts2api 的 OpenAI 兼容云端封装,免自连 bing)、Web Speech 系统语音;段落切片顺序朗读(play/pause/stop + 语速 0.5-2.0× + 语音/引擎下拉);偏好持久化(语速/语音/引擎);朗读段自动滚动至视区;移动端适配:手势内预热解锁、iOS 取消式暂停、按句二次切片防安卓超长截断、语音列表多重试且下拉常显
+- **语音朗读(听书)**:`/short/[id]` 与长篇章节阅读页挂载 `TtsPlayer` 客户端组件;**双引擎**:Edge 在线神经语音(经 `/api/tts` 代理 ai-edge-tts2api 的 OpenAI 兼容云端封装,免自连 bing)与 Web Speech 系统语音;段落切片顺序朗读(play/pause/stop + 语速 0.5-2.0× + 语音/引擎下拉);偏好持久化(语速/语音/引擎);朗读段自动滚动至视区;移动端适配:手势内预热解锁、iOS 取消式暂停、按句二次切片防安卓超长截断、语音列表多重试且下拉常显
 - **新表**:`short_story_publications`、`arc_review_records`;`review_records` 加 `chapter_id` + `ref_type` 列;`books` 加 5 列长篇评审配置、`chapters` 加 `optimize_round` 列
 - **新公开端点**:`/api/short-stories`(列表)、`/api/short-stories/[id]`(详情)
 - **V9.5 阶段二补丁(M13–M18)**:长篇单章自动优化闭环(评审不合格自动入队 `AI_OPTIMIZE_CHAPTER`,按问题清单改写后重评,受 `chapter_review_max_rounds` 约束);章节发布自动入队评审(importChapter / approveChapter 双路径去重,失败不阻塞发布);调度器单实例文件锁(`scheduler.lock`);TTS 朗读段高亮(当前段左侧琥珀竖条 + 渐变底色);评审中心统计补全(近 7 日章节/弧级评审量双柱趋势、章节维度均分、弧评汇总);章节评审批量入队(多选已发布章节,逐章校验返回跳过明细);弧评区间模板(全书 / 上次弧评后 / 最近 5 章一键预填);章节评审差异对比(分数轨迹、维度首评→最新对比、遗留问题清单)
-- 验证脚本:`test:short-story-publication` / `test:short-story-reader` / `test:chapter-review` / `test:arc-review` / `test:scheduler-tasks` / `test:tts-reader` 全部通过;补丁新增 `test:chapter-optimize` / `test:chapter-review-auto-enqueue` / `test:scheduler-lock` / `test:review-stats`;截至 V10.7 `test:*` 共 44 套(含 Playwright E2E)覆盖全部分子系统
+- 验证脚本:`test:short-story-publication` / `test:short-story-reader` / `test:chapter-review` / `test:arc-review` / `test:scheduler-tasks` / `test:tts-reader` 全部通过;补丁新增 `test:chapter-optimize` / `test:chapter-review-auto-enqueue` / `test:scheduler-lock` / `test:review-stats`;截至 V10.8 `test:*` 共 43 套(含 Playwright E2E)覆盖全部分子系统
 
 ### ✅ V9.6–V9.8 短篇批量定时创作
 
@@ -216,18 +216,17 @@
 ├── core/                  # Content Core:领域模型 + SQLite + 业务服务(npm workspace)
 ├── importer/              # Importer CLI:novels/ → Content Core(npm workspace)
 ├── web/                   # Web Publisher:Next.js 15 读者站 + 管理后台 + 听书(npm workspace)
-├── scripts/               # verify-* 测试套件(44 套)、publish-scheduler 调度器、hooks 门禁
+├── scripts/               # verify-* 测试套件(43 套)、publish-scheduler 调度器、hooks 门禁
 ├── src/                   # 旧 EPUB/BookOrbit 构建线(保留,见 README-部署.md)
 ├── docs/                  # 产品规划文档(路线图 / architecture.md / 产品规格书)
 ├── novels/                # 小说导入源(事实来源)
 ├── data/                  # 运行时数据:data/novel.db(gitignore)
 ├── e2e/                   # Playwright E2E(独立数据目录 e2e/.tmpdata,gitignore)
 ├── screenshot/            # README 界面截图(索引见 screenshot.md)
-├── models/kokoro/         # 本地听书模型权重(compose 挂载卷,rebuild.sh 自动下载)
 ├── .githooks/             # pre-push 门禁(Agent Note + master 直推守卫)
 ├── playwright.config.ts   # E2E 配置(E2E_BROWSER_CHANNEL 可换系统浏览器)
-├── docker-compose.yml     # web(:33000) + scheduler 编排(含 models/kokoro 卷)
-├── Dockerfile             # 三阶段构建(零编译,预编译 better-sqlite3;ENABLE_LOCAL_TTS 内置 Kokoro)
+├── docker-compose.yml     # web(:33000) + scheduler 编排
+├── Dockerfile             # 三阶段构建(零编译,预编译 better-sqlite3)
 └── package.json           # npm workspaces 根
 ```
 
@@ -265,11 +264,11 @@ npm run scheduler           # 前台运行调度器(默认 60s 一 tick)
 | `npm run test:review-*` / `test:structured-output` / `test:auto-optimize` / `test:ai-assist` | V9 评审中心与结构化输出回归 |
 | `npm run test:production-line` / `test:continuous-production-line` | V10 内容工厂产线 / V10.5 持续产线回归 |
 | `npm run test:scheduler-lock` / `test:stale-task-recovery` / `test:review-stats` | V9.5+ 调度器锁 / 僵尸任务恢复 / 评审统计回归 |
-| `npm run test:tts-reader` / `test:tts-local` / `test:cover` | 听书播放器 / 本地 Kokoro 合成 / 动态封面回归 |
+| `npm run test:tts-reader` / `test:cover` | 听书播放器 / 动态封面回归 |
 | `npm run test:e2e` | Playwright 浏览器冒烟(登录/评审 Tab/TTS 阅读页;独立数据目录 `e2e/.tmpdata`;首次需 `npx playwright install chromium`,或设 `E2E_BROWSER_CHANNEL=msedge` 复用系统浏览器) |
 | `npm run build:web` && `npm run start:web` | 生产构建与启动 |
 
-所有验证脚本使用临时数据库(`NOVEL_DATA_DIR`),不触碰 `data/novel.db`;E2E 使用独立目录 `e2e/.tmpdata`(每次运行重置,`E2E_KEEP_DATA=1` 可复用)。截至 V10.7,`test:*` 共 44 套覆盖全部子系统。
+所有验证脚本使用临时数据库(`NOVEL_DATA_DIR`),不触碰 `data/novel.db`;E2E 使用独立目录 `e2e/.tmpdata`(每次运行重置,`E2E_KEEP_DATA=1` 可复用)。截至 V10.8,`test:*` 共 43 套覆盖全部子系统。
 
 ### 管理后台首次使用
 
@@ -286,12 +285,12 @@ npm run scheduler           # 前台运行调度器(默认 60s 一 tick)
 
 ```bash
 docker compose up -d          # 启动 web(:33000) + scheduler 两个服务
-./rebuild.sh                  # 一键重建镜像并重启(默认已启用本地 Kokoro TTS 并自动下载模型,见 README-部署.md Q3.3)
+./rebuild.sh                  # 一键重建镜像并重启(见 README-部署.md Q3.3)
 ```
 
-- `web`:Next.js 生产包,暴露 `33000`,挂载 `./data`(SQLite)、封面目录、`novels/` 与 `./models/kokoro`(本地听书模型卷);容器内存调优(V8 堆限 768MB + `mem_limit: 1500m`);
+- `web`:Next.js 生产包,暴露 `33000`,挂载 `./data`(SQLite)、封面目录、`novels/`;容器内存调优(V8 堆限 768MB + `mem_limit: 1500m`);
 - `scheduler`:不暴露端口,与 web 共享同一份 SQLite,负责定时发布、AI 连载、短篇定时/批量排期、产线触发与 AI 任务消化(`mem_limit: 256m`);
-- Dockerfile 默认走国内镜像源(npmmirror + better-sqlite3 预编译),海外环境用 build-arg 切回官方源;`ENABLE_LOCAL_TTS=1` 构建参数决定镜像是否内置 kokoro-js-zh 本地语音(裸 `docker compose build` 默认 `0`)。
+- Dockerfile 默认走国内镜像源(npmmirror + better-sqlite3 预编译),海外环境用 build-arg 切回官方源。
 
 ### 方式二:裸机运行
 
@@ -314,9 +313,7 @@ PUBLISH_TICK_SECONDS=60 NOVEL_DATA_DIR=/var/lib/novel npm run scheduler &
 | `ADMIN_TOKEN` | 可选机器令牌(Bearer/x-admin-token),供脚本集成;账号会话不受影响 | 未配置 |
 | `NOVEL_SCHEDULER_LOCK` | 设为 `0` 跳过调度器单实例文件锁(自行保证单实例时) | 启用锁 |
 | `AI_TASK_STALE_GRACE_MS` | 僵尸 RUNNING 任务恢复阈值(毫秒,≥60000) | `600000`(10 分钟) |
-| `ENABLE_LOCAL_TTS` | Docker 构建参数:镜像是否内置 kokoro-js-zh 本地语音(`rebuild.sh` 默认 `1`) | `0`(裸 compose build) |
-| `KOKORO_MODEL_DIR` | 本地语音模型目录(compose 内 `/app/models/kokoro`;存在 `onnx/model_quantized.onnx` 才启用) | `/app/models/kokoro` |
-| `EDGE_TTS_API_URL` | AI 情感听书上游(ai-edge-tts2api)地址:`POST /v1/audio/speech`(OpenAI 兼容) | `https://edgetts2api.edgetts.workers.dev/v1/audio/speech` |
+| `EDGE_TTS_API_URL` | AI 情感听书上游(ai-edge-tts2api)地址:`POST /v1/audio/speech`(OpenAI 兼容;自定义域名,大陆可直连) | `https://edgetts2api.menghun3.cc/v1/audio/speech` |
 | `EDGE_TTS_API_KEY` | 上游 API Key(仅服务端持有,请求头 `Authorization: Bearer`;上游部署方可用 `wrangler secret put API_KEY` 更换) | 线上部署密钥 |
 
 > 每日连载/自动发布的「时刻」均按**北京时间**(UTC+8)解释,与宿主机时区无关;compose 已为容器设置 `TZ=Asia/Shanghai`。
@@ -329,14 +326,13 @@ PUBLISH_TICK_SECONDS=60 NOVEL_DATA_DIR=/var/lib/novel npm run scheduler &
 - **弧级半自动评审**:`arc_review_every_n`(默认 5,0=关),每发布 N 章在评审中心提示触发一次区间评审。
 - **僵尸任务自动恢复**(V10.6):容器重建/崩溃导致执行进程消失时,被认领为 `RUNNING` 的 AI 任务超过 `AI_TASK_STALE_GRACE_MS`(默认 10 分钟)自动重置回 `PENDING` 重跑,创作中心不再永久卡死。
 - **短篇定时与批量排期**(V9.6–V9.8):单篇定时、批量定时(含每天重复)均由调度器到点触发并入队创作流水线;到点执行仅为本地 DB 操作,瞬时完成。
-- **听书引擎选择**(V10.7):本地 Kokoro 可用(镜像内置 + 模型已挂载)且用户从未手动选过引擎时默认本地合成(不走外网,规避移动端中间层对长时在线合成的 502 拦截),失效自动回退 Edge;模型未挂载或镜像未内置时仅 Edge / 系统语音。
+- **听书引擎**(V10.8 起):Edge 在线神经语音(经 `/api/tts` 代理 ai-edge-tts2api 的 OpenAI 兼容云端封装,免自连 bing;端点默认自定义域名 `edgetts2api.menghun3.cc`,大陆可直连,可用 `EDGE_TTS_API_URL` 覆盖)为唯一服务器合成引擎,另有浏览器系统语音兜底;V10.7 引入的本地 Kokoro 引擎已随 V10.8 移除(理由见 CHANGELOG V10.8.0 与 Agent Note)。
 
 ### 上线核对清单
 
 - [ ] `NOVEL_SITE_URL` 改为实际域名(RSS/Sitemap 用)
 - [ ] 首次登录 `/admin` 并完成强制改密
 - [ ] 系统设置里配置 LLM(AI 创作功能依赖)
-- [ ] 如需听书「本地语音」:确认 `./models/kokoro` 已挂载模型且镜像以 `ENABLE_LOCAL_TTS=1` 构建(裸 `docker compose build` 默认不内置)
 - [ ] `docker compose logs -f scheduler` 确认调度心跳正常
 
 ---

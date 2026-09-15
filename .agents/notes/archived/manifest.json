@@ -1,4 +1,17 @@
 {
   "version": 1,
-  "files": {}
+  "files": {
+    "bug-fix/2026-09-04-compose-kokoro-build-arg-fix.i18n.yaml": "sha256:781850085b6e66094260649eda07476e539aad3f6e71808a664285e5bdbdfc69",
+    "bug-fix/2026-09-04-compose-kokoro-build-arg-fix.md": "sha256:d2654639235d105f3daea127c317bb4ec8fca03ef3e3a89eb998d57d74455bfb",
+    "bug-fix/2026-09-04-compose-kokoro-build-arg-fix.zh.md": "sha256:3c00cb692df1e025d397e9a9e5f2f4a35a78e65bb9d56c21ef46d0b5c0b8cfa2",
+    "bug-fix/2026-09-04-kokoro-synthesis-serialization.i18n.yaml": "sha256:bbe1fe408677d3e9e68fbd4ad8719e125788c04067594d133f5f9e2e0ae0636e",
+    "bug-fix/2026-09-04-kokoro-synthesis-serialization.md": "sha256:7a2aac645e4f037ba5b65269383cc20247934340ee966485c8407d554a0acd66",
+    "bug-fix/2026-09-04-kokoro-synthesis-serialization.zh.md": "sha256:bfb37f7c93d6fcd42e12165646ecc5a63bb561d11bfe49e2fc691b6903b7edb5",
+    "bug-fix/2026-09-04-webpack-createRequire-stub.i18n.yaml": "sha256:d5f714df997f4c387e641124cfa3e8eea375d5e255eaa13df6969d7a2d3cbd26",
+    "bug-fix/2026-09-04-webpack-createRequire-stub.md": "sha256:cc3f3882bbfc783c818d21e31b7cbf1ca700a9ffb341fb802536588b19e43426",
+    "bug-fix/2026-09-04-webpack-createRequire-stub.zh.md": "sha256:fabf63e964b60beb46b8e0cf14ecc8811e5daa641e9ceddc95fbab68dd6d2cd8",
+    "feature/2026-09-03-local-kokoro-tts.i18n.yaml": "sha256:258b6b1932c707d0ae38d766360616cf5c5605f045fa0e2e5f5dae6899a1280e",
+    "feature/2026-09-03-local-kokoro-tts.md": "sha256:e872169ba1bbd6edccaff16745388e72a4c14e4bbc6cbd573cbd0ffa6f626212",
+    "feature/2026-09-03-local-kokoro-tts.zh.md": "sha256:7ed04cad3be8f46468d97c56dc97a52fd47eb3379be312081f7c5369e1034d4a"
+  }
 }

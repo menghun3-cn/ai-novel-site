@@ -1,6 +1,7 @@
 # Agent Note: webpack 打包 createRequire 成 stub 导致线上 kokoro 恒 false
 
 Status: implemented
+Archived: 2026-09-15
 
 English | [中文](2026-09-04-webpack-createRequire-stub.zh.md)
 
