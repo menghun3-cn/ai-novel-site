@@ -54,11 +54,12 @@ and the 全部小说 / category detail pages add a client-side 长篇/短篇 tab
   HotRanking/RecentUpdates/search got `loading="lazy" decoding="async"`.
 - **Copy.** User-visible 朗读 was renamed to 听书 across TtsPlayer (button,
   engine options, error strings) and the tts API error message.
-- **Default TTS engine → Kokoro.** The listen-back default engine became the
-  local Kokoro engine when available (and no explicit user preference exists),
-  falling back to `edge` otherwise; see the updated
-  [local-kokoro-tts](../../implemented/feature/2026-09-03-local-kokoro-tts.md)
-  note for the mobile 502 root cause and the switch logic.
+- **Default TTS engine (V10.7 → V10.8).** V10.7 made the local Kokoro engine
+  the default when available (and no explicit user preference exists), falling
+  back to `edge` otherwise; the mobile 502 root cause is recorded in the
+  Alternatives section below. V10.8 removed the kokoro engine entirely — the
+  listen-back engines are exactly `edge` (default) + `native` again; see
+  [edge-tts-custom-domain-kokoro-removal](../../implemented/simplification/2026-09-15-edge-tts-custom-domain-kokoro-removal.md).
 
 ## Alternatives considered
 
@@ -72,14 +73,19 @@ Rejected after production measurement: Next 15.5 degrades any page that reads
 `searchParams` to dynamic regardless of `revalidate`, so every switch would
 re-run SQL and re-render on the server — exactly the latency being fixed.
 
-**Keep `edge` as the default listen-back engine.** Rejected: edge synthesis is
-a long online POST (browser → /api/tts → server → the ai-edge-tts2api
-OpenAI-compatible wrapper, seconds to 15s) that mobile network middle-layers
-(carrier transparent proxies / CDN edge nodes) time out, answering 502 with a
-non-JSON error page — PC on broadband direct connections is unaffected, which
-is why the same novel read fine on PC but failed on mobile. Kokoro synthesizes
-locally in <1s with no external hop, so it sidesteps the interception entirely.
-(The edge transport is documented in the
+**Keep `edge` as the default listen-back engine.** Rejected in V10.7: edge
+synthesis is a long online POST (browser → /api/tts → server → the
+ai-edge-tts2api OpenAI-compatible wrapper, seconds to 15s) that mobile network
+middle-layers (carrier transparent proxies / CDN edge nodes) time out,
+answering 502 with a non-JSON error page — PC on broadband direct connections
+is unaffected, which is why the same novel read fine on PC but failed on
+mobile. Kokoro synthesized locally in <1s with no external hop, so it
+sidestepped the interception entirely. **Revisited in V10.8:** the kokoro
+engine was removed and `edge` became the default again (see
+[edge-tts-custom-domain-kokoro-removal](../../implemented/simplification/2026-09-15-edge-tts-custom-domain-kokoro-removal.md));
+the mobile-502 failure mode remains the reason edge must stay fast and
+reachable (custom-domain endpoint, chunked frontend requests). (The edge
+transport is documented in the
 [edge-tts-openai-compatible-api](../../implemented/feature/2026-09-15-edge-tts-openai-compatible-api.md)
 note.)
 
@@ -97,6 +103,7 @@ note.)
   pages still render the full static list (limit 500).
 - `listCategories()` now returns `id`, which also fixed an admin category
   page bug that had called `/api/admin/categories/undefined` for rename/delete.
-- Default listen-back engine is Kokoro when the image was built with
-  `ENABLE_LOCAL_TTS=1` and the model is mounted; images without it silently
-  use edge as before — no user-visible break either way.
+- Since V10.8 the listen-back engines are exactly `edge` + `native` (default
+  `edge`); the kokoro engine, its `ENABLE_LOCAL_TTS` build arg, and the
+  `./models/kokoro` volume are removed (see
+  [edge-tts-custom-domain-kokoro-removal](../../implemented/simplification/2026-09-15-edge-tts-custom-domain-kokoro-removal.md)).

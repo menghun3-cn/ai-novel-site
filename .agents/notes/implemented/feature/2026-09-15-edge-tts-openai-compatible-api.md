@@ -29,10 +29,11 @@ ai-edge-tts2api OpenAI-compatible endpoint:
   and body `{ model: 'tts-1', input, voice, speed, response_format: 'mp3' }`
   under a 30 s `AbortController` timeout, proxying the raw `audio/mpeg`
   response to the browser.
-- `EDGE_TTS_API_URL` / `EDGE_TTS_API_KEY` come from env with the
-  ai-edge-tts2api README defaults (endpoint + shared deployment key) as
-  documented fallbacks; the key is read only in the server route, never in
-  shared client code.
+- `EDGE_TTS_API_URL` / `EDGE_TTS_API_KEY` come from env; the fallbacks are
+  `https://edgetts2api.menghun3.cc/v1/audio/speech` (custom domain, the default
+  since V10.8 — the ai-edge-tts2api README's `*.workers.dev` endpoint is
+  DNS-poisoned on mainland networks) and the shared deployment key; the key is
+  read only in the server route, never in shared client code.
 - Everything bing-specific is deleted: Sec-MS-GEC minting, the WSS URL, the
   user agent, `parseAudioChunk`, `buildEdgeSSML`, and the `EDGE_TTS_PROXY` env
   var (replaced by `EDGE_TTS_API_URL` in `docker-compose.yml` and README).
@@ -40,8 +41,10 @@ ai-edge-tts2api OpenAI-compatible endpoint:
   timeout, `TypeError` → network/firewall restriction (the frontend appends
   the 可改用 Kokoro 本地语音 hint), non-2xx → upstream `error.message`
   passthrough.
-- The `GET /api/tts` availability probe and the `kokoro` engine are unchanged;
-  `kokoro` remains the default listen-back engine when available.
+- The `GET /api/tts` availability probe now reports exactly
+  `{"engines":["edge","native"]}`; the `kokoro` engine was removed in V10.8
+  (see
+  [edge-tts-custom-domain-kokoro-removal](../../implemented/simplification/2026-09-15-edge-tts-custom-domain-kokoro-removal.md)).
 
 ## Alternatives considered
 
@@ -57,22 +60,22 @@ ai-edge-tts2api OpenAI-compatible endpoint:
 
 ## Consequences
 
-- The edge engine now needs outbound HTTPS to a `*.workers.dev` host;
-  sandboxed or firewalled networks may block it. Live connectivity was
-  untestable from this workspace — the route was verified only against a local
-  mock implementing the contract (exact request mapping
-  `model/input/voice/speed/response_format` + Bearer header; upstream 500 →
-  route 502 with `error.message` passthrough). Production smoke-test after
-  deploy.
+- The edge engine needs outbound HTTPS to the endpoint; since V10.8 the
+  default is the custom domain `https://edgetts2api.menghun3.cc`, which is
+  reachable from both this workspace and the production host (mainland China):
+  `GET /v1/models` 200 and `POST /v1/audio/speech` 200 → ~20.7 KB `audio/mpeg`
+  were verified live from the production host. The README's `*.workers.dev`
+  host remains unreachable there (DNS hijack + SERVFAIL; TCP 443 fails).
 - The shared API key is a live credential documented in the ai-edge-tts2api
   README; deployments can override it with `EDGE_TTS_API_KEY`. Server env does
   not need to change for the switch to take effect.
 - Version bumped 8.3.8 → 8.3.9 (V10.7.7); CHANGELOG [Unreleased] documents the
   engine switch and its verification (typecheck, next build,
   `test:tts-reader` 13/13, mock-upstream e2e).
-- Cross-links: the transport descriptions in
-  [local-kokoro-tts](../../implemented/feature/2026-09-03-local-kokoro-tts.md)
-  and
+- Cross-links: the transport description in
   [user-categories-and-list-performance](../../implemented/feature/2026-09-04-user-categories-and-list-performance.md)
-  were updated in place (edge is now an HTTP POST to the wrapper, not a bing
-  WebSocket).
+  was updated in place (edge is now an HTTP POST to the wrapper, not a bing
+  WebSocket); the
+  [local-kokoro-tts](../../archived/feature/2026-09-03-local-kokoro-tts.md)
+  note (carrying the same transport update) was archived together with the
+  V10.8 kokoro removal.

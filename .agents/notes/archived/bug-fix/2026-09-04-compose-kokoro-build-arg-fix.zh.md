@@ -1,8 +1,9 @@
 # Agent Note: docker-compose 写死 ENABLE_LOCAL_TTS=0 导致线上无「本地语音」选项
 
 Status: implemented
+Archived: 2026-09-15
 
-English | [中文](2026-09-04-compose-kokoro-build-arg-fix.zh.md)
+[English](2026-09-04-compose-kokoro-build-arg-fix.md) | 中文
 
 ## Problem
 

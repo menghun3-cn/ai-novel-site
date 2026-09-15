@@ -1,0 +1,79 @@
+title:
+  en: "Edge endpoint default switched to a custom domain; local Kokoro engine removed"
+  zh: "Edge 端点默认切换为自定义域名,移除本地 Kokoro 引擎"
+summary:
+  en: |
+    Follow-up to the V10.7.7 edge wrapper switch: (1) the ai-edge-tts2api
+    `*.workers.dev` default endpoint is DNS-poisoned on the production host
+    (mainland China), so the default `EDGE_TTS_API_URL` becomes the custom
+    domain https://edgetts2api.menghun3.cc/v1/audio/speech (live-verified from
+    the host: /v1/models 200, /v1/audio/speech 200 → 20,736-byte audio/mpeg);
+    (2) the local Kokoro engine is removed entirely — route engines are exactly
+    edge|native, GET /api/tts returns {engines:['edge','native']}, TtsPlayer
+    drops the 🎧 本地语音 option (stale KEY_ENGINE='kokoro' falls back to
+    edge), web/lib/kokoro*.ts + scripts/fetch-kokoro-voices.mjs +
+    verify-tts-local.ts are deleted, Dockerfile ENABLE_LOCAL_TTS/KOKORO_HF_ENDPOINT
+    args and the conditional onnxruntime install are gone (deps stage is plain
+    npm install), compose ./models/kokoro volume + KOKORO_MODEL_DIR removed,
+    serverExternalPackages back to ['better-sqlite3'], rebuild.sh keeps only
+    --clean, test:* scripts 44→43, four package.json 8.3.9 → 8.4.0 (V10.8.0).
+    The V10.7 "kokoro stays default" statement is revoked (default is edge);
+    the mobile-502 rationale remains recorded in the user-categories note.
+    Kokoro feature note + three kokoro bug-fix notes archived; lowmem note kept
+    active (its memory limits remain shipped config); edge-tts and
+    user-categories notes updated in place.
+  zh: |
+    V10.7.7 edge 封装切换的后续:(1) ai-edge-tts2api 的 `*.workers.dev` 默认
+    端点在生产主机(境内)被 DNS 污染,默认 `EDGE_TTS_API_URL` 改为自定义域名
+    https://edgetts2api.menghun3.cc/v1/audio/speech(已从主机实测:/v1/models 200、
+    /v1/audio/speech 200 → 20,736 字节 audio/mpeg);(2) 本地 Kokoro 引擎整条
+    移除——路由引擎恰好为 edge|native,GET /api/tts 返回
+    {engines:['edge','native']},TtsPlayer 去掉「本地语音」选项(老客户端
+    KEY_ENGINE='kokoro' 回退 edge),删除 web/lib/kokoro*.ts 与
+    scripts/fetch-kokoro-voices.mjs、verify-tts-local.ts,Dockerfile
+    ENABLE_LOCAL_TTS/KOKORO_HF_ENDPOINT 参数与条件 onnxruntime 安装移除
+    (deps 阶段恢复普通 npm install),compose 移除 ./models/kokoro 卷与
+    KOKORO_MODEL_DIR,serverExternalPackages 恢复 ['better-sqlite3'],
+    rebuild.sh 仅保留 --clean,test:* 44→43,四个 package.json 8.3.9 → 8.4.0
+    (V10.8.0)。撤销 V10.7「kokoro 保持默认」的说法(默认引擎为 edge);
+    移动端 502 根因仍记录在 user-categories 笔记。kokoro 特性笔记 + 三篇
+    kokoro 修复笔记归档;lowmem 笔记保持活跃(其内存上限仍是当前配置);
+    edge-tts 与 user-categories 笔记就地更新。
+steps:
+  en:
+    - "web/app/api/tts/route.ts: EDGE_TTS_API_URL default → https://edgetts2api.menghun3.cc/v1/audio/speech; engine enum edge|native only; GET /api/tts returns {engines:['edge','native']}."
+    - "web/components/TtsPlayer.tsx: kokoro engine option/voices/probe/saved-engine fallback removed; stale KEY_ENGINE='kokoro' falls back to edge; error hints reworded (「AI 情感听书」/「系统语音」)."
+    - "Deleted: web/lib/kokoro.ts, web/lib/kokoro-server.ts, scripts/fetch-kokoro-voices.mjs, scripts/verify-tts-local.ts."
+    - "Dockerfile: ENABLE_LOCAL_TTS/KOKORO_HF_ENDPOINT args, conditional kokoro-js-zh+onnxruntime-node install and voice pre-download removed; deps stage plain npm install --prefer-offline. next.config serverExternalPackages back to ['better-sqlite3']."
+    - "docker-compose.yml: ./models/kokoro volume + KOKORO_MODEL_DIR + build-arg comments removed. rebuild.sh: only --clean survives; no model download / test:tts-local."
+    - "test:* 44 → 43; four package.json 8.3.9 → 8.4.0 (V10.8.0); CHANGELOG [Unreleased] V10.8.0 entry."
+    - "Notes: archived local-kokoro-tts + 3 kokoro bug-fix triplets (build-arg fix, synthesis serialization, webpack createRequire stub) with Archived: 2026-09-15; kept lowmem-kokoro-tuning active (memory limits still shipped) and updated edge-tts + user-categories in place; new note (this file)."
+  zh:
+    - "web/app/api/tts/route.ts:EDGE_TTS_API_URL 缺省改为 https://edgetts2api.menghun3.cc/v1/audio/speech;引擎枚举仅 edge|native;GET /api/tts 返回 {engines:['edge','native']}。"
+    - "web/components/TtsPlayer.tsx:移除 kokoro 引擎选项/语音/探测/已存引擎回退;老客户端 KEY_ENGINE='kokoro' 回退 edge;错误提示改称「AI 情感听书」/「系统语音」。"
+    - "删除:web/lib/kokoro.ts、web/lib/kokoro-server.ts、scripts/fetch-kokoro-voices.mjs、scripts/verify-tts-local.ts。"
+    - "Dockerfile:移除 ENABLE_LOCAL_TTS/KOKORO_HF_ENDPOINT 参数、条件安装 kokoro-js-zh+onnxruntime-node 与语音预下载;deps 阶段恢复普通 npm install --prefer-offline。next.config serverExternalPackages 恢复 ['better-sqlite3']。"
+    - "docker-compose.yml:移除 ./models/kokoro 卷 + KOKORO_MODEL_DIR + 构建参数注释。rebuild.sh:仅保留 --clean;不再下载模型 / 跑 test:tts-local。"
+    - "test:* 44 → 43;四个 package.json 8.3.9 → 8.4.0(V10.8.0);CHANGELOG [Unreleased] 新增 V10.8.0 条目。"
+    - "笔记:归档 local-kokoro-tts 与 3 篇 kokoro 修复三元组(构建参数修复、合成串行化、webpack createRequire stub),插入 Archived: 2026-09-15;lowmem-kokoro-tuning 保持活跃(内存上限仍上线);edge-tts 与 user-categories 就地更新;新增本笔记。"
+follow-up:
+  en: |
+    - Reintroduction condition if offline Chinese TTS is ever needed again: the
+      full V10.7 mechanism (kokoro-js-zh 2.1.7 + Kokoro-82M-v1.0-ONNX q8,
+      ENABLE_LOCAL_TTS build chain, memory tuning, webpack createRequire
+      workaround) is preserved verbatim in the archived notes.
+    - The orphaned ./models/kokoro/ directory on the production host can be
+      deleted by hand (no longer mounted).
+    - Watch production edge synthesis (custom-domain endpoint) for
+      latency/502s; the mobile-502 failure mode recorded in the
+      user-categories note is the known risk with edge-only engines.
+  zh: |
+    - 若未来再次需要离线中文 TTS:V10.7 完整机制(kokoro-js-zh 2.1.7 +
+      Kokoro-82M-v1.0-ONNX q8、ENABLE_LOCAL_TTS 构建链、内存调优、webpack
+      createRequire 绕行)原样保存在归档笔记中,可直接作为重引入条件。
+    - 生产主机上的孤儿目录 ./models/kokoro/ 可手工删除(不再挂载)。
+    - 关注生产 edge 合成(自定义域名端点)的延迟/502;user-categories 笔记
+      记录的移动端 502 失败模式是纯 edge 引擎的已知风险。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/162"
+  branch: "feat/edge-tts-kokoro-removal-custom-domain"

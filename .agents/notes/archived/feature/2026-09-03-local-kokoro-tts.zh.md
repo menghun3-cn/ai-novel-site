@@ -1,8 +1,9 @@
 # Agent Note: 本地 Kokoro 中文 TTS,与 Edge 并列的听书引擎
 
 Status: implemented
+Archived: 2026-09-15
 
-English | [中文](2026-09-03-local-kokoro-tts.md)
+[English](2026-09-03-local-kokoro-tts.md) | 中文
 
 ## Problem
 

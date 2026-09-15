@@ -12,13 +12,18 @@ summary:
     30 s timeout, proxying raw audio/mpeg to the browser. Env vars fall back to
     the ai-edge-tts2api README endpoint + shared key; EDGE_TTS_PROXY is
     replaced by EDGE_TTS_API_URL. Error mapping: 401 auth hint, AbortError
-    timeout, TypeError network/firewall hint (frontend suggests 本地 Kokoro),
-    non-2xx upstream error.message passthrough. GET /api/tts probe and the
-    kokoro engine are unchanged; kokoro stays the default listen-back engine.
+    timeout, TypeError network/firewall hint (frontend suggests 系统语音),
+    non-2xx upstream error.message passthrough. Since V10.8 the default
+    endpoint is the custom domain
+    https://edgetts2api.menghun3.cc/v1/audio/speech (verified live from the
+    production host: /v1/models 200, /v1/audio/speech 200 → ~20.7 KB
+    audio/mpeg) and GET /api/tts reports exactly {engines:['edge','native']}
+    (the kokoro engine was removed — see the
+    edge-tts-custom-domain-kokoro-removal note).
     Version bumped 8.3.8 → 8.3.9 (V10.7.7); verified by typecheck, next build,
     tts-reader 13/13, and a local mock of the upstream contract (exact request
-    mapping + Bearer header, 500 → 502). Live *.workers.dev connectivity was
-    untestable from this workspace.
+    mapping + Bearer header, 500 → 502), then by live production smoke-tests
+    against the custom-domain endpoint after deploy.
   zh: |
     听书 `edge` 引擎不再由服务器直连微软 Bing 语音 WebSocket(删除
     Sec-MS-GEC 计算、WSS_URL、UA、parseAudioChunk、buildEdgeSSML),改为对
@@ -26,13 +31,15 @@ summary:
     带 `Authorization: Bearer $EDGE_TTS_API_KEY`,请求体
     `{ model: 'tts-1', input, voice, speed, response_format: 'mp3' }`,30 秒
     超时,裸 audio/mpeg 原样代理给浏览器。环境变量缺省采用 ai-edge-tts2api
-    README 的端点与共享密钥;EDGE_TTS_PROXY 替换为 EDGE_TTS_API_URL。错误映射:
-    401 鉴权提示、AbortError 超时、TypeError 无法连接(前端提示改用本地
-    Kokoro)、非 2xx 透传上游 error.message。GET /api/tts 探测与 kokoro 引擎
-    不变;kokoro 可用时仍是默认听书引擎。版本 8.3.8 → 8.3.9(V10.7.7);
+    的端点与共享密钥(V10.8 起端点缺省为自定义域名
+    https://edgetts2api.menghun3.cc/v1/audio/speech);EDGE_TTS_PROXY 替换为
+    EDGE_TTS_API_URL。错误映射:401 鉴权提示、AbortError 超时、TypeError
+    无法连接(前端提示改用「系统语音」)、非 2xx 透传上游 error.message。
+    GET /api/tts 探测恰好返回 {engines:['edge','native']}(kokoro 引擎已移除,
+    见 edge-tts-custom-domain-kokoro-removal 笔记)。版本 8.3.8 → 8.3.9(V10.7.7);
     验证:typecheck、next build、tts-reader 13/13、本地 mock 上游契约 e2e
-    (请求映射 + Bearer 头,500 → 502)。*.workers.dev 活线连通性在本工作区
-    无法测试。
+    (请求映射 + Bearer 头,500 → 502),部署后并已从生产主机对自定义域名端点
+    冒烟实测(200)。
 steps:
   en:
     - "web/app/api/tts/route.ts: synthesizeEdge() now does one fetch(EDGE_TTS_API_URL) with Authorization: Bearer header and {model:'tts-1', input, voice, speed, response_format:'mp3'}, 30s AbortController timeout; bing WebSocket code (Sec-MS-GEC, WSS_URL, UA, parseAudioChunk) removed; error mapping 401/AbortError/TypeError/non-2xx."
@@ -50,15 +57,17 @@ steps:
     - "验证:npm run typecheck 全绿、build:web 全绿、test:tts-reader 13/13、mock 上游 e2e(正常 200 代理,请求映射精确 + Bearer test-key-secret;上游 500 → 路由 502 透传上游 error.message)。"
 follow-up:
   en: |
-    - Live `*.workers.dev` connectivity could not be verified from this
-      workspace (sandboxed network); after deploy, production smoke-test the
-      edge engine (POST /api/tts with engine=edge) and watch for
-      connectivity/auth errors.
+    - Live connectivity was verified from the production host (mainland
+      China): the default custom-domain endpoint answered /v1/models 200 and
+      /v1/audio/speech 200 (~20.7 KB audio/mpeg); the README's *.workers.dev
+      host remains unreachable there (DNS poisoning) — a documented network
+      caveat, not a service fault.
     - The shared API key is a documented live credential; deployments that need
       isolation can override it with EDGE_TTS_API_KEY or rotate it.
   zh: |
-    - *.workers.dev 活线连通性在本工作区无法验证(沙箱网络);部署后请在生产
-      冒烟测试 edge 引擎(POST /api/tts,engine=edge),留意连接/鉴权错误。
+    - 活线连通性已从生产主机(境内)实测:默认自定义域名端点 /v1/models 200、
+      /v1/audio/speech 200(约 20.7 KB audio/mpeg);README 的 *.workers.dev
+      主机在境内仍不可达(DNS 污染)——文档已知的网络限制,非服务故障。
     - 共享 API 密钥是文档化的活凭据;需要隔离的部署可用 EDGE_TTS_API_KEY
       覆盖或轮换。
 links:

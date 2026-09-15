@@ -13,6 +13,8 @@ summary:
     drop_caches, vm.vfs_cache_pressure=200 persisted), (2) repo-side compose
     changes (web NODE_OPTIONS=--max-old-space-size=768 + mem_limit 1500m,
     scheduler mem_limit 256m). Frontend chunking (<=200 chars) already optimal.
+    The kokoro engine was removed in V10.8; these memory limits remain the
+    current compose config as general safeguards for this low-memory host.
   zh: |
     生产主机(hcss-ecs-8245)只有 2 核/1.8 GiB 内存且无法扩容。实测 kokoro 合成
     极差:20 字 7s、50 字 18~27s、100 字 176~338s(60s 超时被 CPU 阻塞吞掉)。
@@ -22,6 +24,8 @@ summary:
     ai-novel-reader、drop_caches、vm.vfs_cache_pressure=200 持久化);
     (2) 仓库 compose 改动(web NODE_OPTIONS=--max-old-space-size=768 +
     mem_limit 1500m,scheduler mem_limit 256m)。前端切片(≤200 字)已最优。
+    V10.8 已移除 kokoro 引擎;这些内存上限仍是当前 compose 的活跃配置,
+    作为这台低配主机的通用护栏。
 steps:
   en:
     - "pm2 stop ai-novel-reader && pm2 save (stop the 7MB PM2 reader app)."
@@ -35,11 +39,14 @@ steps:
     - "经 ./update.sh 部署后重跑 kokoro 性能测试对比(目标 100 字 <30s)。"
 follow-up:
   en: |
-    - Expected: next-server RSS drops to ~700-800MB, freeing ~300MB for kokoro inference.
-    - If still slow: consider postgres mem_limit (needs sub2api owner OK) or limiting kokoro threads to 1-2.
+    - Expected: next-server RSS drops to ~700-800MB.
+    - Since V10.8 the kokoro engine (the memory consumer) is removed; the
+      compose limits remain as general host safeguards. If the host is still
+      slow: consider postgres mem_limit (needs sub2api owner OK).
   zh: |
-    - 预期 next-server RSS 降到 ~700-800MB,腾出 ~300MB 给 kokoro 推理。
-    - 仍慢的话:考虑 postgres 容器 mem_limit(需 sub2api 方确认)或把 kokoro 推理线程限到 1~2。
+    - 预期 next-server RSS 降到 ~700-800MB。
+    - V10.8 起 kokoro 引擎(内存消耗方)已移除;compose 上限保留为通用护栏。
+      若主机仍慢:考虑 postgres 容器 mem_limit(需 sub2api 方确认)。
 links:
   pr: "https://github.com/menghun3-cn/ai-novel-site/pull/142"
   branch: "perf/lowmem-kokoro-tuning"

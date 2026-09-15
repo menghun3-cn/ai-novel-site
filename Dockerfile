@@ -15,42 +15,13 @@ ARG NPM_REGISTRY=https://registry.npmmirror.com
 # better-sqlite3 预编译二进制镜像(prebuild-install 约定变量,结构 {host}/v{version}/{file})
 ARG SQLITE_BINARY_MIRROR=https://registry.npmmirror.com/-/binary/better-sqlite3
 ENV npm_config_better_sqlite3_binary_host_mirror=$SQLITE_BINARY_MIRROR
-# 本地 Kokoro TTS 开关:=1 时在 deps 阶段额外安装 kokoro-js-zh(中文 fork)+ onnxruntime-node(原生 .node 模块)。
-# =0(默认)时镜像不含本地引擎,听书走 Edge 在线合成,体积不变。
-# onnxruntime-node 1.29+ 的 Linux x64 CPU 二进制已捆绑在 npm 包内;其 install 脚本
-# 默认还会按 manifest 下载未捆绑的 CUDA/GPU 二进制(NuGet,302 重定向且无 mirror 支持,
-# 国内构建必失败)。CPU 推理用不到,用 --onnxruntime-node-install=skip 跳过该下载。
-ARG ENABLE_LOCAL_TTS=0
 COPY package.json package-lock.json* ./
 COPY core/package.json   ./core/
 COPY web/package.json    ./web/
 COPY importer/package.json ./importer/
-# 本地 TTS 资产补齐脚本(deps 阶段条件调用;勿内联 JS 到 Dockerfile——多行单引号脚本
-# 无法用行尾 `\` 续行,会在 `const` 处触发 "unknown instruction" parse error)
-COPY scripts/fetch-kokoro-voices.mjs ./scripts/
 # cache mount 让 npm 下载缓存(/root/.npm)跨构建复用;--prefer-offline 让有缓存时
 # 不再向 registry 反复请求元数据。即使 ./rebuild.sh --clean 也受益(缓存挂载与层缓存无关)。
 RUN --mount=type=cache,target=/root/.npm npm config set registry "$NPM_REGISTRY" && npm install --prefer-offline
-# 条件安装本地 TTS 依赖(--no-save:不改 package.json/package-lock,仅进 node_modules)。
-# 注意:web/lib/kokoro-server.ts 对该依赖是「运行时动态 import + createRequire 探测」,
-# 未安装时 ENABLE_LOCAL_TTS=0 的镜像构建/运行完全不受影响。
-# 构建时同时补齐 kokoro-js-zh 的 Node 端硬性文件(见 kokoro-server.ts ensureRuntimeAssets):
-#   - espeak-ng.wasm ← 从 espeak-ng 依赖包复制(该 npm 包漏发,不复制则中文 G2P 无法启动);
-#   - 8 个中文语音 voices/*.bin ← 从 HF 下载(默认 hf-mirror;离线构建可跳过,运行时自动补)。
-ARG KOKORO_HF_ENDPOINT=https://hf-mirror.com
-# 跳过 onnxruntime-node install 脚本对未捆绑 CUDA/GPU 二进制的下载(CPU 推理用不到;
-# CPU 二进制已捆绑在 npm 包内,skip 后完全离线安装,实测合成正常)。
-# 注意两个变量都要设,覆盖两个版本的安装脚本:
-#   - ONNXRUNTIME_NODE_INSTALL=skip        ← onnxruntime-node 1.29+(顶层显式安装);
-#   - ONNXRUNTIME_NODE_INSTALL_CUDA=skip   ← onnxruntime-node 1.21.0(@huggingface/
-#     transformers@3.8.1 硬编码依赖精确版本 1.21.0,会嵌套安装一份,其旧脚本只认
-#     旧变量;不设则仍去 GitHub 下载 GPU tgz,国内网络 ECONNRESET 失败)。
-# (嵌套副本仅在 1.21.0 的安装脚本里读取旧变量,运行时仍能正常加载 CPU 二进制。)
-RUN if [ "$ENABLE_LOCAL_TTS" = "1" ]; then \
-      ONNXRUNTIME_NODE_INSTALL=skip ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install --no-save --package-lock=false kokoro-js-zh@2.1.7 onnxruntime-node@1.29.0 --prefer-offline \
-      && node scripts/fetch-kokoro-voices.mjs "$KOKORO_HF_ENDPOINT" \
-      && rm -f scripts/fetch-kokoro-voices.mjs; \
-    fi
 
 # ── Stage 2: Next.js 构建(纯 JS 打包,不涉及原生编译) ──
 FROM deps AS build
