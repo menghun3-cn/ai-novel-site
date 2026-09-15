@@ -62,3 +62,10 @@ export function detectIOS(): boolean {
   if (/iP(hone|ad|od)/.test(navigator.userAgent)) return true;
   return /Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
 }
+
+/** AI 朗读自动重试基础间隔(ms),指数退避:第 n 次重试等待 base × 2^(n-1) */
+export const EDGE_RETRY_BASE_MS = 1200;
+export function edgeRetryDelayMs(attempt: number): number {
+  if (attempt < 1) return 0;
+  return EDGE_RETRY_BASE_MS * 2 ** (attempt - 1);
+}

@@ -1,0 +1,59 @@
+title:
+  en: "TTS listen-back resilience — floating mini-player, auto-retry, resume-from-breakpoint"
+  zh: "听书读屏容错——悬浮播放条 + 合成中断自动重试/断点续播"
+summary:
+  en: |
+    `web/components/TtsPlayer.tsx` gains a bottom floating mini-player and a
+    suspend-with-breakpoint failure model. (1) While a session is active and the
+    control panel has scrolled out of view, a fixed bottom pill shows play/pause,
+    stop, and live status; clicking it scrolls back to the panel (sticky-header
+    offset 104, safe-area inset respected). (2) `playEdgeChunk` auto-retries
+    fetch/play failures up to `EDGE_AUTO_RETRY = 2` times with exponential
+    backoff (`edgeRetryDelayMs(n) = 1200 × 2^(n−1)` in `web/lib/tts.ts`); a
+    zero-byte audio blob from `/api/tts` is now retryable, corrupt-audio
+    `onerror` and `audio.play()` rejections retry too, while `NotAllowedError`
+    suspends immediately. (3) Exhausted retries enter an `interrupted` state
+    that keeps queue/index/prefetch buffers — 继续/重试 resumes the current
+    chunk instead of restarting the chapter; only an explicit 停止 resets.
+    Native-engine errors keep `unitsRef`/`idxRef` and resume from `idxRef`.
+    Verified: web typecheck green, test:tts-reader 16/16.
+  zh: |
+    `web/components/TtsPlayer.tsx` 新增底部悬浮 mini 播放条与「保留断点」的失败模型。
+    (1) 会话进行中且顶部控制面板滚出视口时,底部固定胶囊显示播放/暂停、停止与实时
+    状态;点胶囊滚回面板(sticky 站头补偿 104,尊重安全区)。(2) `playEdgeChunk` 对
+    取音频/播放失败最多自动重试 `EDGE_AUTO_RETRY = 2` 次,指数退避
+    (`edgeRetryDelayMs(n) = 1200 × 2^(n−1)`,位于 `web/lib/tts.ts`);`/api/tts` 返回
+    空音频视为可重试,损坏音频 `onerror` 与 `audio.play()` 拒绝同样重试,
+    `NotAllowedError` 立即中断并提示。(3) 重试耗尽进入 `interrupted` 态:队列/下标/
+    预取缓冲保留——「继续」/「重试」从当前片续播,不再重头开始;仅显式「停止」重置。
+    系统语音引擎出错保留 `unitsRef`/`idxRef`,从 `idxRef` 恢复。验证:web typecheck
+    全绿,test:tts-reader 16/16。
+steps:
+  en:
+    - "web/lib/tts.ts: added EDGE_RETRY_BASE_MS = 1200 and edgeRetryDelayMs(attempt) = base × 2^(attempt−1) (pure, exported)."
+    - "web/components/TtsPlayer.tsx: panel scroll-out tracking (panelRef + rAF scroll/resize listener → panelOutOfView); bottom floating pill (play/pause, stop, live status; click scrolls back to panel); playEdgeChunk fetch+play retry loop with edgeRetryDelayMs backoff and retryRound status; suspendSession keeps edgeQueueRef/edgeIdxRef/edgeBuffersRef on exhausted retries (interrupted state); play() resumes from edgeIdxRef (edge) / idxRef (native); pause() flips edgeActiveRef=false to abort backoff waits and resets edgeBusy/retryRound; fetchEdgeAudio treats zero-byte blob as retryable transient failure; labels/buttons/errors speak 继续 when paused || interrupted."
+    - "scripts/verify-tts-reader.ts: import edgeRetryDelayMs; two new assertions (1.2s/2.4s/4.8s exponential growth; attempt 0 → 0)."
+    - "Version 8.4.0 → 8.4.1 in all four package.json; CHANGELOG [Unreleased] adds the V10.8.1 entry."
+    - "Verified: npm run typecheck -w web green; npm run test:tts-reader 16/16."
+  zh:
+    - "web/lib/tts.ts:新增 EDGE_RETRY_BASE_MS = 1200 与 edgeRetryDelayMs(attempt) = base × 2^(attempt−1)(纯函数,导出)。"
+    - "web/components/TtsPlayer.tsx:控制面板滚出视口跟踪(panelRef + rAF scroll/resize 监听 → panelOutOfView);底部悬浮胶囊(播放/暂停、停止、实时状态;点击滚回面板);playEdgeChunk 取音频+播放重试循环(edgeRetryDelayMs 退避 + retryRound 状态);suspendSession 在重试耗尽时保留 edgeQueueRef/edgeIdxRef/edgeBuffersRef(interrupted 态);play() 从 edgeIdxRef(edge)/idxRef(native)续播;pause() 置 edgeActiveRef=false 中止退避等待并复位 edgeBusy/retryRound;fetchEdgeAudio 把空音频视为可重试瞬时失败;paused || interrupted 时按钮/文案/错误提示显示「继续」。"
+    - "scripts/verify-tts-reader.ts:导入 edgeRetryDelayMs;新增两条断言(1.2s/2.4s/4.8s 指数递增;轮次 0 → 0)。"
+    - "四个 package.json 版本 8.4.0 → 8.4.1;CHANGELOG [Unreleased] 新增 V10.8.1 条目。"
+    - "验证:npm run typecheck -w web 全绿;npm run test:tts-reader 16/16。"
+follow-up:
+  en: |
+    - Same-session pause keeps the exact element position (currentTime) when the
+      audio element survives; a pause that lands inside a retry backoff
+      re-synthesizes the current chunk on resume — sentence-level, never the
+      chapter.
+    - Runtime behavior on real mobile networks was not exercised in this change;
+      the backoff schedule and retry counts are deliberately conservative
+      (free-tier edge synthesis), tune if upstream p95 latency grows.
+  zh: |
+    - 同会话暂停在音频元素存活时保留精确播放位置(currentTime);暂停落在退避等待
+      间隙时,继续会重新合成当前句片——句级粒度,绝不会重读整章。
+    - 本次未在真实移动网络上实测;退避节奏与重试次数刻意保守(免费版 edge 合成),
+      若上游 p95 延迟上升再调整。
+links:
+  branch: "feat/edge-tts-kokoro-removal-custom-domain"
