@@ -28,7 +28,7 @@ const {
   getChapterView,
 } = await import('@novel/core');
 
-const { detectIOS, maxChunkLength, splitIntoChunks } = await import('../web/lib/tts');
+const { detectIOS, maxChunkLength, splitIntoChunks, edgeRetryDelayMs } = await import('../web/lib/tts');
 
 let failed = 0;
 function assertOk(cond: boolean, name: string): void {
@@ -58,6 +58,11 @@ async function main(): Promise<void> {
   assertOk(maxChunkLength(0.5) < maxChunkLength(1) && maxChunkLength(1) < maxChunkLength(2), '语速越慢单片上限越小');
   assertOk(maxChunkLength(9) >= maxChunkLength(2), '语速上限受钳制不缩水');
   assertOk(detectIOS() === false, 'iOS 检测在 Node 环境安全返回 false');
+  assertOk(
+    edgeRetryDelayMs(1) === 1200 && edgeRetryDelayMs(2) === 2400 && edgeRetryDelayMs(3) === 4800,
+    '自动重试按指数退避递增'
+  );
+  assertOk(edgeRetryDelayMs(0) === 0, '非法重试轮次返回 0(不等待)');
 
   // 长篇:可经 getChapterView 取到 chapter.contentMd
   upsertAuthor('长篇作者');
