@@ -75,5 +75,5 @@ follow-up:
     - 关注生产 edge 合成(自定义域名端点)的延迟/502;user-categories 笔记
       记录的移动端 502 失败模式是纯 edge 引擎的已知风险。
 links:
-  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/162"
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/159"
   branch: "feat/edge-tts-kokoro-removal-custom-domain"
