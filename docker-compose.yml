@@ -10,18 +10,12 @@ services:
   web:
     build:
       context: .
-      # 本地 Kokoro TTS 开关:由 rebuild.sh(默认 --build-arg ENABLE_LOCAL_TTS=1)或
-      # `docker compose build --build-arg ENABLE_LOCAL_TTS=1` 控制;=1 时镜像内置
-      # kokoro-js-zh(中文)+ onnxruntime-node(听书「本地语音」引擎)。
-      # ⚠ 不要在这里写死 ENABLE_LOCAL_TTS:compose 文件的 args 优先于命令行
-      # --build-arg,写死 "0" 会让 rebuild.sh 的启用参数被覆盖,线上无「本地语音」选项。
-      # 模型权重不进镜像,由下方 ./models/kokoro 卷挂载;未挂载模型时自动回退 Edge 在线合成。
     container_name: novel-web
     restart: unless-stopped
     ports:
       - "33000:33000"
     # 内存调优(低配 1.8G 主机):限制容器上限,防止单容器吃满触发系统级 swap 换页风暴。
-    # next-server 正常 RSS ~1GB(其中 V8 堆约一半),给 kokoro 模型推理留余量。
+    # next-server 正常 RSS ~1GB(其中 V8 堆约一半),留一半给系统缓存。
     mem_limit: 1500m
     environment:
       NODE_ENV: production
@@ -29,20 +23,16 @@ services:
       NOVEL_SITE_URL: http://localhost:33000   # 部署后改为实际域名
       PORT: "33000"
       TZ: Asia/Shanghai                        # 容器日志/本地时间按北京时间
-      EDGE_TTS_API_URL: ""                       # AI 情感听书上游(ai-edge-tts2api):留空用默认线上地址 https://edgetts2api.edgetts.workers.dev/v1/audio/speech
+      EDGE_TTS_API_URL: ""                       # AI 情感听书上游(ai-edge-tts2api,OpenAI 兼容):留空用默认线上地址 https://edgetts2api.menghun3.cc/v1/audio/speech(自定义域名,大陆可直连);自托管时改为自己的地址
       EDGE_TTS_API_KEY: ""                       # 上游 API Key(服务端持有,不进浏览器):留空用默认(部署方可随时 wrangler secret put API_KEY 更换)
-      KOKORO_MODEL_DIR: /app/models/kokoro     # 本地语音模型目录(卷挂载,存在 .onnx 才启用)
       # 内存调优:限制 V8 老生代堆上限。Node 默认堆 ≈ 物理内存一半,GC 惰性,
-      # next-server RSS 会膨胀到 ~1GB 挤爆 1.8G 主机 → 全系统 swap 换页风暴
-      # (kokoro CPU 推理 100 字 176s 的元凶)。限 768MB 强制 GC 更积极。
+      # next-server RSS 会膨胀到 ~1GB 挤爆 1.8G 主机 → 全系统 swap 换页风暴。
+      # 限 768MB 强制 GC 更积极。
       NODE_OPTIONS: "--max-old-space-size=768"
     volumes:
       - ./data:/app/data                                          # SQLite 数据库
       - ./web/public/covers:/app/web/public/covers               # 封面
       - ./novels:/app/novels:ro                                   # 小说源(导入时读取)
-      # 本地 Kokoro 模型:从 HuggingFace 下载 onnx-community/Kokoro-82M-v1.0-ONNX 的
-      # model.onnx/q8 权重放入 ./models/kokoro 即可启用「本地语音」(挂载空目录=未启用)
-      - ./models/kokoro:/app/models/kokoro:ro
 
   # 常驻调度器:每日自动连载 + 定时发布
   scheduler:

@@ -1,22 +1,15 @@
-// TTS 合成代理,双引擎:
-// - edge(默认):AI 情感听书 —— 微软 Edge TTS(免费在线神经语音)经 ai-edge-tts2api
+// TTS 合成代理,单引擎:
+// - edge(默认/唯一在线引擎):AI 情感听书 —— 微软 Edge TTS 经 ai-edge-tts2api
 //   (Cloudflare Workers 上 OpenAI 兼容格式的封装)HTTP 代理合成 MP3:
 //   浏览器 → 本路由 → 上游 POST /v1/audio/speech → audio/mpeg。
 //   - 不再自连 bing WebSocket / 维护 Sec-MS-GEC 令牌;上游自动处理长文分块并发合成;
 //   - 鉴权:请求头 Authorization: Bearer <EDGE_TTS_API_KEY>(密钥只存在服务端,不下发浏览器);
 //   - 端点/密钥可用环境变量 EDGE_TTS_API_URL / EDGE_TTS_API_KEY 覆盖,默认线上部署地址与密钥。
-// - kokoro(本地):Kokoro TTS 82M 模型,镜像以 ENABLE_LOCAL_TTS=1 构建时可用,
-//   模型走 KOKORO_MODEL_DIR 卷挂载(未挂载自动在线下载到缓存);返回 WAV。
-//   依赖/模型不可用时路由返回 503,前端据此回退 Edge。
+//   - 默认端点为本项目自定义域名(edgetts2api.menghun3.cc,中国大陆可直连);
+//     自托管 ai-edge-tts2api 时改用您自己的 Worker/CNAME 地址,或上游默认
+//     https://edgetts2api.edgetts.workers.dev(注意 *.workers.dev 在部分受限网络不可达)。
+// 历史:kokoro 本地引擎(V10.7 引入)已随 V10.8 移除,路由恢复单一 edge 引擎。
 import { EDGE_VOICES } from '@/lib/edge-tts';
-import { KOKORO_VOICES } from '@/lib/kokoro';
-import {
-  ensureRuntimeAssets,
-  kokoroAvailable,
-  kokoroModelDir,
-  kokoroVoicesReady,
-  synthesizeKokoro,
-} from '@/lib/kokoro-server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -24,16 +17,12 @@ export const runtime = 'nodejs';
 // 上游(ai-edge-tts2api)配置:env 可覆盖,默认线上部署地址与 API Key
 // (README:https://github.com/…/ai-edge-tts2api,部署方可随时 wrangler secret put API_KEY 更换)
 const EDGE_TTS_API_URL =
-  (process.env.EDGE_TTS_API_URL ?? '').trim() || 'https://edgetts2api.edgetts.workers.dev/v1/audio/speech';
+  (process.env.EDGE_TTS_API_URL ?? '').trim() || 'https://edgetts2api.menghun3.cc/v1/audio/speech';
 const EDGE_TTS_API_KEY =
   (process.env.EDGE_TTS_API_KEY ?? '').trim() || 'sk-BsnC0RfyuGMamQpD3HJjd9IwcoVOXFzWUrvL78AK';
 // OpenAI 兼容模型名;请求体同时带 voice(微软音色名,优先级高于 model 映射,与 README 对照表一致)
 const EDGE_MODEL = 'tts-1';
 const MAX_TEXT = 2000;
-// kokoro 本地 CPU 合成:文本越长推理越慢(实测 200 字在低配 2 核机上可达分钟级),
-// 超过 CF 免费版回源超时(~100s)即 502/524。前端 TtsPlayer 切片约 52 字/次,
-// 300 字上限远高于实际请求,仅拦截手误/恶意长文本。
-const KOKORO_MAX_TEXT = 300;
 // 上游单次合成超时(前端切片 ~52 字/次,上游无需分块,秒级返回;30s 足够覆盖网络抖动)
 const EDGE_TIMEOUT_MS = 30_000;
 
@@ -91,39 +80,6 @@ export async function POST(req: Request): Promise<Response> {
   if (text.length > MAX_TEXT) {
     return Response.json({ error: `单次合成文本过长(≤${MAX_TEXT} 字)` }, { status: 400 });
   }
-  const engine = body.engine === 'kokoro' ? 'kokoro' : 'edge';
-
-  // kokoro 本地引擎:依赖/模型不可用 → 503(前端据 engine 回退 edge)
-  if (engine === 'kokoro') {
-    if (text.length > KOKORO_MAX_TEXT) {
-      return Response.json({ error: `本地合成文本过长(≤${KOKORO_MAX_TEXT} 字)` }, { status: 400 });
-    }
-    if (!kokoroAvailable()) {
-      return Response.json(
-        {
-          error:
-            '本地语音引擎不可用:镜像未启用 ENABLE_LOCAL_TTS,或模型未挂载(KOKORO_MODEL_DIR 无 .onnx 文件)',
-        },
-        { status: 503 }
-      );
-    }
-    const voice = typeof body.voice === 'string' ? body.voice : KOKORO_VOICES[0].voiceURI;
-    if (!KOKORO_VOICES.some((v) => v.voiceURI === voice)) {
-      return Response.json({ error: `未知语音: ${voice}` }, { status: 400 });
-    }
-    try {
-      const audio = await synthesizeKokoro(text, voice);
-      return new Response(new Uint8Array(audio), {
-        headers: {
-          'Content-Type': 'audio/wav',
-          'Cache-Control': 'no-store',
-          'Content-Length': String(audio.length),
-        },
-      });
-    } catch (err) {
-      return Response.json({ error: err instanceof Error ? err.message : '本地语音合成失败' }, { status: 502 });
-    }
-  }
 
   const voice = typeof body.voice === 'string' ? body.voice : EDGE_VOICES[0].voiceURI;
   if (!EDGE_VOICES.some((v) => v.voiceURI === voice)) {
@@ -148,25 +104,9 @@ export async function POST(req: Request): Promise<Response> {
   }
 }
 
-/** 引擎状态查询:TtsPlayer 挂载时探测本地引擎可用性,决定是否展示 kokoro 选项 */
+/** 引擎状态查询(诊断/兼容;V10.8 起仅 edge + 浏览器 native,无本地引擎) */
 export async function GET(): Promise<Response> {
-  let voicesReady = kokoroVoicesReady();
-  if (kokoroAvailable() && !voicesReady) {
-    // 语音文件缺失时先尝试补齐(espeak-ng.wasm + 8 个中文语音),再上报可用性
-    try {
-      await ensureRuntimeAssets();
-      voicesReady = kokoroVoicesReady();
-    } catch {
-      /* 补齐失败视为不可用,edge 兜底 */
-    }
-  }
   return Response.json({
-    // kokoro 优先:本地引擎是默认推荐(移动端网络中间层不会拦截本地合成)
-    engines: [...(kokoroAvailable() && voicesReady ? (['kokoro'] as const) : []), 'edge', 'native'],
-    kokoro: {
-      available: kokoroAvailable() && voicesReady,
-      modelDir: kokoroModelDir(),
-      voices: KOKORO_VOICES,
-    },
+    engines: ['edge', 'native'],
   });
 }

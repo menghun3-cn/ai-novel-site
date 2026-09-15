@@ -5,6 +5,29 @@
 
 ## [Unreleased]
 
+### V10.8.0 移除本地 Kokoro 引擎,Edge 端点切换为自定义域名(v8.4.0)
+
+- **Edge 云端端点默认切换为自定义域名**:ai-edge-tts2api 封装的默认地址由
+  `https://edgetts2api.edgetts.workers.dev` 改为 **`https://edgetts2api.menghun3.cc`**——
+  `*.workers.dev` 域名在服务器所处网络被 DNS 劫持/污染(实测解析到 `31.13.96.192`、
+  查询 SERVFAIL、TCP 443 不通),自定义域名已从生产服务器实测可直连
+  (`GET /v1/models` 200,`POST /v1/audio/speech` 200 返回约 20.7 KB `audio/mpeg`);
+  仍可用环境变量 `EDGE_TTS_API_URL` / `EDGE_TTS_API_KEY` 覆盖,默认密钥不变。
+- **移除本地 Kokoro 引擎(反转 V10.7 的「kokoro 默认听书引擎」决策,以本版本为准)**:
+  本地 onnxruntime 推理链路(1.8 GiB 内存机器仅适合短文本)整条删除——
+  - 前端「✨ AI 情感听书」「系统语音」双引擎保留,`web/components/TtsPlayer.tsx` 移除
+    kokoro 选项与探活;`web/lib/kokoro.ts` / `web/lib/kokoro-server.ts` 删除;
+  - `Dockerfile` 移除 `ENABLE_LOCAL_TTS` 构建参数与模型下载步骤,`docker-compose.yml`
+    移除 `KOKORO_MODEL_DIR` 环境变量与 `./models/kokoro` 卷挂载,`./rebuild.sh` 仅保留
+    `--clean`(`--tts/--model/--no-tts/--no-model` 全部移除);
+  - `test:tts-local` 测试移除(`scripts/verify-tts-local.ts`、`fetch-kokoro-voices.mjs`
+    删除),`test:*` 脚本 44 → 43 个;镜像不再携带/下载本地大模型,体积与构建时长显著下降。
+- **前后端契约不变**:`POST/GET /api/tts` 请求体 `{text,voice,rate,engine}` 不变,
+  `engine` 枚举为 `edge` / `native`;`GET /api/tts` 返回 `{"engines":["edge","native"]}`。
+- **验收**:`npm run typecheck`、`build:web`、`test:tts-reader` 通过;自定义域名端点
+  已从生产服务器实测(模型列表与语音合成均 200)。
+- **版本**:四包对齐 **8.4.0**(听书引擎移除属功能移除,次版本号递增)。
+
 ### V10.7.7 听书 Edge 引擎切换为云端 OpenAI 兼容封装(v8.3.9)
 
 - **不再自连 bing WebSocket**:Edge(「✨ AI 情感听书」)在线合成从「服务器直连

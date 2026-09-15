@@ -1,6 +1,7 @@
 # Agent Note: Local Kokoro Chinese TTS as a listen-back engine alongside Edge
 
 Status: implemented
+Archived: 2026-09-15
 
 English | [中文](2026-09-03-local-kokoro-tts.zh.md)
 

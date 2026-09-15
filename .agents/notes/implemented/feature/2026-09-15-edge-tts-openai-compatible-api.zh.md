@@ -24,17 +24,19 @@ ai-edge-tts2api 项目提供维护中的 OpenAI 兼容 HTTP 封装
   一次 `fetch(EDGE_TTS_API_URL)`,带 `Authorization: Bearer ${EDGE_TTS_API_KEY}`,
   请求体 `{ model: 'tts-1', input, voice, speed, response_format: 'mp3' }`,
   30 秒 `AbortController` 超时,把裸 `audio/mpeg` 原样代理给浏览器。
-- `EDGE_TTS_API_URL` / `EDGE_TTS_API_KEY` 从环境变量读取,缺省值采用
-  ai-edge-tts2api README 的端点与共享部署密钥;密钥只在服务端路由读取,
-  不进共享客户端代码。
+- `EDGE_TTS_API_URL` / `EDGE_TTS_API_KEY` 从环境变量读取;缺省端点为
+  `https://edgetts2api.menghun3.cc/v1/audio/speech`(自定义域名,V10.8 起为
+  默认——ai-edge-tts2api README 的 `*.workers.dev` 端点在境内网络被 DNS
+  污染),缺省密钥为共享部署密钥;密钥只在服务端路由读取,不进共享客户端代码。
 - 删除全部 bing 专属逻辑:Sec-MS-GEC 计算、WSS 地址、UA、`parseAudioChunk`、
   `buildEdgeSSML`,以及 `EDGE_TTS_PROXY` 环境变量(`docker-compose.yml` 与
   README 改为 `EDGE_TTS_API_URL`)。
 - 前端错误映射:401 → 鉴权失败提示,`AbortError` → 超时,`TypeError` →
   无法连接(前端追加「可改用 Kokoro 本地语音」提示),非 2xx → 透传上游
   `error.message`。
-- `GET /api/tts` 可用性探测与 `kokoro` 引擎不变;kokoro 可用时仍是默认
-  听书引擎。
+- `GET /api/tts` 可用性探测现在恰好返回 `{"engines":["edge","native"]}`;
+  `kokoro` 引擎已在 V10.8 移除(见
+  [edge-tts-custom-domain-kokoro-removal](../../implemented/simplification/2026-09-15-edge-tts-custom-domain-kokoro-removal.zh.md))。
 
 ## Alternatives considered
 
@@ -47,17 +49,18 @@ ai-edge-tts2api 项目提供维护中的 OpenAI 兼容 HTTP 封装
 
 ## Consequences
 
-- edge 引擎现在需要出站 HTTPS 访问 `*.workers.dev` 主机;沙箱或受限网络
-  可能拦截。本工作区无法测试活线连通性——路由只对实现契约的本地 mock
-  验证过(请求映射 `model/input/voice/speed/response_format` + Bearer 头;
-  上游 500 → 路由 502 透传 `error.message`)。部署后请生产冒烟测试。
+- edge 引擎需要出站 HTTPS 访问端点;V10.8 起默认为自定义域名
+  `https://edgetts2api.menghun3.cc`,工作区与生产主机(境内)均可直连:已从
+  生产主机实测 `GET /v1/models` 200、`POST /v1/audio/speech` 200 → 约
+  20.7 KB `audio/mpeg`。README 的 `*.workers.dev` 主机在境内仍然不可达
+  (DNS 劫持 + SERVFAIL,TCP 443 不通)。
 - 共享 API 密钥是 ai-edge-tts2api README 中公开的活凭据;部署可用
   `EDGE_TTS_API_KEY` 覆盖。服务器环境变量无需改动即可生效。
 - 版本 8.3.8 → 8.3.9(V10.7.7);CHANGELOG [Unreleased] 记录了引擎切换与验证
   (typecheck、next build、`test:tts-reader` 13/13、mock 上游 e2e)。
 - 交叉引用:
-  [local-kokoro-tts](../../implemented/feature/2026-09-03-local-kokoro-tts.zh.md)
-  与
   [user-categories-and-list-performance](../../implemented/feature/2026-09-04-user-categories-and-list-performance.zh.md)
   中的传输描述已就地更新(edge 现在是发往封装的 HTTP POST,不再是 bing
-  WebSocket)。
+  WebSocket);
+  [local-kokoro-tts](../../archived/feature/2026-09-03-local-kokoro-tts.zh.md)
+  (含同样的传输更新)随 V10.8 kokoro 移除一并归档。

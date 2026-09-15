@@ -1,6 +1,6 @@
 {
   "name": "novel-builder",
-  "version": "8.3.9",
+  "version": "8.4.0",
   "description": "MD/TXT 小说目录 → Content Core → Web Publisher / EPUB / BookOrbit",
   "type": "module",
   "license": "MIT",
@@ -57,7 +57,6 @@
     "test:production-line": "tsx scripts/verify-production-line.ts",
     "test:continuous-production-line": "tsx scripts/verify-continuous-production-line.ts",
     "test:tts-reader": "tsx scripts/verify-tts-reader.ts",
-    "test:tts-local": "tsx scripts/verify-tts-local.ts",
     "test:e2e": "playwright test",
     "test:review-rule": "tsx scripts/verify-review-rule.ts",
     "test:review-prompt": "tsx scripts/verify-review-prompt.ts",

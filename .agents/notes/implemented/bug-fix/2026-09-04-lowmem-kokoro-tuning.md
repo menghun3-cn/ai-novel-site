@@ -8,6 +8,9 @@ English | [中文](2026-09-04-lowmem-kokoro-tuning.zh.md)
 
 生产主机 hcss-ecs-8245 为 **2 核 / 1.8 GiB 内存**(不可扩容)。实测 kokoro 本地合成
 性能极差:20 字 7s、50 字 18~27s、100 字 **176~338s**(60s 超时被 CPU 阻塞吞掉)。
+(V10.8 已整条移除 kokoro 引擎,见
+[edge-tts-custom-domain-kokoro-removal](../simplification/2026-09-15-edge-tts-custom-domain-kokoro-removal.md);
+本文的内存上限**仍是当前 compose 的活跃配置**,继续作为这台低配主机的通用护栏。)
 
 内存账本(调优前):
 - next-server(novel-web 容器) **~1.0~1.19 GB**(V8 堆未限,Node 默认堆≈物理内存一半,GC 惰性);
@@ -60,8 +63,8 @@ TtsPlayer 已按 ≤200 字/片(`splitIntoChunks` + `maxChunkLength`)切片,
 - `NODE_OPTIONS` 只影响 next-server 进程,不影响容器内其它命令;
 - mem_limit 是容器硬上限:超限会被内核 OOM kill 而非无边界膨胀,便于发现回归。
 
-与 [2026-09-03-local-kokoro-tts](../feature/2026-09-03-local-kokoro-tts.md) 关联:
-同属 kokoro 引擎的线上可用性链路(可用性 = 依赖/模型就绪 + 有内存推理)。
-与 [2026-09-04-kokoro-synthesis-serialization](../bug-fix/2026-09-04-kokoro-synthesis-serialization.md) 关联:
-本笔记解决「next-server 堆膨胀吃满内存导致换页风暴」,后者解决「并发合成叠加
-内存峰值 + 长文本撞 CF 回源超时墙(502/524)」——同一主机约束下的两轮递进修复。
+与 [edge-tts-custom-domain-kokoro-removal](../simplification/2026-09-15-edge-tts-custom-domain-kokoro-removal.md) 关联:
+kokoro 引擎已于 V10.8 移除(其串行化/文本上限修复见
+[kokoro-synthesis-serialization](../../archived/bug-fix/2026-09-04-kokoro-synthesis-serialization.md),
+已归档);本笔记的 `NODE_OPTIONS` / `mem_limit` 仍是 compose 活跃配置,作为
+这台 2 核 1.8 GiB 主机防内存膨胀/换页风暴的通用护栏保留。
