@@ -1,0 +1,37 @@
+title:
+  en: "web and scheduler share one Docker image via an explicit Compose tag"
+  zh: "Compose 显式声明 image 名,web 与 scheduler 共用同一个 Docker 镜像"
+summary:
+  en: |
+    `docker-compose.yml` built both services without an `image:` field, so Compose
+    auto-named two tags (`novel-web-publisher-web`, `novel-web-publisher-scheduler`) for
+    byte-identical content — the only difference, the entry command, lives in compose
+    metadata, not the image. Both services now declare `image: novel-web-publisher:latest`;
+    one payload is built and stored, and the two containers still run with unchanged ports,
+    volumes, `mem_limit`, and commands. Legacy auto-named tags get a one-time
+    `docker image rm` after the first rebuild.
+  zh: |
+    `docker-compose.yml` 中两个 service 都只有 `build:` 没有 `image:`,Compose 便自动按
+    `<项目名>-<服务名>` 打出两个标签(`novel-web-publisher-web` / `novel-web-publisher-scheduler`),
+    内容逐字节相同——真正的差异(启动命令)只存在于 compose 元数据,不在镜像里。现两个 service
+    都显式声明 `image: novel-web-publisher:latest`:只构建/存储一份负载,两个容器的端口、卷、
+    内存上限与启动命令均不变;首次重建后一次性 `docker image rm` 清理旧自动命名标签。
+steps:
+  en:
+    - "Added `image: novel-web-publisher:latest` to both `web` and `scheduler` services in `docker-compose.yml`."
+    - "Documented the one-time cleanup of the legacy auto-named tags in the compose comments and the Agent Note triplet."
+  zh:
+    - "在 `docker-compose.yml` 的 `web` 与 `scheduler` 两个 service 上新增 `image: novel-web-publisher:latest`。"
+    - "在 compose 注释与 Agent Note 三件套中记录旧自动命名标签的一次性清理步骤。"
+follow-up:
+  en: |
+    - After the first rebuild on the deploy server, run
+      `docker image rm novel-web-publisher-web novel-web-publisher-scheduler`.
+    - Verify with `docker system df` that the image payload is stored once.
+  zh: |
+    - 部署服务器首次重建后执行
+      `docker image rm novel-web-publisher-web novel-web-publisher-scheduler`。
+    - 用 `docker system df` 确认镜像负载只存一份。
+links:
+  pr: "https://github.com/menghun3-cn/ai-novel-site/pull/new/chore/shared-docker-image"
+  branch: "chore/shared-docker-image"

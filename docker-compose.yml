@@ -8,6 +8,11 @@
 #
 services:
   web:
+    # web 与 scheduler 共用同一镜像(内容完全相同,仅启动命令不同):
+    # Compose 默认按 <项目名>-<服务名> 自动命名,会让同一份内容被打成两个镜像;
+    # 显式声明同一 image 名后只构建/存储一份。改镜像名后记得清理旧镜像:
+    #   docker image rm novel-web-publisher-web novel-web-publisher-scheduler
+    image: novel-web-publisher:latest
     build:
       context: .
     container_name: novel-web
@@ -36,6 +41,8 @@ services:
 
   # 常驻调度器:每日自动连载 + 定时发布
   scheduler:
+    # 与 web 共用镜像 novel-web-publisher:latest(见 web 服务注释)
+    image: novel-web-publisher:latest
     build: .
     container_name: novel-scheduler
     restart: unless-stopped
